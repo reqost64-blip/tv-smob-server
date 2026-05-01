@@ -1,0 +1,11 @@
+{
+  "tv_to_mt5": {
+    "BTCUSDT": "BTCUSDm",
+    "ETHUSDT": "ETHUSDm",
+    "EURUSD": "EURUSD",
+    "GBPUSD": "GBPUSD",
+    "XAUUSD": "XAUUSD",
+    "US30": "US30Cash",
+    "NAS100": "NAS100Cash"
+  }
+}
