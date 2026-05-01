@@ -40,6 +40,9 @@ Edit `.env` and set a strong secret:
 ```
 WEBHOOK_SECRET=change-this-to-a-random-secret
 DB_FILE=bridge.db
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
+TRADING_ENABLED=true
 ```
 
 ### 3. Run the server
@@ -69,6 +72,39 @@ Interactive API docs: `http://localhost:8000/docs`
 | GET    | `/api/mt5/commands`           | MT5 polls for next queued command        |
 | POST   | `/api/mt5/ack`                | MT5 acknowledges command receipt         |
 | POST   | `/api/mt5/execution-report`   | MT5 reports order execution result       |
+| POST   | `/api/telegram/webhook`       | Telegram bot command webhook             |
+
+## Telegram Bot Control Layer
+
+Telegram support is read-only in this stage. The server sends notifications for
+incoming TradingView signals, queued commands, MT5 command delivery,
+acknowledgements, execution reports, rejected signals, and execution statuses such
+as `open_failed`, `opened`, `tp1_closed`, `tp2_closed`, `tp3_closed`, `be_moved`,
+and `position_closed`.
+
+Required Render environment variables:
+
+```
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
+```
+
+Do not commit real Telegram tokens to GitHub.
+
+Set the Telegram webhook to:
+
+```
+https://<your-render-service>.onrender.com/api/telegram/webhook
+```
+
+Supported Telegram commands:
+
+| Command       | Description                                      |
+|---------------|--------------------------------------------------|
+| `/status`     | Server status, trading flag, queue counts, last signal, last report |
+| `/last_trade` | Latest execution report                          |
+| `/today`      | Today's signal, opened, rejected, and PnL summary |
+| `/help`       | Command list                                     |
 
 ## Project Structure
 
@@ -81,6 +117,7 @@ tv-mt5-bridge/
 │   ├── validators.py    # Signal business logic validation
 │   ├── database.py      # SQLite connection and schema init
 │   ├── queue.py         # Queue operations (enqueue, fetch, ack)
+│   ├── telegram_bot.py  # Telegram notifications and read-only commands
 │   ├── symbol_mapper.py # TV → MT5 symbol lookup
 │   ├── requirements.txt
 │   └── .env.example

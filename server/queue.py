@@ -59,3 +59,59 @@ def save_execution_report(report: ExecutionReport) -> None:
                 report.executed_at,
             ),
         )
+
+
+def record_event(event_type: str, signal_id: Optional[str] = None, payload: Optional[dict] = None) -> None:
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO bot_events (event_type, signal_id, payload) VALUES (?, ?, ?)",
+            (event_type, signal_id, json.dumps(payload or {}, default=str)),
+        )
+
+
+def command_counts() -> dict:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS count FROM commands GROUP BY status"
+        ).fetchall()
+        counts = {"queued": 0, "sent": 0, "acknowledged": 0}
+        for row in rows:
+            counts[row["status"]] = row["count"]
+        return counts
+
+
+def last_signal_id() -> Optional[str]:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT signal_id FROM commands ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return row["signal_id"] if row else None
+
+
+def last_execution_report() -> Optional[dict]:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM execution_reports ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def today_summary() -> dict:
+    with db() as conn:
+        signals = conn.execute(
+            "SELECT COUNT(*) AS count FROM commands WHERE date(created_at) = date('now')"
+        ).fetchone()["count"]
+        opened = conn.execute(
+            "SELECT COUNT(*) AS count FROM execution_reports "
+            "WHERE lower(status) = 'opened' AND date(received_at) = date('now')"
+        ).fetchone()["count"]
+        rejected = conn.execute(
+            "SELECT COUNT(*) AS count FROM bot_events "
+            "WHERE event_type = 'rejected_signal' AND date(created_at) = date('now')"
+        ).fetchone()["count"]
+        return {
+            "signals": signals,
+            "opened": opened,
+            "rejected": rejected,
+            "estimated_pnl": None,
+        }
