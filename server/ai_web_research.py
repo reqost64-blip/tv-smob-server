@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -11,6 +12,11 @@ from . import config
 
 ASSETS = "XAUUSD, NAS100, DJ30, US500, BTCUSD"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
+WEB_SEARCH_TIMEOUT_MESSAGE = "OpenAI web search долго отвечает. Повтори через минуту или задай вопрос через /ask."
+NEWS_FALLBACK_MESSAGE = (
+    "Web search временно недоступен. Проверь вручную важные новости: "
+    "CPI, PPI, NFP, FOMC, Fed speakers, unemployment claims, PMI."
+)
 
 
 def answer_with_web_search(question: str, user_context: str = "") -> str:
@@ -22,21 +28,27 @@ def answer_with_web_search(question: str, user_context: str = "") -> str:
 def get_market_news_today() -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Give the main market news for today, {today}, for a Telegram trading bot.
-Cover USD, US indices, gold, crypto, and oil only if relevant.
-Output in Russian. Max 10 bullets. Start with a conclusion, then events, then asset risk.
-Mention source names/links when available. If not confirmed, write "не нашёл подтверждения".
+Task: Market news today, {today}, timezone Europe/Berlin.
+Assets only: {ASSETS}.
+Output in Russian, max 8 bullets.
+Order: вывод, события, риск по активам.
+No long explanations. Do not invent events. If not confirmed, write "не нашёл подтверждения".
 """
-    return _call_responses_api(prompt, use_web=True)
+    response = _call_responses_api(prompt, use_web=True)
+    if _is_web_search_failure(response):
+        return response + "\n\n" + NEWS_FALLBACK_MESSAGE
+    return response
 
 
 def get_economic_calendar_today() -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Find important economic calendar events for today, {today}.
-Use Europe/Berlin time. For each event include:
-time, currency, event, importance, affected assets from {ASSETS}.
-Output in Russian. Max 10 bullets. Do not invent events. If data is unavailable, say "не нашёл подтверждения".
+Task: Economic calendar today, {today}, timezone Europe/Berlin.
+Assets only: {ASSETS}.
+For each event: time Europe/Berlin, currency, event, importance, affected assets.
+Output in Russian, max 8 bullets.
+Order: вывод, события, риск по активам.
+No long explanations. Do not invent events. If unavailable, write "не нашёл подтверждения".
 """
     return _call_responses_api(prompt, use_web=True)
 
@@ -44,9 +56,10 @@ Output in Russian. Max 10 bullets. Do not invent events. If data is unavailable,
 def get_asset_impact_summary(asset: str) -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Explain what is affecting {asset} today, {today}.
+Task: Explain what is affecting {asset} today, {today}, timezone Europe/Berlin.
 Focus on confirmed market drivers, scheduled events, and risk.
-Output in Russian. Max 10 bullets. Start with the conclusion.
+Output in Russian, max 8 bullets. Order: вывод, события, риск.
+No long explanations.
 """
     return _call_responses_api(prompt, use_web=True)
 
@@ -54,10 +67,13 @@ Output in Russian. Max 10 bullets. Start with the conclusion.
 def get_market_today_summary() -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Give a short trading risk overview for today, {today}.
-Include high impact events, volatility risk, assets to avoid before news, and any action suggestions only as confirmation-required ideas.
-Assets: {ASSETS}.
-Output in Russian. Max 10 bullets. Start with conclusion, then events, then asset risk.
+Task: Trading risk overview today, {today}, timezone Europe/Berlin.
+Assets only: {ASSETS}.
+Include high impact events, volatility risk, assets to avoid before news.
+Any action suggestions must say confirmation required.
+Output in Russian, max 8 bullets.
+Order: вывод, события, риск по активам.
+No long explanations.
 """
     return _call_responses_api(prompt, use_web=True)
 
@@ -71,6 +87,7 @@ def _call_responses_api(prompt: str, use_web: bool) -> str:
         tools.append(
             {
                 "type": "web_search",
+                "search_context_size": "low",
                 "user_location": {
                     "type": "approximate",
                     "country": "DE",
@@ -96,9 +113,13 @@ def _call_responses_api(prompt: str, use_web: bool) -> str:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=25) as response:
+        with urllib.request.urlopen(request, timeout=config.OPENAI_TIMEOUT_SECONDS) as response:
             data = json.loads(response.read().decode("utf-8"))
+    except (TimeoutError, socket.timeout) as exc:
+        return WEB_SEARCH_TIMEOUT_MESSAGE if tools else f"AI response timed out: {exc}"
     except Exception as exc:
+        if "timed out" in str(exc).lower():
+            return WEB_SEARCH_TIMEOUT_MESSAGE if tools else f"AI response timed out: {exc}"
         return f"AI web research error: {exc}"
 
     text = _extract_output_text(data)
@@ -119,7 +140,7 @@ Safety rules:
 - Do not claim that any action was applied.
 - If suggesting a risk action, say it requires /confirm after a pending approval.
 - Do not invent events or sources.
-- Keep the answer short: maximum 10 bullets, no filler.
+- Keep the answer short: maximum 8 bullets, no filler.
 - Answer in Russian unless the user explicitly asks otherwise.
 Assets: {ASSETS}.
 User context: {user_context or "admin Telegram chat for a demo-first TradingView to MT5 bridge"}.
@@ -199,7 +220,7 @@ def _trim_telegram_answer(text: str) -> str:
     for line in lines:
         if re.match(r"^\s*(?:[-*]|\d+[.)])\s+", line):
             bullet_count += 1
-            if bullet_count > 10:
+            if bullet_count > 8:
                 continue
         kept.append(line)
     result = "\n".join(kept)
@@ -208,3 +229,7 @@ def _trim_telegram_answer(text: str) -> str:
 
 def _today_berlin() -> str:
     return datetime.now(BERLIN_TZ).strftime("%Y-%m-%d")
+
+
+def _is_web_search_failure(response: str) -> bool:
+    return response.startswith("OpenAI web search долго отвечает") or response.startswith("AI web research error:")
