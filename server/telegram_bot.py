@@ -58,6 +58,16 @@ KNOWN_SETTING_KEYS = {
     "symbol_paused_until_BTCUSD",
 }
 
+_EVENT_ICONS = {
+    "webhook_signal_received": "📥",
+    "command_queued": "📋",
+    "mt5_command_sent": "📤",
+    "ack_received": "✅",
+    "execution_report_received": "📊",
+    "rejected_signal": "❌",
+    "close_signal_received": "🔻",
+}
+
 
 def send_telegram_message(text: str) -> bool:
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ADMIN_CHAT_ID:
@@ -81,10 +91,11 @@ def send_telegram_message(text: str) -> bool:
 
 
 def notify_event(event_type: str, signal_id: Optional[str] = None, details: Optional[str] = None) -> None:
-    title = event_type.replace("_", " ")
-    parts = [f"TV-MT5: {title}"]
+    icon = _EVENT_ICONS.get(event_type, "🔔")
+    title = event_type.replace("_", " ").upper()
+    parts = [f"{icon} {title}"]
     if signal_id:
-        parts.append(f"signal_id: {signal_id}")
+        parts.append(f"Signal: {signal_id}")
     if details:
         parts.append(details)
     q.record_event(event_type, signal_id, {"details": details})
@@ -92,24 +103,97 @@ def notify_event(event_type: str, signal_id: Optional[str] = None, details: Opti
 
 
 def notify_close_signal(payload: WebhookPayload) -> None:
+    symbol = payload.mt5_symbol or payload.symbol
     lines = [
-        "Close signal received",
-        f"symbol: {payload.mt5_symbol or payload.symbol}",
-        f"side: {payload.side}",
-        f"reason: {payload.reason}",
-        f"parent_signal_id: {payload.parent_signal_id}",
+        "🔻 CLOSE SIGNAL",
+        f"Asset: {symbol}",
+        f"Side: {(payload.side or 'n/a').upper()}",
+        f"Reason: {payload.reason or 'n/a'}",
+        f"Signal: {payload.signal_id}",
     ]
     q.record_event(
         "close_signal_received",
         payload.signal_id,
         {
-            "symbol": payload.mt5_symbol or payload.symbol,
+            "symbol": symbol,
             "side": payload.side,
             "reason": payload.reason,
             "parent_signal_id": payload.parent_signal_id,
         },
     )
     send_telegram_message("\n".join(lines))
+
+
+def notify_execution(status: str, report) -> None:
+    payload = q.get_command_payload(report.signal_id)
+    text = _format_execution_notification(status, report, payload)
+    q.record_event(status, report.signal_id, {"ticket": report.ticket, "message": report.message})
+    send_telegram_message(text)
+
+
+def _format_execution_notification(status: str, report, payload: Optional[dict]) -> str:
+    p = payload or {}
+    symbol = p.get("mt5_symbol") or p.get("symbol") or "n/a"
+    side = (p.get("side") or "n/a").upper()
+    lot = p.get("lot")
+    sl = p.get("sl")
+    tp1 = p.get("tp1")
+    tp2 = p.get("tp2")
+    tp3 = p.get("tp3")
+
+    if status == "opened":
+        lines = [
+            "🚀 TRADE OPENED",
+            f"Asset: {symbol}",
+            f"Side: {side}",
+            f"Lot: {fmt_money(lot) if lot is not None else 'n/a'}",
+            f"Entry: {fmt_price(report.executed_price)}",
+            f"SL: {fmt_price(sl)}",
+        ]
+        if tp1 is not None:
+            lines.append(f"TP1: {fmt_price(tp1)}")
+        if tp2 is not None:
+            lines.append(f"TP2: {fmt_price(tp2)}")
+        if tp3 is not None:
+            lines.append(f"TP3: {fmt_price(tp3)}")
+        lines.append(f"Signal: {report.signal_id}")
+        return "\n".join(lines)
+
+    if status in ("position_closed", "tp1_closed", "tp2_closed", "tp3_closed"):
+        reason_labels = {
+            "tp1_closed": "TP1 hit",
+            "tp2_closed": "TP2 hit",
+            "tp3_closed": "TP3 hit",
+            "position_closed": "Position closed",
+        }
+        lines = [
+            "🏁 TRADE CLOSED",
+            f"Asset: {symbol}",
+            f"Side: {side}",
+            f"Lot: {fmt_money(lot) if lot is not None else 'n/a'}",
+            f"Entry: {fmt_price(p.get('entry'))}",
+            f"Exit: {fmt_price(report.executed_price)}",
+            f"Reason: {reason_labels.get(status, status)}",
+        ]
+        if report.ticket:
+            lines.append(f"Ticket: {report.ticket}")
+        if report.message:
+            lines.append(f"Note: {report.message}")
+        return "\n".join(lines)
+
+    if status == "open_failed":
+        return "\n".join([
+            "🚨 EXECUTION ERROR",
+            f"Signal: {report.signal_id}",
+            f"Asset: {symbol}",
+            f"Error: {report.message or 'n/a'}",
+            "Action required: check MT5 manually",
+        ])
+
+    if status == "be_moved":
+        return f"📍 BE MOVED\nAsset: {symbol}\nTicket: {report.ticket or 'n/a'}"
+
+    return f"MT5: {status}\n{report.signal_id}\n{report.message or ''}"
 
 
 def format_execution_report(report: Optional[dict]) -> str:
@@ -148,20 +232,36 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         account = acct.latest_account_snapshot()
         positions = acct.current_positions()
         pnl = acct.pnl_today()
-        return "\n".join(
-            [
-                "Server status",
-                "server: running",
-                f"trading: {'enabled' if get_setting('trading_enabled', config.TRADING_ENABLED) else 'disabled'}",
-                f"dry_run: {get_setting('dry_run', True)}",
-                f"last MT5 heartbeat: {acct.last_mt5_heartbeat() or 'n/a'}",
-                f"balance: {fmt_money(account.get('balance') if account else None)}",
-                f"equity: {fmt_money(account.get('equity') if account else None)}",
-                f"today pnl: {fmt_money(pnl['net_pnl'])}",
-                f"open positions: {len(positions)}",
-                f"queued commands: {counts.get('queued', 0)}",
-            ]
-        )
+        heartbeat = acct.last_mt5_heartbeat()
+        trading_on = get_setting("trading_enabled", config.TRADING_ENABLED)
+        dry_run = get_setting("dry_run", True)
+        mt5_link = "ACTIVE" if heartbeat else "OFFLINE"
+        trading_status = "ENABLED" if trading_on else "PAUSED"
+        dry_run_status = "ON" if dry_run else "OFF"
+        currency = account.get("currency") or "" if account else ""
+
+        lines = [
+            "⚡ SYSTEM CORE",
+            "",
+            f"🟢 Server: ONLINE",
+            f"{'🟢' if heartbeat else '🔴'} MT5 Link: {mt5_link}",
+            f"{'🟢' if trading_on else '🟡'} Trading: {trading_status}",
+            f"🟡 DryRun: {dry_run_status}",
+            "",
+            "💰 ACCOUNT",
+            f"Balance: {fmt_money(account.get('balance') if account else None)} {currency}".strip(),
+            f"Equity: {fmt_money(account.get('equity') if account else None)} {currency}".strip(),
+            f"Today PnL: {fmt_money(pnl['net_pnl'])} {currency}".strip(),
+            "",
+            "📡 EXECUTION",
+            f"Open positions: {len(positions)}",
+            f"Queued commands: {counts.get('queued', 0)}",
+            f"Last MT5 heartbeat: {heartbeat or 'n/a'}",
+        ]
+        if account and is_real_trade_mode(account.get("trade_mode")):
+            lines.append("")
+            lines.append("⚠️ REAL ACCOUNT DETECTED")
+        return "\n".join(lines)
 
     if command == "/last_trade":
         return format_execution_report(q.last_execution_report())
@@ -199,16 +299,22 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return format_history_today()
 
     if command == "/news":
-        return attach_ai_risk_action_approval(get_market_news_today(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
+        raw = get_market_news_today()
+        wrapped = _wrap_market_header("📰 MARKET INTEL", raw)
+        return attach_ai_risk_action_approval(wrapped, chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
 
     if command == "/calendar":
-        return attach_ai_risk_action_approval(get_economic_calendar_today(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
+        raw = get_economic_calendar_today()
+        wrapped = _wrap_market_header("📅 ECONOMIC CALENDAR", raw)
+        return attach_ai_risk_action_approval(wrapped, chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
 
     if command == "/market_today":
-        return attach_ai_risk_action_approval(get_market_today_summary(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
+        raw = get_market_today_summary()
+        wrapped = _wrap_market_header("📰 MARKET INTEL", raw)
+        return attach_ai_risk_action_approval(wrapped, chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
 
     if command == "/ask":
-        question = stripped[len(parts[0]) :].strip()
+        question = stripped[len(parts[0]):].strip()
         if not question:
             return "Usage: /ask <question>"
         return attach_ai_risk_action_approval(
@@ -286,25 +392,25 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return "\n".join(
             [
                 "Commands",
-                "/status - server and queue status",
+                "/status - system core overview",
                 "/last_trade - latest execution report",
                 "/today - today's signal summary",
-                "/account - latest MT5 account snapshot",
+                "/account - MT5 account matrix",
                 "/balance - account balance",
                 "/equity - account equity",
-                "/positions - current open positions",
-                "/trades - today's closed deals",
-                "/history_today - today's trade summary",
+                "/positions - open positions",
+                "/trades - today's closed trades",
+                "/history_today - daily performance summary",
                 "/pnl_today - today's PnL summary",
-                "/news - today's market news",
-                "/calendar - today's economic calendar",
+                "/news - market intel (news)",
+                "/calendar - economic calendar",
                 "/market_today - market risk overview",
-                "/ask <question> - ask AI research assistant",
+                "/ask <question> - AI research assistant",
                 "/settings - bot settings",
-                "/risk - risk settings",
+                "/risk - risk controls",
                 "/approvals - pending approvals",
-                "/confirm <approval_id> - apply pending change",
-                "/reject <approval_id> - reject pending change",
+                "/confirm <id> - apply pending change",
+                "/reject <id> - reject pending change",
                 "/pause - request trading pause",
                 "/resume - request trading resume",
                 "/dryrun_on - request dry run on",
@@ -319,8 +425,8 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
 def dashboard_keyboard() -> dict:
     return {
         "keyboard": [
-            [{"text": "Статус"}, {"text": "Сделки"}],
-            [{"text": "Новости"}, {"text": "⚙️ Управление"}],
+            [{"text": "📊 Core Status"}, {"text": "📈 Trade Center"}],
+            [{"text": "📰 Market Intel"}, {"text": "⚙️ Control Panel"}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -329,12 +435,29 @@ def dashboard_keyboard() -> dict:
 
 def normalize_dashboard_button(text: str) -> str:
     mapping = {
+        # new buttons
+        "📊 Core Status": "/status",
+        "📈 Trade Center": "/trades",
+        "📰 Market Intel": "/market_today",
+        "⚙️ Control Panel": "/settings",
+        # legacy buttons (keep working)
         "Статус": "/status",
         "Сделки": "/trades",
         "Новости": "/market_today",
         "⚙️ Управление": "/settings",
     }
     return mapping.get(text, text)
+
+
+def _wrap_market_header(header: str, body: str) -> str:
+    lines = body.strip().splitlines()
+    # strip AI-generated title line if it matches a known heading pattern
+    if lines and not lines[0].startswith(("Вывод", "События", "Риск", "Sources", "Market")):
+        pass
+    else:
+        # body already has structure, keep as-is
+        pass
+    return f"{header}\n\n{body.strip()}"
 
 
 def handle_natural_language_command(text: str, chat_id: str) -> str:
@@ -367,15 +490,19 @@ def handle_natural_language_command(text: str, chat_id: str) -> str:
 def handle_market_language_query(text: str, chat_id: str) -> Optional[str]:
     normalized = text.lower()
     if any(phrase in normalized for phrase in ("какие новости сегодня", "новости сегодня", "что сегодня важно по рынку")):
-        return attach_ai_risk_action_approval(get_market_news_today(), chat_id, text)
+        raw = get_market_news_today()
+        return attach_ai_risk_action_approval(_wrap_market_header("📰 MARKET INTEL", raw), chat_id, text)
     if "календар" in normalized and any(word in normalized for word in ("сегодня", "рын", "эконом")):
-        return attach_ai_risk_action_approval(get_economic_calendar_today(), chat_id, text)
+        raw = get_economic_calendar_today()
+        return attach_ai_risk_action_approval(_wrap_market_header("📅 ECONOMIC CALENDAR", raw), chat_id, text)
     if "что сегодня важно" in normalized or "риск по рынку" in normalized:
-        return attach_ai_risk_action_approval(get_market_today_summary(), chat_id, text)
+        raw = get_market_today_summary()
+        return attach_ai_risk_action_approval(_wrap_market_header("📰 MARKET INTEL", raw), chat_id, text)
 
     asset = detect_asset_query(normalized)
     if asset and any(marker in normalized for marker in ("влияет", "падает", "растет", "движ", "почему", "сегодня")):
-        return attach_ai_risk_action_approval(get_asset_impact_summary(asset), chat_id, text)
+        raw = get_asset_impact_summary(asset)
+        return attach_ai_risk_action_approval(_wrap_market_header("📰 MARKET INTEL", raw), chat_id, text)
     if any(marker in normalized for marker in ("почему nas100", "почему us500", "почему sp500", "почему dj30", "почему xau", "почему btc")):
         return attach_ai_risk_action_approval(answer_with_web_search(text, format_risk()), chat_id, text)
     return None
@@ -553,38 +680,44 @@ def format_account() -> str:
     account = acct.latest_account_snapshot()
     if not account:
         return "No account snapshot yet."
+    currency = account.get("currency") or ""
+    mode = format_trade_mode(account.get("trade_mode")).upper()
     lines = [
-        "Account",
-        f"login: {mask_account_login(account.get('account_login'))}",
-        f"server: {account.get('account_server') or 'n/a'}",
-        f"balance: {fmt_money(account.get('balance'))} {account.get('currency') or ''}".strip(),
-        f"equity: {fmt_money(account.get('equity'))} {account.get('currency') or ''}".strip(),
-        f"margin: {fmt_money(account.get('margin'))}",
-        f"free margin: {fmt_money(account.get('free_margin'))}",
-        f"margin level: {fmt_money(account.get('margin_level'))}",
-        f"account mode: {format_trade_mode(account.get('trade_mode'))}",
-        f"updated: {account.get('created_at')}",
+        "💰 ACCOUNT MATRIX",
+        "",
+        f"Login: {mask_account_login(account.get('account_login'))}",
+        f"Server: {account.get('account_server') or 'n/a'}",
+        f"Mode: {mode}",
+        f"Balance: {fmt_money(account.get('balance'))} {currency}".strip(),
+        f"Equity: {fmt_money(account.get('equity'))} {currency}".strip(),
+        f"Margin: {fmt_money(account.get('margin'))} {currency}".strip(),
+        f"Free margin: {fmt_money(account.get('free_margin'))} {currency}".strip(),
+        f"Margin level: {fmt_money(account.get('margin_level'))}%",
     ]
     if is_real_trade_mode(account.get("trade_mode")):
-        lines.append("WARNING: account mode is REAL.")
+        lines.append("")
+        lines.append("⚠️ REAL ACCOUNT DETECTED")
     return "\n".join(lines)
 
 
 def format_positions() -> str:
     positions = acct.current_positions()
     if not positions:
-        return "No open positions."
-    lines = ["Open positions"]
-    for position in positions[:10]:
-        lines.extend(
-            [
-                f"{position.get('symbol')} {position.get('side')} {position.get('lot')}",
-                f"entry: {fmt_price(position.get('entry_price'))} current: {fmt_price(position.get('current_price'))}",
-                f"floating PnL: {fmt_money(position.get('profit'))}",
-                f"SL: {fmt_price(position.get('sl'))} TP: {fmt_price(position.get('tp'))}",
-                f"ticket: {position.get('ticket')}",
-            ]
-        )
+        return "📭 NO OPEN POSITIONS"
+    lines = ["📈 OPEN POSITIONS", ""]
+    for i, position in enumerate(positions[:10], 1):
+        symbol = position.get("symbol") or "n/a"
+        side = (position.get("side") or "n/a").upper()
+        lines.append(f"{i}. {symbol} {side}")
+        lines.append(f"Lot: {fmt_money(position.get('lot'))}")
+        lines.append(f"Entry: {fmt_price(position.get('entry_price'))}")
+        lines.append(f"Current: {fmt_price(position.get('current_price'))}")
+        lines.append(f"SL: {fmt_price(position.get('sl'))}")
+        lines.append(f"TP: {fmt_price(position.get('tp'))}")
+        lines.append(f"Floating PnL: {fmt_money(position.get('profit'))}")
+        lines.append(f"Ticket: {position.get('ticket') or 'n/a'}")
+        if i < len(positions[:10]):
+            lines.append("")
     if len(positions) > 10:
         lines.append(f"...and {len(positions) - 10} more")
     return "\n".join(lines)
@@ -593,17 +726,19 @@ def format_positions() -> str:
 def format_trades_today() -> str:
     trades = acct.trades_today()
     if not trades:
-        return "No trades today."
-    lines = ["Trades today"]
-    for trade in trades[:10]:
-        lines.extend(
-            [
-                f"{trade.get('symbol')} {trade.get('side')} {trade.get('lot')}",
-                f"entry: {fmt_price(trade.get('entry_price'))} exit: {fmt_price(trade.get('exit_price'))}",
-                f"net PnL: {fmt_money(trade.get('net_profit'))}",
-                f"reason: {trade.get('reason') or 'n/a'}",
-            ]
-        )
+        return "📭 NO TRADES TODAY"
+    lines = ["🏁 TODAY TRADES", ""]
+    for i, trade in enumerate(trades[:10], 1):
+        symbol = trade.get("symbol") or "n/a"
+        side = (trade.get("side") or "n/a").upper()
+        lines.append(f"{i}. {symbol} {side}")
+        lines.append(f"Entry: {fmt_price(trade.get('entry_price'))}")
+        lines.append(f"Exit: {fmt_price(trade.get('exit_price'))}")
+        lines.append(f"Lot: {fmt_money(trade.get('lot'))}")
+        lines.append(f"Net PnL: {fmt_money(trade.get('net_profit'))}")
+        lines.append(f"Reason: {trade.get('reason') or 'n/a'}")
+        if i < len(trades[:10]):
+            lines.append("")
     if len(trades) > 10:
         lines.append(f"...and {len(trades) - 10} more")
     return "\n".join(lines)
@@ -611,15 +746,21 @@ def format_trades_today() -> str:
 
 def format_history_today() -> str:
     summary = acct.pnl_today()
+    trades = summary["trades_count"]
+    wins = summary["wins"]
+    losses = summary["losses"]
+    winrate = f"{round(wins / trades * 100)}%" if trades > 0 else "n/a"
     return "\n".join(
         [
-            "History today",
-            f"trades: {summary['trades_count']}",
-            f"wins: {summary['wins']}",
-            f"losses: {summary['losses']}",
-            f"net pnl: {fmt_money(summary['net_pnl'])}",
-            f"best trade: {fmt_money(summary['best_trade'])}",
-            f"worst trade: {fmt_money(summary['worst_trade'])}",
+            "📊 DAILY PERFORMANCE",
+            "",
+            f"Trades: {trades}",
+            f"Wins: {wins}",
+            f"Losses: {losses}",
+            f"Winrate: {winrate}",
+            f"Net PnL: {fmt_money(summary['net_pnl'])}",
+            f"Best trade: {fmt_money(summary['best_trade'])}",
+            f"Worst trade: {fmt_money(summary['worst_trade'])}",
         ]
     )
 

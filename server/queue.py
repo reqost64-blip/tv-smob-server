@@ -61,6 +61,19 @@ def save_execution_report(report: ExecutionReport) -> None:
         )
 
 
+def get_command_payload(signal_id: str) -> Optional[dict]:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT payload FROM commands WHERE signal_id = ?", (signal_id,)
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row["payload"])
+        except Exception:
+            return None
+
+
 def record_event(event_type: str, signal_id: Optional[str] = None, payload: Optional[dict] = None) -> None:
     with db() as conn:
         conn.execute(

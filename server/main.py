@@ -26,6 +26,7 @@ from .telegram_bot import (
     handle_command,
     notify_close_signal,
     notify_event,
+    notify_execution,
     parse_telegram_update,
     send_telegram_message,
     validate_change,
@@ -154,7 +155,7 @@ async def mt5_execution_report(report: ExecutionReport):
     )
     normalized_status = report.status.lower()
     if normalized_status in NOTIFY_EXECUTION_STATUSES:
-        notify_event(normalized_status, report.signal_id, report.message)
+        notify_execution(normalized_status, report)
     return {"ok": True, "signal_id": report.signal_id}
 
 

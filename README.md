@@ -204,31 +204,37 @@ https://<your-render-service>.onrender.com/api/telegram/webhook
 
 Supported Telegram commands:
 
-The bot also sends a reply keyboard with four dashboard buttons:
+The bot sends a reply keyboard with four dashboard buttons:
 
 | Button | Action |
 |--------|--------|
-| `Статус` | `/status` |
-| `Сделки` | `/trades` |
-| `Новости` | `/market_today` |
-| `⚙️ Управление` | `/settings` |
+| `📊 Core Status` | `/status` |
+| `📈 Trade Center` | `/trades` |
+| `📰 Market Intel` | `/market_today` |
+| `⚙️ Control Panel` | `/settings` |
+
+Legacy buttons (`Статус`, `Сделки`, `Новости`, `⚙️ Управление`) remain supported.
+
+> **Note:** All message formatting uses plain text + emojis. No Markdown or HTML
+> is used, so messages render correctly on all Telegram clients and mobile devices.
+> No trading logic, risk controls, Pine Script, or MQL5 EA were modified.
 
 | Command       | Description                                      |
 |---------------|--------------------------------------------------|
-| `/status`     | Server status, trading flag, queue counts, last signal, last report |
+| `/status`     | ⚡ SYSTEM CORE — server, MT5 link, trading flag, account, queue |
 | `/last_trade` | Latest execution report                          |
 | `/today`      | Today's signal, opened, rejected, and PnL summary |
-| `/account`    | Latest MT5 account snapshot                      |
+| `/account`    | 💰 ACCOUNT MATRIX — login, mode, balance, equity, margin |
 | `/balance`    | Account balance                                  |
 | `/equity`     | Account equity                                   |
-| `/positions`  | Current open positions                           |
-| `/trades`     | Today's closed deals                             |
-| `/history_today` | Today's trades, wins/losses, net PnL, best/worst trade |
+| `/positions`  | 📈 OPEN POSITIONS or 📭 NO OPEN POSITIONS        |
+| `/trades`     | 🏁 TODAY TRADES or 📭 NO TRADES TODAY            |
+| `/history_today` | 📊 DAILY PERFORMANCE — wins, losses, winrate, PnL |
 | `/pnl_today`  | Today's PnL summary                              |
-| `/news`       | Today's market news for USD, indices, gold, crypto, oil if relevant |
-| `/calendar`   | Today's high-impact economic calendar in Europe/Berlin time |
-| `/market_today` | Short trading risk overview for today          |
-| `/ask <question>` | Ask the AI research assistant; uses web search for fresh data |
+| `/news`       | 📰 MARKET INTEL — market news via AI web search  |
+| `/calendar`   | 📅 ECONOMIC CALENDAR — high-impact events today  |
+| `/market_today` | 📰 MARKET INTEL — trading risk overview today  |
+| `/ask <question>` | AI research assistant with web search        |
 | `/settings`   | Current bot settings                             |
 | `/risk`       | Current risk controls                            |
 | `/approvals`  | Pending approvals                                |
@@ -239,6 +245,109 @@ The bot also sends a reply keyboard with four dashboard buttons:
 | `/dryrun_on`  | Create approval to enable dry run                |
 | `/dryrun_off` | Blocked in demo-first mode                       |
 | `/help`       | Command list                                     |
+
+Example message formats:
+
+```
+⚡ SYSTEM CORE
+
+🟢 Server: ONLINE
+🟢 MT5 Link: ACTIVE
+🟢 Trading: ENABLED
+🟡 DryRun: ON
+
+💰 ACCOUNT
+Balance: 10000.00 USD
+Equity: 10025.50 USD
+Today PnL: 25.50 USD
+
+📡 EXECUTION
+Open positions: 1
+Queued commands: 0
+Last MT5 heartbeat: 2026-05-02T14:15:00Z
+```
+
+```
+💰 ACCOUNT MATRIX
+
+Login: ****5678
+Server: Broker-Demo
+Mode: DEMO
+Balance: 10000.00 USD
+Equity: 10025.50 USD
+Margin: 250.00 USD
+Free margin: 9775.50 USD
+Margin level: 4010.20%
+```
+
+```
+📈 OPEN POSITIONS
+
+1. NAS100 BUY
+Lot: 0.02
+Entry: 18450.25
+Current: 18472.5
+SL: 18400
+TP: 18520
+Floating PnL: 4.45
+Ticket: 123456
+```
+
+```
+🏁 TODAY TRADES
+
+1. NAS100 BUY
+Entry: 18450.25
+Exit: 18490
+Lot: 0.02
+Net PnL: 7.75
+Reason: tp1_closed
+```
+
+```
+📊 DAILY PERFORMANCE
+
+Trades: 3
+Wins: 2
+Losses: 1
+Winrate: 67%
+Net PnL: 15.30
+Best trade: 12.50
+Worst trade: -4.20
+```
+
+Execution notifications:
+
+```
+🚀 TRADE OPENED
+Asset: NAS100
+Side: BUY
+Lot: 0.02
+Entry: 18450.25
+SL: 18400
+TP1: 18490
+TP2: 18520
+Signal: tv-20260502-001
+```
+
+```
+🏁 TRADE CLOSED
+Asset: NAS100
+Side: BUY
+Lot: 0.02
+Entry: 18450.25
+Exit: 18490
+Reason: TP1 hit
+Ticket: 123456
+```
+
+```
+🚨 EXECUTION ERROR
+Signal: tv-20260502-001
+Asset: NAS100
+Error: Margin not sufficient
+Action required: check MT5 manually
+```
 
 Supported Russian natural-language examples:
 
