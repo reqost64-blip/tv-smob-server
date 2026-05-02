@@ -76,10 +76,17 @@ Interactive API docs: `http://localhost:8000/docs`
 | GET    | `/api/mt5/commands`           | MT5 polls for next queued command        |
 | POST   | `/api/mt5/ack`                | MT5 acknowledges command receipt         |
 | POST   | `/api/mt5/execution-report`   | MT5 reports order execution result       |
+| POST   | `/api/mt5/account-snapshot`   | MT5 posts account balance/equity snapshot |
+| POST   | `/api/mt5/positions-snapshot` | MT5 posts current open positions snapshot |
+| POST   | `/api/mt5/deal-report`        | MT5 posts a closed deal report           |
 | POST   | `/api/telegram/webhook`       | Telegram bot command webhook             |
 | GET    | `/api/settings`               | Current server-side bot settings         |
 | POST   | `/api/settings`               | Update a setting with `WEBHOOK_SECRET`   |
 | GET    | `/api/audit-log`              | Approval/audit history                   |
+| GET    | `/api/account`                | Latest account snapshot                  |
+| GET    | `/api/positions`              | Latest open positions snapshot           |
+| GET    | `/api/trades/today`           | Today's deal reports                     |
+| GET    | `/api/pnl/today`              | Today's PnL summary                      |
 
 ## Command Contract
 
@@ -197,11 +204,27 @@ https://<your-render-service>.onrender.com/api/telegram/webhook
 
 Supported Telegram commands:
 
+The bot also sends a reply keyboard with four dashboard buttons:
+
+| Button | Action |
+|--------|--------|
+| `Статус` | `/status` |
+| `Сделки` | `/trades` |
+| `Новости` | `/market_today` |
+| `⚙️ Управление` | `/settings` |
+
 | Command       | Description                                      |
 |---------------|--------------------------------------------------|
 | `/status`     | Server status, trading flag, queue counts, last signal, last report |
 | `/last_trade` | Latest execution report                          |
 | `/today`      | Today's signal, opened, rejected, and PnL summary |
+| `/account`    | Latest MT5 account snapshot                      |
+| `/balance`    | Account balance                                  |
+| `/equity`     | Account equity                                   |
+| `/positions`  | Current open positions                           |
+| `/trades`     | Today's closed deals                             |
+| `/history_today` | Today's trades, wins/losses, net PnL, best/worst trade |
+| `/pnl_today`  | Today's PnL summary                              |
 | `/news`       | Today's market news for USD, indices, gold, crypto, oil if relevant |
 | `/calendar`   | Today's high-impact economic calendar in Europe/Berlin time |
 | `/market_today` | Short trading risk overview for today          |
@@ -250,6 +273,83 @@ Approval ID: abc123def0
 /confirm abc123def0
 ```
 
+Security notes:
+
+- Telegram masks account login values.
+- Do not send or store MT5 passwords.
+- Telegram never displays secrets or API keys.
+- If MT5 reports account mode as real/live, Telegram shows a warning.
+
+## MT5 Account Reporting
+
+The EA should periodically post account and positions snapshots, and post a deal
+report after a position closes.
+
+Account snapshot:
+
+```json
+{
+  "balance": 10000.0,
+  "equity": 10025.5,
+  "margin": 250.0,
+  "free_margin": 9775.5,
+  "margin_level": 4010.2,
+  "currency": "USD",
+  "account_login": "12345678",
+  "account_server": "Broker-Demo",
+  "trade_mode": "demo"
+}
+```
+
+Positions snapshot:
+
+```json
+{
+  "snapshot_at": "2026-05-02T14:15:00Z",
+  "positions": [
+    {
+      "ticket": 123456,
+      "symbol": "NAS100",
+      "side": "buy",
+      "lot": 0.02,
+      "entry_price": 18450.25,
+      "current_price": 18472.5,
+      "sl": 18400.0,
+      "tp": 18520.0,
+      "profit": 4.45,
+      "swap": 0.0,
+      "commission": -0.2,
+      "magic": 26043001,
+      "comment": "tv-smob",
+      "opened_at": "2026-05-02T13:55:00Z"
+    }
+  ]
+}
+```
+
+Deal report:
+
+```json
+{
+  "deal_ticket": 987654,
+  "position_ticket": 123456,
+  "symbol": "NAS100",
+  "side": "buy",
+  "lot": 0.02,
+  "entry_price": 18450.25,
+  "exit_price": 18490.0,
+  "profit": 7.95,
+  "commission": -0.2,
+  "swap": 0.0,
+  "net_profit": 7.75,
+  "opened_at": "2026-05-02T13:55:00Z",
+  "closed_at": "2026-05-02T14:20:00Z",
+  "reason": "tp1_closed",
+  "magic": 26043001,
+  "comment": "tv-smob"
+}
+```
+
 ## Project Structure
 
 ```
@@ -260,6 +360,7 @@ tv-mt5-bridge/
 │   ├── models.py        # Pydantic request/response models
 │   ├── validators.py    # Signal business logic validation
 │   ├── database.py      # SQLite connection and schema init
+│   ├── account_store.py # MT5 account, positions, deals, PnL storage
 │   ├── queue.py         # Queue operations (enqueue, fetch, ack)
 │   ├── telegram_bot.py  # Telegram notifications, commands, approvals
 │   ├── settings_store.py # Bot settings, pending approvals, audit log

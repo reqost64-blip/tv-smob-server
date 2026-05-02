@@ -4,12 +4,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import config
+from . import account_store as acct
 from .database import init_db
 from .models import (
     AckRequest,
+    AccountSnapshot,
+    DealReport,
     ErrorResponse,
     ExecutionReport,
     OkResponse,
+    PositionsSnapshot,
     SettingsChangeRequest,
     WebhookPayload,
 )
@@ -154,6 +158,24 @@ async def mt5_execution_report(report: ExecutionReport):
     return {"ok": True, "signal_id": report.signal_id}
 
 
+@app.post("/api/mt5/account-snapshot")
+async def mt5_account_snapshot(snapshot: AccountSnapshot):
+    acct.save_account_snapshot(snapshot)
+    return {"ok": True}
+
+
+@app.post("/api/mt5/positions-snapshot")
+async def mt5_positions_snapshot(snapshot: PositionsSnapshot):
+    acct.save_positions_snapshot(snapshot)
+    return {"ok": True, "positions": len(snapshot.positions)}
+
+
+@app.post("/api/mt5/deal-report")
+async def mt5_deal_report(report: DealReport):
+    acct.save_deal_report(report)
+    return {"ok": True, "deal_ticket": report.deal_ticket}
+
+
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -196,6 +218,26 @@ async def api_post_settings(body: SettingsChangeRequest, request: Request):
 @app.get("/api/audit-log")
 async def api_audit_log(limit: int = 100):
     return {"ok": True, "audit_log": audit_log(limit)}
+
+
+@app.get("/api/account")
+async def api_account():
+    return {"ok": True, "account": acct.latest_account_snapshot()}
+
+
+@app.get("/api/positions")
+async def api_positions():
+    return {"ok": True, "positions": acct.current_positions()}
+
+
+@app.get("/api/trades/today")
+async def api_trades_today():
+    return {"ok": True, "trades": acct.trades_today()}
+
+
+@app.get("/api/pnl/today")
+async def api_pnl_today():
+    return {"ok": True, "pnl": acct.pnl_today()}
 
 
 def normalize_control_symbol(symbol: str | None) -> str | None:

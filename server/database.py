@@ -87,6 +87,63 @@ def init_db() -> None:
                 created_at    TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS account_snapshots (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                balance         REAL NOT NULL,
+                equity          REAL NOT NULL,
+                margin          REAL,
+                free_margin     REAL,
+                margin_level    REAL,
+                currency        TEXT,
+                account_login   TEXT,
+                account_server  TEXT,
+                trade_mode      TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS positions_snapshots (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket         INTEGER NOT NULL,
+                symbol         TEXT NOT NULL,
+                side           TEXT NOT NULL,
+                lot            REAL NOT NULL,
+                entry_price    REAL,
+                current_price  REAL,
+                sl             REAL,
+                tp             REAL,
+                profit         REAL,
+                swap           REAL,
+                commission     REAL,
+                magic          INTEGER,
+                comment        TEXT,
+                opened_at      TEXT,
+                snapshot_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS deal_reports (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_ticket      INTEGER UNIQUE NOT NULL,
+                position_ticket  INTEGER,
+                symbol           TEXT NOT NULL,
+                side             TEXT NOT NULL,
+                lot              REAL NOT NULL,
+                entry_price      REAL,
+                exit_price       REAL,
+                profit           REAL,
+                commission       REAL,
+                swap             REAL,
+                net_profit       REAL,
+                opened_at        TEXT,
+                closed_at        TEXT,
+                reason           TEXT,
+                magic            INTEGER,
+                comment          TEXT,
+                created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),
             "dry_run": "true",

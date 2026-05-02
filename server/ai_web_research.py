@@ -30,14 +30,19 @@ def get_market_news_today() -> str:
     prompt = _base_prompt() + f"""
 Task: Market news today, {today}, timezone Europe/Berlin.
 Assets only: {ASSETS}.
-Output in Russian, max 8 bullets.
-Order: вывод, события, риск по активам.
+Output exactly with headings:
+Market News Today
+Вывод:
+События:
+Риск по активам:
+Sources:
+Russian text, max 8 bullets total. Sources must be short source names only.
 No long explanations. Do not invent events. If not confirmed, write "не нашёл подтверждения".
 """
     response = _call_responses_api(prompt, use_web=True)
     if _is_web_search_failure(response):
         return response + "\n\n" + NEWS_FALLBACK_MESSAGE
-    return response
+    return _ensure_market_news_sections(response)
 
 
 def get_economic_calendar_today() -> str:
@@ -126,8 +131,9 @@ def _call_responses_api(prompt: str, use_web: bool) -> str:
     if not text:
         return "Не нашёл подтверждения."
     sources = _extract_sources(data)
+    text = _remove_inline_urls(text)
     if sources:
-        text = text.rstrip() + "\n\nSources: " + "; ".join(sources[:5])
+        text = text.rstrip() + "\n\nSources:\n" + "\n".join(f"- {source}" for source in sources[:5])
     return _trim_telegram_answer(text)
 
 
@@ -196,7 +202,7 @@ def _extract_sources(data: dict) -> list[str]:
             title = source.get("title") or source.get("url")
             url = source.get("url")
             if title and url:
-                sources.append(f"{title}: {url}")
+                    sources.append(_short_source(title, url))
         if item.get("type") != "message":
             continue
         for content in item.get("content", []):
@@ -205,7 +211,7 @@ def _extract_sources(data: dict) -> list[str]:
                     title = annotation.get("title") or annotation.get("url")
                     url = annotation.get("url")
                     if title and url:
-                        sources.append(f"{title}: {url}")
+                        sources.append(_short_source(title, url))
     deduped = []
     for source in sources:
         if source not in deduped:
@@ -225,6 +231,26 @@ def _trim_telegram_answer(text: str) -> str:
         kept.append(line)
     result = "\n".join(kept)
     return result[:3500]
+
+
+def _remove_inline_urls(text: str) -> str:
+    text = re.sub(r"\s*\[[^\]]+\]\(https?://[^)]+\)", "", text)
+    text = re.sub(r"https?://\S+", "", text)
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
+
+
+def _short_source(title: str, url: str) -> str:
+    title = re.sub(r"\s+", " ", title or "").strip()
+    if title and not title.startswith("http"):
+        return title[:80]
+    host = re.sub(r"^https?://", "", url or "").split("/")[0]
+    return host[:80] if host else "source"
+
+
+def _ensure_market_news_sections(response: str) -> str:
+    if response.startswith("Market News Today") and "Вывод:" in response and "События:" in response:
+        return response
+    return "Market News Today\n" + response
 
 
 def _today_berlin() -> str:

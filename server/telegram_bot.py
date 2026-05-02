@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from . import config
+from . import account_store as acct
 from . import queue as q
 from .ai_command_parser import SYMBOLS, parse_natural_language_command
 from .ai_web_research import (
@@ -67,6 +68,7 @@ def send_telegram_message(text: str) -> bool:
         {
             "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
             "text": text,
+            "reply_markup": json.dumps(dashboard_keyboard(), ensure_ascii=False),
         }
     ).encode("utf-8")
 
@@ -134,6 +136,7 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
     stripped = text.strip()
     if not stripped:
         return "Empty command."
+    stripped = normalize_dashboard_button(stripped)
     if not stripped.startswith("/"):
         return handle_natural_language_command(stripped, chat_id or config.TELEGRAM_ADMIN_CHAT_ID)
 
@@ -142,19 +145,21 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
 
     if command == "/status":
         counts = q.command_counts()
-        last_report = q.last_execution_report()
+        account = acct.latest_account_snapshot()
+        positions = acct.current_positions()
+        pnl = acct.pnl_today()
         return "\n".join(
             [
                 "Server status",
                 "server: running",
                 f"trading: {'enabled' if get_setting('trading_enabled', config.TRADING_ENABLED) else 'disabled'}",
                 f"dry_run: {get_setting('dry_run', True)}",
+                f"last MT5 heartbeat: {acct.last_mt5_heartbeat() or 'n/a'}",
+                f"balance: {fmt_money(account.get('balance') if account else None)}",
+                f"equity: {fmt_money(account.get('equity') if account else None)}",
+                f"today pnl: {fmt_money(pnl['net_pnl'])}",
+                f"open positions: {len(positions)}",
                 f"queued commands: {counts.get('queued', 0)}",
-                f"sent commands: {counts.get('sent', 0)}",
-                f"acknowledged commands: {counts.get('acknowledged', 0)}",
-                f"last signal id: {q.last_signal_id() or 'none'}",
-                "last execution report:",
-                format_execution_report(last_report),
             ]
         )
 
@@ -173,6 +178,25 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
                 f"estimated PnL: {estimated_pnl if estimated_pnl is not None else 'n/a'}",
             ]
         )
+
+    if command == "/account":
+        return format_account()
+
+    if command in ("/balance", "/equity"):
+        account = acct.latest_account_snapshot()
+        if not account:
+            return "No account snapshot yet."
+        key = command.replace("/", "")
+        return f"{key}: {fmt_money(account.get(key))} {account.get('currency') or ''}".strip()
+
+    if command == "/positions":
+        return format_positions()
+
+    if command == "/trades":
+        return format_trades_today()
+
+    if command in ("/history_today", "/pnl_today"):
+        return format_history_today()
 
     if command == "/news":
         return attach_ai_risk_action_approval(get_market_news_today(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
@@ -265,6 +289,13 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
                 "/status - server and queue status",
                 "/last_trade - latest execution report",
                 "/today - today's signal summary",
+                "/account - latest MT5 account snapshot",
+                "/balance - account balance",
+                "/equity - account equity",
+                "/positions - current open positions",
+                "/trades - today's closed deals",
+                "/history_today - today's trade summary",
+                "/pnl_today - today's PnL summary",
                 "/news - today's market news",
                 "/calendar - today's economic calendar",
                 "/market_today - market risk overview",
@@ -283,6 +314,27 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         )
 
     return "Unknown command. Use /help."
+
+
+def dashboard_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [{"text": "Статус"}, {"text": "Сделки"}],
+            [{"text": "Новости"}, {"text": "⚙️ Управление"}],
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
+
+
+def normalize_dashboard_button(text: str) -> str:
+    mapping = {
+        "Статус": "/status",
+        "Сделки": "/trades",
+        "Новости": "/market_today",
+        "⚙️ Управление": "/settings",
+    }
+    return mapping.get(text, text)
 
 
 def handle_natural_language_command(text: str, chat_id: str) -> str:
@@ -495,6 +547,123 @@ def validate_change(setting_key: Optional[str], new_value, symbol: Optional[str]
         if unknown:
             return f"Unknown symbols are not allowed: {', '.join(unknown)}."
     return None
+
+
+def format_account() -> str:
+    account = acct.latest_account_snapshot()
+    if not account:
+        return "No account snapshot yet."
+    lines = [
+        "Account",
+        f"login: {mask_account_login(account.get('account_login'))}",
+        f"server: {account.get('account_server') or 'n/a'}",
+        f"balance: {fmt_money(account.get('balance'))} {account.get('currency') or ''}".strip(),
+        f"equity: {fmt_money(account.get('equity'))} {account.get('currency') or ''}".strip(),
+        f"margin: {fmt_money(account.get('margin'))}",
+        f"free margin: {fmt_money(account.get('free_margin'))}",
+        f"margin level: {fmt_money(account.get('margin_level'))}",
+        f"account mode: {format_trade_mode(account.get('trade_mode'))}",
+        f"updated: {account.get('created_at')}",
+    ]
+    if is_real_trade_mode(account.get("trade_mode")):
+        lines.append("WARNING: account mode is REAL.")
+    return "\n".join(lines)
+
+
+def format_positions() -> str:
+    positions = acct.current_positions()
+    if not positions:
+        return "No open positions."
+    lines = ["Open positions"]
+    for position in positions[:10]:
+        lines.extend(
+            [
+                f"{position.get('symbol')} {position.get('side')} {position.get('lot')}",
+                f"entry: {fmt_price(position.get('entry_price'))} current: {fmt_price(position.get('current_price'))}",
+                f"floating PnL: {fmt_money(position.get('profit'))}",
+                f"SL: {fmt_price(position.get('sl'))} TP: {fmt_price(position.get('tp'))}",
+                f"ticket: {position.get('ticket')}",
+            ]
+        )
+    if len(positions) > 10:
+        lines.append(f"...and {len(positions) - 10} more")
+    return "\n".join(lines)
+
+
+def format_trades_today() -> str:
+    trades = acct.trades_today()
+    if not trades:
+        return "No trades today."
+    lines = ["Trades today"]
+    for trade in trades[:10]:
+        lines.extend(
+            [
+                f"{trade.get('symbol')} {trade.get('side')} {trade.get('lot')}",
+                f"entry: {fmt_price(trade.get('entry_price'))} exit: {fmt_price(trade.get('exit_price'))}",
+                f"net PnL: {fmt_money(trade.get('net_profit'))}",
+                f"reason: {trade.get('reason') or 'n/a'}",
+            ]
+        )
+    if len(trades) > 10:
+        lines.append(f"...and {len(trades) - 10} more")
+    return "\n".join(lines)
+
+
+def format_history_today() -> str:
+    summary = acct.pnl_today()
+    return "\n".join(
+        [
+            "History today",
+            f"trades: {summary['trades_count']}",
+            f"wins: {summary['wins']}",
+            f"losses: {summary['losses']}",
+            f"net pnl: {fmt_money(summary['net_pnl'])}",
+            f"best trade: {fmt_money(summary['best_trade'])}",
+            f"worst trade: {fmt_money(summary['worst_trade'])}",
+        ]
+    )
+
+
+def mask_account_login(login) -> str:
+    if not login:
+        return "n/a"
+    text = str(login)
+    if len(text) <= 4:
+        return "*" * len(text)
+    return "*" * (len(text) - 4) + text[-4:]
+
+
+def format_trade_mode(trade_mode) -> str:
+    if trade_mode is None:
+        return "n/a"
+    normalized = str(trade_mode).lower()
+    if normalized in ("0", "demo"):
+        return "demo"
+    if normalized in ("1", "real", "live"):
+        return "real"
+    return str(trade_mode)
+
+
+def is_real_trade_mode(trade_mode) -> bool:
+    return format_trade_mode(trade_mode) == "real"
+
+
+def fmt_money(value) -> str:
+    if value is None:
+        return "n/a"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def fmt_price(value) -> str:
+    if value is None:
+        return "n/a"
+    try:
+        return f"{float(value):.5f}".rstrip("0").rstrip(".")
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def format_settings() -> str:

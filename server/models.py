@@ -45,6 +45,59 @@ class ExecutionReport(BaseModel):
     executed_at: Optional[str] = None
 
 
+class AccountSnapshot(BaseModel):
+    balance: float
+    equity: float
+    margin: Optional[float] = None
+    free_margin: Optional[float] = None
+    margin_level: Optional[float] = None
+    currency: Optional[str] = None
+    account_login: Optional[str] = None
+    account_server: Optional[str] = None
+    trade_mode: Optional[str] = None
+
+
+class PositionSnapshot(BaseModel):
+    ticket: int
+    symbol: str
+    side: str
+    lot: float
+    entry_price: Optional[float] = None
+    current_price: Optional[float] = None
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    profit: Optional[float] = None
+    swap: Optional[float] = None
+    commission: Optional[float] = None
+    magic: Optional[int] = None
+    comment: Optional[str] = None
+    opened_at: Optional[str] = None
+
+
+class PositionsSnapshot(BaseModel):
+    positions: list[PositionSnapshot] = Field(default_factory=list)
+    snapshot_at: Optional[str] = None
+
+
+class DealReport(BaseModel):
+    deal_ticket: int
+    position_ticket: Optional[int] = None
+    symbol: str
+    side: str
+    lot: float
+    entry_price: Optional[float] = None
+    exit_price: Optional[float] = None
+    profit: Optional[float] = None
+    commission: Optional[float] = None
+    swap: Optional[float] = None
+    net_profit: Optional[float] = None
+    opened_at: Optional[str] = None
+    closed_at: Optional[str] = None
+    reason: Optional[str] = None
+    magic: Optional[int] = None
+    comment: Optional[str] = None
+
+
 class ErrorResponse(BaseModel):
     ok: bool = False
     error: str
