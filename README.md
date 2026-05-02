@@ -43,6 +43,7 @@ DB_FILE=bridge.db
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
 TRADING_ENABLED=true
+OPENAI_API_KEY=
 ```
 
 ### 3. Run the server
@@ -73,6 +74,9 @@ Interactive API docs: `http://localhost:8000/docs`
 | POST   | `/api/mt5/ack`                | MT5 acknowledges command receipt         |
 | POST   | `/api/mt5/execution-report`   | MT5 reports order execution result       |
 | POST   | `/api/telegram/webhook`       | Telegram bot command webhook             |
+| GET    | `/api/settings`               | Current server-side bot settings         |
+| POST   | `/api/settings`               | Update a setting with `WEBHOOK_SECRET`   |
+| GET    | `/api/audit-log`              | Approval/audit history                   |
 
 ## Command Contract
 
@@ -110,22 +114,68 @@ Example close payload:
 }
 ```
 
-## Telegram Bot Control Layer
+## Telegram AI Control Layer
 
-Telegram support is read-only in this stage. The server sends notifications for
-incoming TradingView signals, queued commands, MT5 command delivery,
-acknowledgements, execution reports, rejected signals, and execution statuses such
-as `open_failed`, `opened`, `tp1_closed`, `tp2_closed`, `tp3_closed`, `be_moved`,
-and `position_closed`.
+Telegram support sends notifications for incoming TradingView signals, queued
+commands, MT5 command delivery, acknowledgements, execution reports, rejected
+signals, and execution statuses such as `open_failed`, `opened`, `tp1_closed`,
+`tp2_closed`, `tp3_closed`, `be_moved`, and `position_closed`.
+
+It also accepts safe natural-language control commands in Russian. Any setting
+change creates a pending approval first. The server applies the change only after
+`/confirm <approval_id>`. Rejections and applied changes are written to
+`audit_log`.
+
+Demo-first guardrails:
+
+- `dry_run` defaults to `true`.
+- Telegram cannot set `dry_run=false`.
+- Lot multipliers cannot exceed `3.0`.
+- Unknown symbols are rejected.
+- `trading_enabled=false` blocks new open signals on the server, while close
+  signals remain accepted.
+
+Allowed control symbols:
+
+```
+XAUUSD, NAS100, DJ30, US500, BTCUSD
+```
+
+Symbol aliases:
+
+```
+SP500 = US500
+US500 = US500
+NAS100 = NAS100
+DJ30 = DJ30
+XAUUSD = XAUUSD
+BTCUSD = BTCUSD
+```
+
+Symbol-specific lot settings:
+
+```
+symbol_lot_multiplier_XAUUSD
+symbol_lot_multiplier_NAS100
+symbol_lot_multiplier_DJ30
+symbol_lot_multiplier_US500
+symbol_lot_multiplier_BTCUSD
+```
 
 Required Render environment variables:
 
 ```
+WEBHOOK_SECRET=your-secret-here
+DB_FILE=bridge.db
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
+TRADING_ENABLED=true
+OPENAI_API_KEY=optional-openai-key
 ```
 
-Do not commit real Telegram tokens to GitHub.
+`OPENAI_API_KEY` is optional. If it is missing or parsing fails, the server uses
+a regex fallback parser for the supported Russian phrases. Do not commit real
+Telegram tokens, webhook secrets, or OpenAI keys to GitHub.
 
 Set the Telegram webhook to:
 
@@ -140,7 +190,44 @@ Supported Telegram commands:
 | `/status`     | Server status, trading flag, queue counts, last signal, last report |
 | `/last_trade` | Latest execution report                          |
 | `/today`      | Today's signal, opened, rejected, and PnL summary |
+| `/settings`   | Current bot settings                             |
+| `/risk`       | Current risk controls                            |
+| `/approvals`  | Pending approvals                                |
+| `/confirm <approval_id>` | Apply a pending approval              |
+| `/reject <approval_id>`  | Reject a pending approval              |
+| `/pause`      | Create approval to disable new open signals      |
+| `/resume`     | Create approval to enable new open signals       |
+| `/dryrun_on`  | Create approval to enable dry run                |
+| `/dryrun_off` | Blocked in demo-first mode                       |
 | `/help`       | Command list                                     |
+
+Supported Russian natural-language examples:
+
+```
+поставь лот 0.02 на nas100
+повысь лот на 20 процентов на nas100
+уменьши лот на 30 процентов на btcusd
+останови торговлю
+включи торговлю
+включи dry run
+выключи dry run
+покажи настройки
+какой риск сейчас
+покажи последние сделки
+```
+
+Example approval response:
+
+```
+Команда распознана:
+Параметр: symbol_lot_multiplier_NAS100
+Старое значение: 1.0
+Новое значение: 1.2
+Approval ID: abc123def0
+
+Для применения напиши:
+/confirm abc123def0
+```
 
 ## Project Structure
 
@@ -153,7 +240,9 @@ tv-mt5-bridge/
 │   ├── validators.py    # Signal business logic validation
 │   ├── database.py      # SQLite connection and schema init
 │   ├── queue.py         # Queue operations (enqueue, fetch, ack)
-│   ├── telegram_bot.py  # Telegram notifications and read-only commands
+│   ├── telegram_bot.py  # Telegram notifications, commands, approvals
+│   ├── settings_store.py # Bot settings, pending approvals, audit log
+│   ├── ai_command_parser.py # OpenAI parser with regex fallback
 │   ├── symbol_mapper.py # TV → MT5 symbol lookup
 │   ├── requirements.txt
 │   └── .env.example

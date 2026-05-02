@@ -4,7 +4,15 @@ from fastapi.responses import JSONResponse
 
 from . import config
 from .database import init_db
-from .models import WebhookPayload, AckRequest, ExecutionReport, ErrorResponse, OkResponse
+from .models import (
+    AckRequest,
+    ErrorResponse,
+    ExecutionReport,
+    OkResponse,
+    SettingsChangeRequest,
+    WebhookPayload,
+)
+from .settings_store import audit_log, get_setting, list_settings, parse_value, record_audit_event, set_setting
 from .validators import validate_signal
 from . import queue as q
 from .symbol_mapper import load_symbols
@@ -15,6 +23,7 @@ from .telegram_bot import (
     notify_event,
     parse_telegram_update,
     send_telegram_message,
+    validate_change,
 )
 
 app = FastAPI(title="TradingView → MT5 Bridge", version="1.0.0")
@@ -61,6 +70,10 @@ async def webhook_tradingview(request: Request):
     if validation_error:
         notify_event("rejected_signal", payload.signal_id, validation_error)
         return err(validation_error)
+
+    if payload.action == "open" and not get_setting("trading_enabled", config.TRADING_ENABLED):
+        notify_event("rejected_signal", payload.signal_id, "Trading disabled by server setting")
+        return err("Trading disabled by server setting")
 
     if q.signal_exists(payload.signal_id):
         notify_event("rejected_signal", payload.signal_id, "Duplicate signal_id")
@@ -139,6 +152,31 @@ async def telegram_webhook(request: Request):
     if config.TELEGRAM_ADMIN_CHAT_ID and chat_id != config.TELEGRAM_ADMIN_CHAT_ID:
         return err("Unauthorized chat", status=403)
 
-    response = handle_command(text)
+    response = handle_command(text, chat_id)
     send_telegram_message(response)
     return {"ok": True, "handled": True}
+
+
+@app.get("/api/settings")
+async def api_get_settings():
+    return {"ok": True, "settings": list_settings()}
+
+
+@app.post("/api/settings")
+async def api_post_settings(body: SettingsChangeRequest, request: Request):
+    header_secret = request.headers.get("x-webhook-secret", "")
+    if body.secret != config.WEBHOOK_SECRET and header_secret != config.WEBHOOK_SECRET:
+        return err("Invalid secret", status=403)
+    new_value = parse_value(str(body.value))
+    validation_error = validate_change(body.key, new_value, None)
+    if validation_error:
+        return err(validation_error)
+    old_value = get_setting(body.key)
+    set_setting(body.key, new_value)
+    record_audit_event("api_setting_updated", "api", body.key, old_value, new_value)
+    return {"ok": True, "key": body.key, "value": new_value}
+
+
+@app.get("/api/audit-log")
+async def api_audit_log(limit: int = 100):
+    return {"ok": True, "audit_log": audit_log(limit)}

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -52,3 +52,39 @@ class ErrorResponse(BaseModel):
 
 class OkResponse(BaseModel):
     ok: bool = True
+
+
+class SettingsChangeRequest(BaseModel):
+    key: str
+    value: Any
+    secret: Optional[str] = None
+
+
+class PendingApproval(BaseModel):
+    approval_id: str
+    chat_id: str
+    command_text: str
+    parsed_action: str
+    old_value: Optional[str] = None
+    new_value: str
+    status: Literal["pending", "approved", "rejected", "expired"] = "pending"
+    created_at: Optional[str] = None
+    expires_at: str
+
+
+class NaturalLanguageCommandResult(BaseModel):
+    intent: Literal[
+        "change_setting",
+        "pause_trading",
+        "resume_trading",
+        "show_settings",
+        "show_status",
+        "show_last_trade",
+        "unknown",
+    ]
+    symbol: Optional[Literal["XAUUSD", "NAS100", "DJ30", "US500", "BTCUSD"]] = None
+    setting_key: Optional[str] = None
+    operation: Optional[Literal["set", "increase_percent", "decrease_percent", "enable", "disable"]] = None
+    value: Optional[float | bool | str] = None
+    requires_confirmation: bool = True
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
