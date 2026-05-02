@@ -11,6 +11,7 @@ from .symbol_mapper import load_symbols
 from .telegram_bot import (
     NOTIFY_EXECUTION_STATUSES,
     handle_command,
+    notify_close_signal,
     notify_event,
     parse_telegram_update,
     send_telegram_message,
@@ -71,6 +72,8 @@ async def webhook_tradingview(request: Request):
         f"{payload.symbol} {payload.side} {payload.action}",
     )
     q.enqueue(payload)
+    if payload.action == "close":
+        notify_close_signal(payload)
     notify_event("command_queued", payload.signal_id)
     return {"ok": True, "signal_id": payload.signal_id, "status": "queued"}
 

@@ -4,17 +4,20 @@ from pydantic import BaseModel, Field
 
 
 class WebhookPayload(BaseModel):
+    version: Optional[str] = None
     secret: str
+    source: Optional[str] = None
     signal_id: str
-    symbol: str
-    mt5_symbol: str
+    parent_signal_id: Optional[str] = None
+    symbol: Optional[str] = None
+    mt5_symbol: Optional[str] = None
     timeframe: str
     time: str
-    action: Literal["open"]
+    action: Literal["open", "close"]
     side: Literal["buy", "sell"]
-    entry: float
-    sl: float
-    tp_count: Literal[1, 2, 3]
+    entry: Optional[float] = None
+    sl: Optional[float] = None
+    tp_count: Optional[Literal[1, 2, 3]] = None
     tp1: Optional[float] = None
     tp1_qty: Optional[float] = None
     tp2: Optional[float] = None
@@ -23,8 +26,10 @@ class WebhookPayload(BaseModel):
     tp3_qty: Optional[float] = None
     move_to_be_after_first_tp: bool = False
     be_trigger_tp_id: Optional[str] = None
-    lot: float = Field(gt=0)
-    magic_number: int
+    lot: Optional[float] = Field(default=None, gt=0)
+    magic_number: Optional[int] = None
+    reason: Optional[str] = None
+    close_price: Optional[float] = None
 
 
 class AckRequest(BaseModel):

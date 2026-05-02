@@ -5,6 +5,7 @@ from typing import Optional
 
 from . import config
 from . import queue as q
+from .models import WebhookPayload
 
 
 NOTIFY_EXECUTION_STATUSES = {
@@ -47,6 +48,27 @@ def notify_event(event_type: str, signal_id: Optional[str] = None, details: Opti
         parts.append(details)
     q.record_event(event_type, signal_id, {"details": details})
     send_telegram_message("\n".join(parts))
+
+
+def notify_close_signal(payload: WebhookPayload) -> None:
+    lines = [
+        "Close signal received",
+        f"symbol: {payload.mt5_symbol or payload.symbol}",
+        f"side: {payload.side}",
+        f"reason: {payload.reason}",
+        f"parent_signal_id: {payload.parent_signal_id}",
+    ]
+    q.record_event(
+        "close_signal_received",
+        payload.signal_id,
+        {
+            "symbol": payload.mt5_symbol or payload.symbol,
+            "side": payload.side,
+            "reason": payload.reason,
+            "parent_signal_id": payload.parent_signal_id,
+        },
+    )
+    send_telegram_message("\n".join(lines))
 
 
 def format_execution_report(report: Optional[dict]) -> str:

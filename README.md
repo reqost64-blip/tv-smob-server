@@ -74,6 +74,42 @@ Interactive API docs: `http://localhost:8000/docs`
 | POST   | `/api/mt5/execution-report`   | MT5 reports order execution result       |
 | POST   | `/api/telegram/webhook`       | Telegram bot command webhook             |
 
+## Command Contract
+
+The TradingView webhook accepts two command types:
+
+- `action=open` creates a new queued open command. It requires `entry`, `sl`,
+  `tp_count`, the matching TP price/quantity fields, `lot`, `magic_number`,
+  `symbol`, and `mt5_symbol`.
+- `action=close` creates a new queued close command. It requires `signal_id`,
+  `parent_signal_id`, `side`, `reason`, `magic_number`, and at least one of
+  `mt5_symbol` or `symbol`. It does not require `entry`, `sl`, `tp_count`, or TP
+  fields.
+
+Both command types are deduplicated by `signal_id`, stored in SQLite with
+`status=queued`, and delivered to MT5 by `GET /api/mt5/commands`.
+
+Example close payload:
+
+```json
+{
+  "version": "1.0",
+  "secret": "change-this-to-a-random-secret",
+  "source": "tradingview",
+  "signal_id": "tv-20260501-close-001",
+  "parent_signal_id": "tv-20260501-open-001",
+  "symbol": "SP500",
+  "mt5_symbol": "US500",
+  "timeframe": "3",
+  "time": "2026-05-01T20:55:00Z",
+  "action": "close",
+  "side": "sell",
+  "reason": "return_inside_orb",
+  "close_price": 7239.11,
+  "magic_number": 26043001
+}
+```
+
 ## Telegram Bot Control Layer
 
 Telegram support is read-only in this stage. The server sends notifications for

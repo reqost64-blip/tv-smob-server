@@ -5,6 +5,23 @@ QTY_TOLERANCE = 0.2
 
 def validate_signal(payload: WebhookPayload) -> str | None:
     """Return error string on failure, None on success."""
+    if payload.action == "close":
+        if not payload.signal_id:
+            return "Field 'signal_id' is required"
+        if not payload.parent_signal_id:
+            return "Field 'parent_signal_id' is required when action=close"
+        if not payload.mt5_symbol and not payload.symbol:
+            return "Field 'mt5_symbol' or 'symbol' is required when action=close"
+        if not payload.reason:
+            return "Field 'reason' is required when action=close"
+        if payload.magic_number is None:
+            return "Field 'magic_number' is required when action=close"
+        return None
+
+    for name in ("symbol", "mt5_symbol", "entry", "sl", "tp_count", "lot", "magic_number"):
+        if getattr(payload, name) is None:
+            return f"Field '{name}' is required when action=open"
+
     tc = payload.tp_count
 
     required_fields: list[tuple[str, float | None]] = []
