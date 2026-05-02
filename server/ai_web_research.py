@@ -12,48 +12,63 @@ from . import config
 
 ASSETS = "XAUUSD, NAS100, DJ30, US500, BTCUSD"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
-WEB_SEARCH_TIMEOUT_MESSAGE = "OpenAI web search долго отвечает. Повтори через минуту или задай вопрос через /ask."
+WEB_SEARCH_TIMEOUT_MESSAGE = "AI web search долго отвечает. Повтори через минуту или спроси через /ask."
 NEWS_FALLBACK_MESSAGE = (
-    "Web search временно недоступен. Проверь вручную важные новости: "
+    "Web search временно недоступен. Проверь вручную важные события: "
     "CPI, PPI, NFP, FOMC, Fed speakers, unemployment claims, PMI."
 )
 
 
 def answer_with_web_search(question: str, user_context: str = "") -> str:
     needs_web = _needs_fresh_data(question)
-    prompt = _base_prompt(user_context) + "\n\nUser question:\n" + question
+    prompt = _base_prompt(user_context) + "\n\nВопрос пользователя:\n" + question
     return _call_responses_api(prompt, use_web=needs_web)
 
 
 def get_market_news_today() -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Market news today, {today}, timezone Europe/Berlin.
-Assets only: {ASSETS}.
-Output exactly with headings:
-Market News Today
-Вывод:
-События:
-Риск по активам:
-Sources:
-Russian text, max 8 bullets total. Sources must be short source names only.
-No long explanations. Do not invent events. If not confirmed, write "не нашёл подтверждения".
+Задача: рыночные новости на сегодня, {today}, timezone Europe/Berlin.
+Активы только: {ASSETS}.
+
+Верни строго в таком виде:
+⚡ ВЫВОД
+1-2 короткие строки.
+
+▌ СОБЫТИЯ
+1. HH:MM Berlin — событие
+   Риск: высокий/средний/низкий
+
+▌ РИСК ПО АКТИВАМ
+XAUUSD: высокий/средний/низкий
+NAS100: высокий/средний/низкий
+DJ30: высокий/средний/низкий
+US500: высокий/средний/низкий
+BTCUSD: высокий/средний/низкий
+
+▌ AI-КОММЕНТАРИЙ
+Коротко: где вероятна волатильность и что контролировать.
+
+Источники:
+1. Короткое название источника
+
+Правила: русский язык, максимум 8 пунктов событий, без длинных URL, не выдумывай события.
 """
     response = _call_responses_api(prompt, use_web=True)
     if _is_web_search_failure(response):
         return response + "\n\n" + NEWS_FALLBACK_MESSAGE
-    return _ensure_market_news_sections(response)
+    return response
 
 
 def get_economic_calendar_today() -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Economic calendar today, {today}, timezone Europe/Berlin.
-Assets only: {ASSETS}.
-For each event: time Europe/Berlin, currency, event, importance, affected assets.
-Output in Russian, max 8 bullets.
-Order: вывод, события, риск по активам.
-No long explanations. Do not invent events. If unavailable, write "не нашёл подтверждения".
+Задача: экономический календарь на сегодня, {today}, timezone Europe/Berlin.
+Активы только: {ASSETS}.
+Для каждого события: время Europe/Berlin, валюта, событие, важность, затронутые активы.
+Формат как для рыночной сводки: вывод, события, риск по активам, AI-комментарий, источники.
+Русский язык, максимум 8 событий, без длинных URL. Не выдумывай события.
+Если подтверждения нет, напиши: "не нашёл подтверждения".
 """
     return _call_responses_api(prompt, use_web=True)
 
@@ -61,10 +76,10 @@ No long explanations. Do not invent events. If unavailable, write "не нашё
 def get_asset_impact_summary(asset: str) -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Explain what is affecting {asset} today, {today}, timezone Europe/Berlin.
-Focus on confirmed market drivers, scheduled events, and risk.
-Output in Russian, max 8 bullets. Order: вывод, события, риск.
-No long explanations.
+Задача: объяснить, что влияет на {asset} сегодня, {today}, timezone Europe/Berlin.
+Фокус: подтверждённые драйверы рынка, календарь, доходности/доллар/риск-аппетит, если релевантно.
+Формат: вывод, события, риск, AI-комментарий, источники.
+Русский язык, максимум 8 пунктов, без длинных URL, без торговых приказов.
 """
     return _call_responses_api(prompt, use_web=True)
 
@@ -72,13 +87,12 @@ No long explanations.
 def get_market_today_summary() -> str:
     today = _today_berlin()
     prompt = _base_prompt() + f"""
-Task: Trading risk overview today, {today}, timezone Europe/Berlin.
-Assets only: {ASSETS}.
-Include high impact events, volatility risk, assets to avoid before news.
-Any action suggestions must say confirmation required.
-Output in Russian, max 8 bullets.
-Order: вывод, события, риск по активам.
-No long explanations.
+Задача: краткий риск-обзор рынка на сегодня, {today}, timezone Europe/Berlin.
+Активы только: {ASSETS}.
+Включи high impact events, зоны возможной волатильности, активы с повышенным новостным риском.
+Любое риск-действие формулируй только как требующее pending approval и /confirm.
+Формат как для рыночной сводки: вывод, события, риск по активам, AI-комментарий, источники.
+Русский язык, максимум 8 пунктов, без длинных URL.
 """
     return _call_responses_api(prompt, use_web=True)
 
@@ -129,27 +143,28 @@ def _call_responses_api(prompt: str, use_web: bool) -> str:
 
     text = _extract_output_text(data)
     if not text:
-        return "Не нашёл подтверждения."
+        return "Не нашёл подтверждённых данных."
     sources = _extract_sources(data)
     text = _remove_inline_urls(text)
-    if sources:
-        text = text.rstrip() + "\n\nSources:\n" + "\n".join(f"- {source}" for source in sources[:5])
+    if sources and "источники" not in text.lower() and "sources" not in text.lower():
+        text = text.rstrip() + "\n\nИсточники:\n" + "\n".join(f"{index}. {source}" for index, source in enumerate(sources[:5], start=1))
     return _trim_telegram_answer(text)
 
 
 def _base_prompt(user_context: str = "") -> str:
     return f"""
-You are an informational market research assistant for a Telegram bot.
-Safety rules:
-- Do not open or close trades.
-- Do not change risk settings.
-- Do not claim that any action was applied.
-- If suggesting a risk action, say it requires /confirm after a pending approval.
-- Do not invent events or sources.
-- Keep the answer short: maximum 8 bullets, no filler.
-- Answer in Russian unless the user explicitly asks otherwise.
-Assets: {ASSETS}.
-User context: {user_context or "admin Telegram chat for a demo-first TradingView to MT5 bridge"}.
+Ты информационный рыночный AI-ассистент для Telegram-бота трейдинг-системы.
+Правила безопасности:
+- Не открывай и не закрывай сделки.
+- Не меняй риск-настройки.
+- Не утверждай, что действие уже применено.
+- Если предлагаешь риск-действие, скажи, что оно требует pending approval и /confirm.
+- Не выдумывай события и источники.
+- Пиши кратко: максимум 8 пунктов, без воды.
+- Язык ответа: русский.
+- Не вставляй длинные URL в текст.
+Активы: {ASSETS}.
+Контекст: {user_context or "admin Telegram chat for a demo-first TradingView to MT5 bridge"}.
 """
 
 
@@ -161,9 +176,10 @@ def _needs_fresh_data(question: str) -> bool:
         "новост",
         "календар",
         "падает",
+        "растёт",
         "растет",
         "движ",
-        "рынк",
+        "рынок",
         "gold",
         "xau",
         "nas100",
@@ -202,7 +218,7 @@ def _extract_sources(data: dict) -> list[str]:
             title = source.get("title") or source.get("url")
             url = source.get("url")
             if title and url:
-                    sources.append(_short_source(title, url))
+                sources.append(_short_source(title, url))
         if item.get("type") != "message":
             continue
         for content in item.get("content", []):
@@ -247,15 +263,9 @@ def _short_source(title: str, url: str) -> str:
     return host[:80] if host else "source"
 
 
-def _ensure_market_news_sections(response: str) -> str:
-    if response.startswith("Market News Today") and "Вывод:" in response and "События:" in response:
-        return response
-    return "Market News Today\n" + response
-
-
 def _today_berlin() -> str:
     return datetime.now(BERLIN_TZ).strftime("%Y-%m-%d")
 
 
 def _is_web_search_failure(response: str) -> bool:
-    return response.startswith("OpenAI web search долго отвечает") or response.startswith("AI web research error:")
+    return response.startswith(WEB_SEARCH_TIMEOUT_MESSAGE) or response.startswith("AI web research error:")
