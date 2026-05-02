@@ -1,11 +1,20 @@
 import json
+import re
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from . import config
 from . import queue as q
 from .ai_command_parser import SYMBOLS, parse_natural_language_command
+from .ai_web_research import (
+    answer_with_web_search,
+    get_asset_impact_summary,
+    get_economic_calendar_today,
+    get_market_news_today,
+    get_market_today_summary,
+)
 from .models import WebhookPayload
 from .settings_store import (
     approve_pending_approval,
@@ -41,6 +50,11 @@ KNOWN_SETTING_KEYS = {
     "symbol_lot_multiplier_DJ30",
     "symbol_lot_multiplier_US500",
     "symbol_lot_multiplier_BTCUSD",
+    "symbol_paused_until_XAUUSD",
+    "symbol_paused_until_NAS100",
+    "symbol_paused_until_DJ30",
+    "symbol_paused_until_US500",
+    "symbol_paused_until_BTCUSD",
 }
 
 
@@ -160,6 +174,25 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
             ]
         )
 
+    if command == "/news":
+        return attach_ai_risk_action_approval(get_market_news_today(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
+
+    if command == "/calendar":
+        return attach_ai_risk_action_approval(get_economic_calendar_today(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
+
+    if command == "/market_today":
+        return attach_ai_risk_action_approval(get_market_today_summary(), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
+
+    if command == "/ask":
+        question = stripped[len(parts[0]) :].strip()
+        if not question:
+            return "Usage: /ask <question>"
+        return attach_ai_risk_action_approval(
+            answer_with_web_search(question, format_risk()),
+            chat_id or config.TELEGRAM_ADMIN_CHAT_ID,
+            stripped,
+        )
+
     if command == "/settings":
         return format_settings()
 
@@ -232,6 +265,10 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
                 "/status - server and queue status",
                 "/last_trade - latest execution report",
                 "/today - today's signal summary",
+                "/news - today's market news",
+                "/calendar - today's economic calendar",
+                "/market_today - market risk overview",
+                "/ask <question> - ask AI research assistant",
                 "/settings - bot settings",
                 "/risk - risk settings",
                 "/approvals - pending approvals",
@@ -249,6 +286,14 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
 
 
 def handle_natural_language_command(text: str, chat_id: str) -> str:
+    symbol_pause = parse_symbol_pause_request(text)
+    if symbol_pause:
+        return create_change_approval(chat_id, text, symbol_pause)
+
+    market_response = handle_market_language_query(text, chat_id)
+    if market_response:
+        return market_response
+
     parsed = parse_natural_language_command(text)
     if parsed.intent == "show_settings":
         return format_settings()
@@ -265,6 +310,78 @@ def handle_natural_language_command(text: str, chat_id: str) -> str:
     if parsed.intent == "resume_trading":
         parsed_action.update({"setting_key": "trading_enabled", "operation": "enable", "value": True})
     return create_change_approval(chat_id, text, parsed_action)
+
+
+def handle_market_language_query(text: str, chat_id: str) -> Optional[str]:
+    normalized = text.lower()
+    if any(phrase in normalized for phrase in ("какие новости сегодня", "новости сегодня", "что сегодня важно по рынку")):
+        return attach_ai_risk_action_approval(get_market_news_today(), chat_id, text)
+    if "календар" in normalized and any(word in normalized for word in ("сегодня", "рын", "эконом")):
+        return attach_ai_risk_action_approval(get_economic_calendar_today(), chat_id, text)
+    if "что сегодня важно" in normalized or "риск по рынку" in normalized:
+        return attach_ai_risk_action_approval(get_market_today_summary(), chat_id, text)
+
+    asset = detect_asset_query(normalized)
+    if asset and any(marker in normalized for marker in ("влияет", "падает", "растет", "движ", "почему", "сегодня")):
+        return attach_ai_risk_action_approval(get_asset_impact_summary(asset), chat_id, text)
+    if any(marker in normalized for marker in ("почему nas100", "почему us500", "почему sp500", "почему dj30", "почему xau", "почему btc")):
+        return attach_ai_risk_action_approval(answer_with_web_search(text, format_risk()), chat_id, text)
+    return None
+
+
+def attach_ai_risk_action_approval(response: str, chat_id: str, command_text: str) -> str:
+    parsed_action = parse_symbol_pause_request(response)
+    if not parsed_action:
+        return response
+    parsed_action["reason"] = "high impact news"
+    approval_text = create_change_approval(chat_id, command_text, parsed_action)
+    return response.rstrip() + "\n\nPending approval created from AI risk suggestion:\n" + approval_text
+
+
+def parse_symbol_pause_request(text: str) -> Optional[dict]:
+    normalized = text.lower()
+    if not any(word in normalized for word in ("останов", "пауза", "не трог", "не торг", "pause", "stop")):
+        return None
+    asset = detect_asset_query(normalized)
+    if not asset:
+        return None
+    duration_match = re.search(r"(?:на|for)\s+(\d{1,4})\s*(мин|минут|minutes?|m\b|час|часа|часов|hours?|h\b)", normalized)
+    duration_minutes = 30
+    if duration_match:
+        amount = int(duration_match.group(1))
+        unit = duration_match.group(2)
+        duration_minutes = amount * 60 if unit.startswith("час") or unit.startswith("hour") or unit == "h" else amount
+    paused_until = (datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)).replace(microsecond=0).isoformat()
+    return {
+        "intent": "pause_symbol",
+        "symbol": asset,
+        "setting_key": f"symbol_paused_until_{asset}",
+        "operation": "set",
+        "value": paused_until,
+        "duration_minutes": duration_minutes,
+        "reason": "telegram risk action request",
+    }
+
+
+def detect_asset_query(normalized: str) -> Optional[str]:
+    aliases = {
+        "xauusd": "XAUUSD",
+        "золото": "XAUUSD",
+        "gold": "XAUUSD",
+        "nas100": "NAS100",
+        "nasdaq": "NAS100",
+        "dj30": "DJ30",
+        "dow": "DJ30",
+        "us500": "US500",
+        "sp500": "US500",
+        "btc": "BTCUSD",
+        "btcusd": "BTCUSD",
+        "биткоин": "BTCUSD",
+    }
+    for alias, asset in aliases.items():
+        if alias in normalized:
+            return asset
+    return None
 
 
 def create_change_approval(chat_id: str, command_text: str, parsed_action: dict) -> str:
@@ -332,6 +449,15 @@ def validate_change(setting_key: Optional[str], new_value, symbol: Optional[str]
             return "Lot multiplier must be greater than 0."
         if numeric_value > 3.0:
             return "Lot multiplier cannot exceed 3.0."
+    if setting_key.startswith("symbol_paused_until_"):
+        setting_symbol = setting_key.replace("symbol_paused_until_", "")
+        if setting_symbol not in SYMBOLS or setting_symbol not in allowed:
+            return f"Unknown or disallowed symbol: {setting_symbol}."
+        if new_value:
+            try:
+                datetime.fromisoformat(str(new_value))
+            except ValueError:
+                return "symbol pause expiry must be an ISO datetime."
     if setting_key == "global_lot_multiplier":
         try:
             numeric_value = float(new_value)
@@ -394,6 +520,11 @@ def format_risk() -> str:
         "symbol_lot_multiplier_DJ30",
         "symbol_lot_multiplier_US500",
         "symbol_lot_multiplier_BTCUSD",
+        "symbol_paused_until_XAUUSD",
+        "symbol_paused_until_NAS100",
+        "symbol_paused_until_DJ30",
+        "symbol_paused_until_US500",
+        "symbol_paused_until_BTCUSD",
     ]
     lines = ["Risk"]
     for key in keys:

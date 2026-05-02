@@ -44,6 +44,8 @@ TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
 TRADING_ENABLED=true
 OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.5
+ENABLE_AI_WEB_SEARCH=true
 ```
 
 ### 3. Run the server
@@ -171,11 +173,19 @@ TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
 TRADING_ENABLED=true
 OPENAI_API_KEY=optional-openai-key
+OPENAI_MODEL=gpt-5.5
+ENABLE_AI_WEB_SEARCH=true
 ```
 
 `OPENAI_API_KEY` is optional. If it is missing or parsing fails, the server uses
 a regex fallback parser for the supported Russian phrases. Do not commit real
 Telegram tokens, webhook secrets, or OpenAI keys to GitHub.
+
+`ENABLE_AI_WEB_SEARCH=true` enables OpenAI Responses API web search for market
+news and fresh-data questions. Market research answers are informational only:
+the bot does not open trades, close trades, or change risk based on news. If an
+AI answer contains a risk action suggestion such as pausing a symbol, the server
+creates a pending approval and applies it only after `/confirm <approval_id>`.
 
 Set the Telegram webhook to:
 
@@ -190,6 +200,10 @@ Supported Telegram commands:
 | `/status`     | Server status, trading flag, queue counts, last signal, last report |
 | `/last_trade` | Latest execution report                          |
 | `/today`      | Today's signal, opened, rejected, and PnL summary |
+| `/news`       | Today's market news for USD, indices, gold, crypto, oil if relevant |
+| `/calendar`   | Today's high-impact economic calendar in Europe/Berlin time |
+| `/market_today` | Short trading risk overview for today          |
+| `/ask <question>` | Ask the AI research assistant; uses web search for fresh data |
 | `/settings`   | Current bot settings                             |
 | `/risk`       | Current risk controls                            |
 | `/approvals`  | Pending approvals                                |
@@ -214,6 +228,11 @@ Supported Russian natural-language examples:
 покажи настройки
 какой риск сейчас
 покажи последние сделки
+какие новости сегодня
+что сегодня важно по рынку
+что влияет на золото сегодня
+почему nas100 падает
+останови торговлю по NAS100 на 30 минут
 ```
 
 Example approval response:
@@ -243,6 +262,7 @@ tv-mt5-bridge/
 │   ├── telegram_bot.py  # Telegram notifications, commands, approvals
 │   ├── settings_store.py # Bot settings, pending approvals, audit log
 │   ├── ai_command_parser.py # OpenAI parser with regex fallback
+│   ├── ai_web_research.py # Responses API market news and web research
 │   ├── symbol_mapper.py # TV → MT5 symbol lookup
 │   ├── requirements.txt
 │   └── .env.example

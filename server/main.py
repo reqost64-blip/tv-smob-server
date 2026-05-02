@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -27,6 +28,16 @@ from .telegram_bot import (
 )
 
 app = FastAPI(title="TradingView → MT5 Bridge", version="1.0.0")
+
+
+SYMBOL_ALIASES = {
+    "SP500": "US500",
+    "US500": "US500",
+    "NAS100": "NAS100",
+    "DJ30": "DJ30",
+    "XAUUSD": "XAUUSD",
+    "BTCUSD": "BTCUSD",
+}
 
 
 def err(msg: str, status: int = 400) -> JSONResponse:
@@ -74,6 +85,11 @@ async def webhook_tradingview(request: Request):
     if payload.action == "open" and not get_setting("trading_enabled", config.TRADING_ENABLED):
         notify_event("rejected_signal", payload.signal_id, "Trading disabled by server setting")
         return err("Trading disabled by server setting")
+
+    paused_symbol = normalize_control_symbol(payload.mt5_symbol or payload.symbol)
+    if payload.action == "open" and paused_symbol and is_symbol_paused(paused_symbol):
+        notify_event("rejected_signal", payload.signal_id, f"{paused_symbol} paused by server setting")
+        return err(f"{paused_symbol} paused by server setting")
 
     if q.signal_exists(payload.signal_id):
         notify_event("rejected_signal", payload.signal_id, "Duplicate signal_id")
@@ -180,3 +196,22 @@ async def api_post_settings(body: SettingsChangeRequest, request: Request):
 @app.get("/api/audit-log")
 async def api_audit_log(limit: int = 100):
     return {"ok": True, "audit_log": audit_log(limit)}
+
+
+def normalize_control_symbol(symbol: str | None) -> str | None:
+    if not symbol:
+        return None
+    return SYMBOL_ALIASES.get(symbol.upper())
+
+
+def is_symbol_paused(symbol: str) -> bool:
+    paused_until = get_setting(f"symbol_paused_until_{symbol}", "")
+    if not paused_until:
+        return False
+    try:
+        expiry = datetime.fromisoformat(str(paused_until))
+    except ValueError:
+        return False
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) < expiry

@@ -101,6 +101,11 @@ def init_db() -> None:
             "symbol_lot_multiplier_DJ30": "1.0",
             "symbol_lot_multiplier_US500": "1.0",
             "symbol_lot_multiplier_BTCUSD": "1.0",
+            "symbol_paused_until_XAUUSD": "",
+            "symbol_paused_until_NAS100": "",
+            "symbol_paused_until_DJ30": "",
+            "symbol_paused_until_US500": "",
+            "symbol_paused_until_BTCUSD": "",
         }
         for key, value in defaults.items():
             conn.execute(
