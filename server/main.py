@@ -1,6 +1,10 @@
+import base64
+import binascii
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -15,6 +19,7 @@ from .models import (
     ExecutionReport,
     NativeMT5AccountSnapshot,
     NativeMT5Event,
+    NativeMT5Screenshot,
     OkResponse,
     PositionsSnapshot,
     SettingsChangeRequest,
@@ -26,11 +31,13 @@ from . import queue as q
 from .symbol_mapper import load_symbols
 from .telegram_bot import (
     handle_command,
+    format_native_screenshot_caption,
     notify_close_signal,
     notify_event,
     notify_execution,
     notify_native_event,
     parse_telegram_update,
+    send_telegram_photo,
     send_telegram_message,
     should_notify_execution,
     validate_change,
@@ -39,6 +46,19 @@ from .telegram_bot import (
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Native MT5 Notification Server", version="1.1.0")
+
+NATIVE_SCREENSHOT_EVENTS = {
+    "opened",
+    "tp1_closed",
+    "tp2_closed",
+    "tp3_closed",
+    "be_moved",
+    "position_closed",
+    "closed_by_signal",
+}
+MAX_NATIVE_SCREENSHOT_BYTES = 10 * 1024 * 1024
+SCREENSHOT_DIR = Path("data") / "screenshots"
+SCREENSHOTS_TO_KEEP = 100
 
 
 SYMBOL_ALIASES = {
@@ -223,6 +243,31 @@ async def mt5_native_account(snapshot: NativeMT5AccountSnapshot, request: Reques
     return {"ok": True}
 
 
+@app.post("/api/mt5/native-screenshot")
+async def mt5_native_screenshot(screenshot: NativeMT5Screenshot, request: Request):
+    if not native_secret_matches(screenshot.secret, request):
+        return err("Invalid secret", status=403)
+
+    event_type = str(screenshot.event_type or "").strip().lower()
+    if event_type not in NATIVE_SCREENSHOT_EVENTS:
+        return err(f"Screenshot event_type '{event_type}' is not allowed")
+
+    try:
+        image_bytes = decode_native_screenshot(screenshot.image_base64)
+    except ValueError as exc:
+        return err(str(exc))
+
+    file_path = save_native_screenshot_file(screenshot, event_type, image_bytes)
+    prune_native_screenshots()
+    event = screenshot.model_dump(mode="json", exclude={"secret", "image_base64"})
+    event["event_type"] = event_type
+    caption = format_native_screenshot_caption(event)
+    sent = send_telegram_photo(file_path, caption)
+    if not sent:
+        return JSONResponse({"ok": False, "error": "Telegram sendPhoto failed"}, status_code=502)
+    return {"ok": True, "event_type": event_type, "sent": True}
+
+
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -313,3 +358,52 @@ def native_secret_matches(body_secret: str | None, request: Request) -> bool:
         or request.headers.get("x-mt5-native-secret", "") == expected
         or request.headers.get("x-webhook-secret", "") == expected
     )
+
+
+def decode_native_screenshot(image_base64: str) -> bytes:
+    data = str(image_base64 or "").strip()
+    if not data:
+        raise ValueError("image_base64 is required")
+    if data.lower().startswith("data:") and "," in data:
+        data = data.split(",", 1)[1]
+    data = "".join(data.split())
+    try:
+        image_bytes = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("Invalid base64 image data")
+    if not image_bytes:
+        raise ValueError("Decoded image is empty")
+    if len(image_bytes) > MAX_NATIVE_SCREENSHOT_BYTES:
+        raise ValueError("Screenshot image too large. Max size is 10 MB.")
+    return image_bytes
+
+
+def save_native_screenshot_file(screenshot: NativeMT5Screenshot, event_type: str, image_bytes: bytes) -> Path:
+    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    symbol = safe_filename_part(screenshot.symbol or "unknown")
+    bot_id = safe_filename_part(screenshot.bot_id or "native")
+    filename = f"{timestamp}_{event_type}_{symbol}_{bot_id}_{uuid4().hex[:10]}.png"
+    file_path = SCREENSHOT_DIR / filename
+    file_path.write_bytes(image_bytes)
+    return file_path
+
+
+def prune_native_screenshots() -> None:
+    if not SCREENSHOT_DIR.exists():
+        return
+    files = sorted(
+        [path for path in SCREENSHOT_DIR.glob("*.png") if path.is_file()],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_file in files[SCREENSHOTS_TO_KEEP:]:
+        try:
+            old_file.unlink()
+        except OSError:
+            logger.info("Could not remove old native screenshot file")
+
+
+def safe_filename_part(value: str) -> str:
+    safe = "".join(char if char.isalnum() or char in ("-", "_", ".") else "_" for char in str(value))
+    return safe[:48] or "unknown"

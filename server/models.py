@@ -139,6 +139,30 @@ class NativeMT5AccountSnapshot(BaseModel):
     time: Optional[str] = None
 
 
+class NativeMT5Screenshot(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    secret: str
+    source: Optional[str] = None
+    bot_id: Optional[str] = None
+    symbol: Optional[str] = None
+    magic_number: Optional[int] = None
+    event_type: str
+    caption: Optional[str] = None
+    image_base64: str
+    time: Optional[str] = None
+    side: Optional[str] = None
+    lot: Optional[float] = None
+    entry: Optional[float] = None
+    sl: Optional[float] = None
+    tp1: Optional[float] = None
+    tp2: Optional[float] = None
+    tp3: Optional[float] = None
+    profit: Optional[float] = None
+    balance: Optional[float] = None
+    equity: Optional[float] = None
+
+
 class ErrorResponse(BaseModel):
     ok: bool = False
     error: str

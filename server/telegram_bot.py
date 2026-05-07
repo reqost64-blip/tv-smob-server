@@ -114,6 +114,52 @@ def send_telegram_message(text: str) -> bool:
         return False
 
 
+def send_telegram_photo(photo_path, caption: str = "") -> bool:
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ADMIN_CHAT_ID:
+        return False
+    boundary = "----tvsmob" + os.urandom(12).hex()
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"
+    fields = {
+        "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
+        "caption": str(caption or "")[:1024],
+        "reply_markup": json.dumps(dashboard_keyboard(), ensure_ascii=False),
+    }
+    body = bytearray()
+    for name, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        body.extend(str(value).encode("utf-8"))
+        body.extend(b"\r\n")
+    filename = os.path.basename(str(photo_path)) or "screenshot.png"
+    try:
+        with open(photo_path, "rb") as photo_file:
+            photo_bytes = photo_file.read()
+    except OSError:
+        return False
+    body.extend(f"--{boundary}\r\n".encode("utf-8"))
+    body.extend(
+        (
+            'Content-Disposition: form-data; name="photo"; '
+            f'filename="{filename}"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+        ).encode("utf-8")
+    )
+    body.extend(photo_bytes)
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+    try:
+        request = urllib.request.Request(
+            url,
+            data=bytes(body),
+            method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        with urllib.request.urlopen(request, timeout=10):
+            return True
+    except Exception:
+        return False
+
+
 def should_notify_execution(status: str) -> bool:
     return str(status or "").strip().lower() in ALLOWED_TRADE_STATUSES
 
@@ -395,6 +441,113 @@ def format_native_event_notification(event_type: str, event: NativeMT5Event) -> 
     return format_native_mt5_event_message(payload)
 
 
+
+
+def format_native_screenshot_caption(event: dict) -> str:
+    event = event or {}
+    event_type = str(event.get("event_type") or "").strip().lower()
+    symbol = event.get("symbol") or "n/a"
+    side = fmt_native_side(event.get("side"))
+
+    if event_type == "opened":
+        lines = [
+            "🟢 СДЕЛКА ОТКРЫТА",
+            f"{symbol} | {side} | {fmt_native_lot(event.get('lot'))}",
+            "",
+            f"Entry: {fmt_native_price(event.get('entry'))}",
+            f"SL: {fmt_native_price(event.get('sl'))}",
+        ]
+        if event.get("tp1") is not None:
+            lines.append(f"TP1: {fmt_native_price(event.get('tp1'))}")
+        if event.get("tp2") is not None:
+            lines.append(f"TP2: {fmt_native_price(event.get('tp2'))}")
+        if event.get("tp3") is not None:
+            lines.append(f"TP3: {fmt_native_price(event.get('tp3'))}")
+        lines.append("Режим: Native MT5")
+        return "\n".join(lines)
+
+    if event_type == "tp1_closed":
+        return "\n".join(["🎯 TP1 ВЗЯТ", f"{symbol} | {side}", "", "SL переведён в BE"])
+
+    if event_type == "tp2_closed":
+        return "\n".join(["🎯 TP2 ВЗЯТ", f"{symbol} | {side}"])
+
+    if event_type == "tp3_closed":
+        return "\n".join(["🎯 TP3 ВЗЯТ", f"{symbol} | {side}", "", "Финальная фиксация"])
+
+    if event_type == "be_moved":
+        return "\n".join(
+            [
+                "🛡 БЕЗУБЫТОК АКТИВИРОВАН",
+                f"{symbol} | {side}",
+                "",
+                f"BE: {fmt_native_price(event.get('entry'))}",
+                "Риск по сделке = 0",
+            ]
+        )
+
+    if event_type in {"position_closed", "closed_by_signal"}:
+        profit = event.get("profit")
+        try:
+            profit_value = float(profit or 0)
+        except (TypeError, ValueError):
+            profit_value = 0.0
+        icon = "✅" if profit_value > 0 else "🔴" if profit_value < 0 else "⚪"
+        return "\n".join(
+            [
+                f"{icon} СДЕЛКА ЗАКРЫТА",
+                f"{symbol} | {side}",
+                "",
+                f"Итог: {fmt_native_money(profit, signed=True)}",
+                f"Баланс: {fmt_native_money(event.get('balance'), signed=False)}",
+                f"Equity: {fmt_native_money(event.get('equity'), signed=False)}",
+            ]
+        )
+
+    return str(event.get("caption") or "").strip()[:1024]
+
+
+def fmt_native_price(value):
+    if value is None or value == "":
+        return "OFF"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def fmt_native_money(value, signed=True):
+    if value is None or value == "":
+        return "n/a"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if not signed:
+        return f"{number:.2f} €"
+    if number > 0:
+        return f"+{number:.2f} €"
+    if number < 0:
+        return f"{number:.2f} €"
+    return "0.00 €"
+
+
+def fmt_native_lot(value):
+    if value is None or value == "":
+        return "n/a"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def fmt_native_side(value):
+    normalized = str(value or "").strip().lower()
+    if normalized == "buy":
+        return "BUY"
+    if normalized == "sell":
+        return "SELL"
+    return str(value or "n/a").upper()
 
 
 def format_execution_notification(status: str, report, payload: Optional[dict]) -> str:
