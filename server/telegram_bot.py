@@ -18,7 +18,7 @@ from .ai_web_research import (
     get_market_news_today,
     get_market_today_summary,
 )
-from .models import WebhookPayload
+from .models import NativeMT5Event, WebhookPayload
 from .settings_store import (
     approve_pending_approval,
     create_pending_approval,
@@ -49,6 +49,19 @@ ALLOWED_TRADE_STATUSES = {
     "close_rejected",
 }
 NOTIFY_EXECUTION_STATUSES = ALLOWED_TRADE_STATUSES
+NATIVE_MT5_TELEGRAM_EVENTS = {
+    "opened",
+    "tp1_closed",
+    "tp2_closed",
+    "tp3_closed",
+    "be_moved",
+    "position_closed",
+    "closed_by_signal",
+    "open_failed",
+    "close_failed",
+    "error",
+}
+NATIVE_NO_DATA_MESSAGE = "Данных от native MT5 bot пока нет."
 
 OPEN_EXECUTION_STATUSES = {"opened", "dry_run_open"}
 TP_EXECUTION_STATUSES = {"tp1_closed", "tp2_closed", "tp3_closed"}
@@ -132,6 +145,91 @@ def notify_execution(status: str, report) -> None:
     notification = format_execution_notification(status, report, payload)
     if notification:
         send_telegram_message(notification)
+
+
+def notify_native_event(event: NativeMT5Event) -> bool:
+    event_type = str(event.event_type or "").strip().lower()
+    q.record_event(
+        f"native_{event_type}",
+        None,
+        {
+            "bot_id": event.bot_id,
+            "symbol": event.symbol,
+            "magic_number": event.magic_number,
+            "message": event.message,
+        },
+    )
+    if event_type not in NATIVE_MT5_TELEGRAM_EVENTS:
+        return False
+    notification = format_native_event_notification(event_type, event)
+    return send_telegram_message(notification) if notification else False
+
+
+def format_native_event_notification(event_type: str, event: NativeMT5Event) -> str:
+    symbol = event.symbol or "нет данных"
+    if event_type == "opened":
+        lines = [
+            "СДЕЛКА ОТКРЫТА",
+            f"Бот: {format_native_bot_id(event.bot_id)}",
+            f"Символ: {symbol}",
+            f"Тип: {fmt_side(event.side)}",
+            f"Лот: {fmt_price(event.lot)}",
+            f"Entry: {fmt_fixed(event.entry)}",
+            f"SL: {fmt_fixed(event.sl)}",
+        ]
+        if event.tp1 is not None:
+            lines.append(f"TP1: {fmt_fixed(event.tp1)}")
+        if event.tp2 is not None:
+            lines.append(f"TP2: {fmt_fixed(event.tp2)}")
+        if event.tp3 is not None:
+            lines.append(f"TP3: {fmt_fixed(event.tp3)}")
+        if event.balance is not None:
+            lines.append(f"Баланс: {fmt_fixed(event.balance)}")
+        if event.equity is not None:
+            lines.append(f"Equity: {fmt_fixed(event.equity)}")
+        return "\n".join(lines)
+    if event_type in TP_EXECUTION_STATUSES:
+        lines = [
+            f"{event_type[:3].upper()} ВЗЯТ",
+            f"Символ: {symbol}",
+        ]
+        if event.closed_percent is not None:
+            lines.append(f"Закрыто: {fmt_closed_percent(event.closed_percent)}")
+        lines.append(f"Profit: {fmt_pnl(event.profit, '')}")
+        if is_be_sl(event):
+            lines.append("SL: BE")
+        elif event.sl is not None:
+            lines.append(f"SL: {fmt_fixed(event.sl)}")
+        return "\n".join(lines)
+    if event_type == "be_moved":
+        return "\n".join(
+            [
+                "БЕЗУБЫТОК АКТИВИРОВАН",
+                f"Символ: {symbol}",
+                "SL перенесён в цену входа",
+            ]
+        )
+    if event_type in CLOSE_EXECUTION_STATUSES:
+        lines = [
+            "✅ СДЕЛКА ЗАКРЫТА",
+            f"Символ: {symbol}",
+            f"Profit: {fmt_pnl(event.profit, '')}",
+        ]
+        if event.balance is not None:
+            lines.append(f"Баланс: {fmt_fixed(event.balance)}")
+        if event.equity is not None:
+            lines.append(f"Equity: {fmt_fixed(event.equity)}")
+        return "\n".join(lines)
+    if event_type in ERROR_EXECUTION_STATUSES or event_type == "error":
+        lines = [
+            "ОШИБКА NATIVE MT5",
+            f"Символ: {symbol}",
+            f"Тип: {event_type.upper()}",
+        ]
+        if event.message:
+            lines.append(f"Сообщение: {short_text(event.message, 240)}")
+        return "\n".join(lines)
+    return ""
 
 
 def format_execution_notification(status: str, report, payload: Optional[dict]) -> str:
@@ -613,7 +711,11 @@ def format_start() -> str:
 
 
 def format_status() -> str:
+    if config.is_native_mt5_only() and not acct.native_data_available():
+        return NATIVE_NO_DATA_MESSAGE
     counts = q.command_counts()
+    if config.is_native_mt5_only():
+        counts = {"queued": 0, "sent": 0, "acknowledged": 0}
     account = acct.latest_account_snapshot()
     positions = acct.current_positions()
     pnl = acct.pnl_today()
@@ -627,6 +729,7 @@ def format_status() -> str:
         fmt_divider(),
         "",
         fmt_section("СИСТЕМА"),
+        f"Режим: {config.SYSTEM_MODE}",
         f"Сервер:  {fmt_status_dot(True)} ONLINE",
         f"MT5:  {fmt_status_dot(mt5_active)} {'ACTIVE' if mt5_active else 'OFFLINE'}",
         f"Торговля:  {'ENABLED' if trading_enabled else '⏸ PAUSED'}",
@@ -655,6 +758,8 @@ def format_status() -> str:
 def format_account() -> str:
     account = acct.latest_account_snapshot()
     if not account:
+        if config.is_native_mt5_only():
+            return NATIVE_NO_DATA_MESSAGE
         return "\n".join(
             [
                 "💠 ACCOUNT MATRIX",
@@ -702,6 +807,8 @@ def format_account_short(key: str) -> str:
 def format_positions() -> str:
     positions = acct.current_positions()
     if not positions:
+        if config.is_native_mt5_only() and not acct.native_data_available():
+            return NATIVE_NO_DATA_MESSAGE
         return "\n".join(["📭 ОТКРЫТЫХ ПОЗИЦИЙ НЕТ", fmt_divider(), "", "Система подключена.", "Новых активных позиций нет."])
     account = acct.latest_account_snapshot() or {}
     currency = account.get("currency") or "USD"
@@ -732,6 +839,8 @@ def format_positions() -> str:
 def format_trades_today() -> str:
     trades = acct.trades_today()
     if not trades:
+        if config.is_native_mt5_only() and not acct.native_data_available():
+            return NATIVE_NO_DATA_MESSAGE
         return "\n".join(["📭 СЕГОДНЯ СДЕЛОК НЕТ", fmt_divider()])
     account = acct.latest_account_snapshot() or {}
     currency = account.get("currency") or "USD"
@@ -759,6 +868,8 @@ def format_trades_today() -> str:
 
 
 def format_history_today() -> str:
+    if config.is_native_mt5_only() and not acct.native_data_available():
+        return NATIVE_NO_DATA_MESSAGE
     summary = acct.pnl_today()
     trades = acct.trades_today()
     by_symbol: dict[str, float] = {}
@@ -937,6 +1048,40 @@ def format_execution_error(signal_id: Optional[str], symbol: str, error: str) ->
             fmt_divider(),
         ]
     )
+
+
+def format_native_bot_id(bot_id: Optional[str]) -> str:
+    if not bot_id:
+        return "нет данных"
+    return str(bot_id).replace("_", " ")
+
+
+def is_be_sl(event: NativeMT5Event) -> bool:
+    try:
+        if event.sl is not None and event.entry is not None and abs(float(event.sl) - float(event.entry)) < 0.00001:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return "be" in str(event.message or "").lower()
+
+
+def fmt_fixed(value) -> str:
+    if value is None or value == "":
+        return "нет данных"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def fmt_closed_percent(value) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if 0 < number <= 1:
+        number *= 100
+    return f"{number:.0f}%"
 
 
 def fmt_money(value, currency: str = "USD") -> str:

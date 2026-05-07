@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WebhookPayload(BaseModel):
@@ -96,6 +96,47 @@ class DealReport(BaseModel):
     reason: Optional[str] = None
     magic: Optional[int] = None
     comment: Optional[str] = None
+
+
+class NativeMT5Event(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    secret: str
+    source: Optional[str] = None
+    bot_id: Optional[str] = None
+    symbol: Optional[str] = None
+    magic_number: Optional[int] = None
+    event_type: str
+    side: Optional[str] = None
+    lot: Optional[float] = None
+    entry: Optional[float] = None
+    exit_price: Optional[float] = None
+    current_price: Optional[float] = None
+    sl: Optional[float] = None
+    tp1: Optional[float] = None
+    tp2: Optional[float] = None
+    tp3: Optional[float] = None
+    closed_percent: Optional[float] = None
+    profit: Optional[float] = None
+    balance: Optional[float] = None
+    equity: Optional[float] = None
+    time: Optional[str] = None
+    message: Optional[str] = None
+
+
+class NativeMT5AccountSnapshot(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    secret: str
+    source: Optional[str] = None
+    symbol: Optional[str] = None
+    magic_number: Optional[int] = None
+    balance: float
+    equity: float
+    margin: Optional[float] = None
+    free_margin: Optional[float] = None
+    open_positions: Optional[int] = None
+    time: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):

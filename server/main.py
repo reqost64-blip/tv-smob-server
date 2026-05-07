@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -12,6 +13,8 @@ from .models import (
     DealReport,
     ErrorResponse,
     ExecutionReport,
+    NativeMT5AccountSnapshot,
+    NativeMT5Event,
     OkResponse,
     PositionsSnapshot,
     SettingsChangeRequest,
@@ -26,13 +29,16 @@ from .telegram_bot import (
     notify_close_signal,
     notify_event,
     notify_execution,
+    notify_native_event,
     parse_telegram_update,
     send_telegram_message,
     should_notify_execution,
     validate_change,
 )
 
-app = FastAPI(title="TradingView → MT5 Bridge", version="1.0.0")
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Native MT5 Notification Server", version="1.1.0")
 
 
 SYMBOL_ALIASES = {
@@ -59,13 +65,21 @@ async def startup() -> None:
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "status": "running"}
+    return {"ok": True, "status": "running", "system_mode": config.SYSTEM_MODE}
 
 
 # ── 2. Webhook ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/webhook/tradingview")
 async def webhook_tradingview(request: Request):
+    if config.is_native_mt5_only():
+        logger.info("TradingView webhook disabled because SYSTEM_MODE=NATIVE_MT5_ONLY")
+        return {
+            "ok": False,
+            "disabled": True,
+            "reason": "TradingView bridge disabled. Native MT5 mode is active.",
+        }
+
     try:
         body = await request.json()
     except Exception:
@@ -116,6 +130,9 @@ async def webhook_tradingview(request: Request):
 
 @app.get("/api/mt5/commands")
 async def mt5_get_command():
+    if config.is_native_mt5_only():
+        return {"ok": True, "commands": []}
+
     command = q.fetch_next_queued()
     if command is None:
         return {"ok": True, "command": None}
@@ -136,6 +153,14 @@ async def mt5_get_command():
 
 @app.post("/api/mt5/ack")
 async def mt5_ack(body: AckRequest):
+    if config.is_native_mt5_only():
+        return {
+            "ok": True,
+            "signal_id": body.signal_id,
+            "status": "ignored",
+            "disabled": True,
+        }
+
     updated = q.acknowledge(body.signal_id)
     if not updated:
         return err(f"signal_id '{body.signal_id}' not found in status=sent")
@@ -175,6 +200,27 @@ async def mt5_positions_snapshot(snapshot: PositionsSnapshot):
 async def mt5_deal_report(report: DealReport):
     acct.save_deal_report(report)
     return {"ok": True, "deal_ticket": report.deal_ticket}
+
+
+@app.post("/api/mt5/native-event")
+async def mt5_native_event(event: NativeMT5Event, request: Request):
+    if not native_secret_matches(event.secret, request):
+        return err("Invalid secret", status=403)
+    acct.save_native_event(event)
+    notified = notify_native_event(event)
+    return {
+        "ok": True,
+        "event_type": str(event.event_type or "").strip().lower(),
+        "notified": notified,
+    }
+
+
+@app.post("/api/mt5/native-account")
+async def mt5_native_account(snapshot: NativeMT5AccountSnapshot, request: Request):
+    if not native_secret_matches(snapshot.secret, request):
+        return err("Invalid secret", status=403)
+    acct.save_native_account_snapshot(snapshot)
+    return {"ok": True}
 
 
 @app.post("/api/telegram/webhook")
@@ -258,3 +304,12 @@ def is_symbol_paused(symbol: str) -> bool:
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) < expiry
+
+
+def native_secret_matches(body_secret: str | None, request: Request) -> bool:
+    expected = config.MT5_NATIVE_SECRET
+    return (
+        body_secret == expected
+        or request.headers.get("x-mt5-native-secret", "") == expected
+        or request.headers.get("x-webhook-secret", "") == expected
+    )

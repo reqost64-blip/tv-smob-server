@@ -1,21 +1,33 @@
-# TradingView -> MT5 Bridge
+# Native MT5 Notification Server
 
-FastAPI bridge for TradingView webhooks, MT5 polling, Telegram control, account
-reporting, and AI market research.
+FastAPI notification, dashboard, and journal server for native MT5 Expert
+Advisors.
+
+Default mode is `NATIVE_MT5_ONLY`: MT5 EAs analyze the market, open trades, and
+manage TP/BE/SL locally. Render is used only for Telegram notifications,
+dashboard commands, account snapshots, trade history, and AI market research.
+
+Legacy mode `TRADINGVIEW_BRIDGE` is still supported for old deployments, but it
+is not the default.
 
 ## Architecture
 
 ```text
-TradingView alert
-      | POST /api/webhook/tradingview
+Native MT5 Expert Advisor
+      | POST /api/mt5/native-event
+      | POST /api/mt5/native-account
       v
-  FastAPI server -> SQLite queue
-      ^
-      | GET /api/mt5/commands
-      | POST /api/mt5/ack
-      | POST /api/mt5/execution-report
-  MT5 EA / script
+FastAPI server on Render
+      | SQLite journal / dashboard state
+      v
+Telegram bot notifications and commands
 ```
+
+In `NATIVE_MT5_ONLY`, the old TradingView command queue is disabled:
+
+- `POST /api/webhook/tradingview` returns a disabled response and does not queue commands.
+- `GET /api/mt5/commands` returns `commands: []`.
+- `POST /api/mt5/ack` is accepted but ignored without Telegram noise.
 
 ## Quick Start
 
@@ -33,6 +45,8 @@ Create `.env` from `.env.example`.
 
 ```text
 WEBHOOK_SECRET=your-secret-here
+SYSTEM_MODE=NATIVE_MT5_ONLY
+MT5_NATIVE_SECRET=optional-native-secret
 DB_FILE=bridge.db
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_ADMIN_CHAT_ID=your-telegram-admin-chat-id
@@ -43,6 +57,9 @@ OPENAI_TIMEOUT_SECONDS=60
 ENABLE_AI_WEB_SEARCH=true
 ```
 
+If `MT5_NATIVE_SECRET` is not set, native MT5 endpoints use `WEBHOOK_SECRET`.
+Do not print or commit real secrets.
+
 Do not commit real Telegram tokens, webhook secrets, MT5 passwords, or OpenAI
 API keys.
 
@@ -51,10 +68,12 @@ API keys.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Health check |
-| POST | `/api/webhook/tradingview` | Receive TradingView signal |
-| GET | `/api/mt5/commands` | MT5 polls next queued command |
-| POST | `/api/mt5/ack` | MT5 acknowledges command receipt |
-| POST | `/api/mt5/execution-report` | MT5 reports execution status |
+| POST | `/api/webhook/tradingview` | Legacy TradingView signal; disabled in `NATIVE_MT5_ONLY` |
+| GET | `/api/mt5/commands` | Legacy MT5 command polling; returns `commands: []` in `NATIVE_MT5_ONLY` |
+| POST | `/api/mt5/ack` | Legacy ack; accepted and ignored in `NATIVE_MT5_ONLY` |
+| POST | `/api/mt5/native-event` | Native MT5 EA trade event |
+| POST | `/api/mt5/native-account` | Native MT5 EA account snapshot |
+| POST | `/api/mt5/execution-report` | Legacy MT5 execution status |
 | POST | `/api/mt5/account-snapshot` | MT5 posts account snapshot |
 | POST | `/api/mt5/positions-snapshot` | MT5 posts open positions |
 | POST | `/api/mt5/deal-report` | MT5 posts closed deal |
@@ -66,6 +85,103 @@ API keys.
 | GET | `/api/positions` | Current open positions |
 | GET | `/api/trades/today` | Today's deals |
 | GET | `/api/pnl/today` | Today's PnL summary |
+
+## Native MT5 Event Contract
+
+Native EAs post trade lifecycle events to:
+
+```text
+POST /api/mt5/native-event
+```
+
+Example:
+
+```json
+{
+  "secret": "your-secret-here",
+  "source": "mt5_native",
+  "bot_id": "NAS100_ORB_VWAP_RSI_OF",
+  "symbol": "NAS100.r",
+  "magic_number": 26043001,
+  "event_type": "opened",
+  "side": "sell",
+  "lot": 0.01,
+  "entry": 27600.0,
+  "sl": 27620.0,
+  "tp1": 27591.0,
+  "tp2": 27560.0,
+  "tp3": null,
+  "profit": 0.0,
+  "balance": 500.0,
+  "equity": 500.0,
+  "time": "2026-05-07T15:30:00Z",
+  "message": "optional text"
+}
+```
+
+The server stores every native event without `secret`. `opened` creates or
+updates the active trade, `tp1_closed` / `tp2_closed` / `tp3_closed` /
+`be_moved` update it, and `position_closed` / `closed_by_signal` close it and
+write final PnL to the native trade history.
+
+Automatic Telegram notifications are sent only for:
+
+```text
+opened
+tp1_closed
+tp2_closed
+tp3_closed
+be_moved
+position_closed
+closed_by_signal
+open_failed
+close_failed
+error
+```
+
+The following event types are stored but are not pushed automatically:
+
+```text
+heartbeat
+account_snapshot
+positions_snapshot
+status
+debug
+ack
+command_poll
+settings_changed
+```
+
+Account snapshots are posted to:
+
+```text
+POST /api/mt5/native-account
+```
+
+Example:
+
+```json
+{
+  "secret": "your-secret-here",
+  "source": "mt5_native",
+  "symbol": "NAS100.r",
+  "magic_number": 26043001,
+  "balance": 500.0,
+  "equity": 500.0,
+  "margin": 0.0,
+  "free_margin": 500.0,
+  "open_positions": 1,
+  "time": "2026-05-07T15:30:00Z"
+}
+```
+
+`/status`, `/account`, `/positions`, `/trades`, `/history_today`, and
+`/pnl_today` read the latest native MT5 data in `NATIVE_MT5_ONLY`. If the EA has
+not sent data yet, Telegram replies:
+
+```text
+Данных от native MT5 bot пока нет.
+```
 
 ## Russian Telegram Dashboard
 
@@ -214,22 +330,19 @@ Automatic Telegram notifications are limited to trade execution events only.
 System lifecycle events are still stored in SQLite logs, but they are not pushed
 to Telegram.
 
-Allowed automatic trade statuses:
+Allowed automatic native event types:
 
 ```text
 opened
-dry_run_open
 tp1_closed
 tp2_closed
 tp3_closed
 be_moved
 position_closed
 closed_by_signal
-dry_run_close
 open_failed
 close_failed
-rejected
-close_rejected
+error
 ```
 
 Hidden system events:
@@ -365,7 +478,11 @@ Deal report:
 }
 ```
 
-## Command Contract
+## Legacy TradingView Command Contract
+
+This contract is active only when `SYSTEM_MODE=TRADINGVIEW_BRIDGE`. In the
+default `NATIVE_MT5_ONLY` mode, TradingView webhooks are accepted as disabled
+requests and no commands are queued or delivered to MT5.
 
 The TradingView webhook accepts two command types:
 

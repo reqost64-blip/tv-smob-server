@@ -144,6 +144,96 @@ def init_db() -> None:
                 created_at       TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_mt5_events (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type     TEXT NOT NULL,
+                source         TEXT,
+                bot_id         TEXT,
+                symbol         TEXT,
+                magic_number   INTEGER,
+                event_time     TEXT,
+                payload        TEXT NOT NULL,
+                created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_mt5_accounts (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                source          TEXT,
+                symbol          TEXT,
+                magic_number    INTEGER,
+                balance         REAL NOT NULL,
+                equity          REAL NOT NULL,
+                margin          REAL,
+                free_margin     REAL,
+                open_positions  INTEGER,
+                snapshot_at     TEXT,
+                payload         TEXT NOT NULL,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_mt5_active_trades (
+                trade_key       TEXT PRIMARY KEY,
+                bot_id          TEXT,
+                symbol          TEXT,
+                magic_number    INTEGER,
+                side            TEXT,
+                lot             REAL,
+                entry           REAL,
+                exit_price      REAL,
+                current_price   REAL,
+                sl              REAL,
+                tp1             REAL,
+                tp2             REAL,
+                tp3             REAL,
+                closed_percent  REAL,
+                profit          REAL,
+                balance         REAL,
+                equity          REAL,
+                status          TEXT,
+                last_event_type TEXT,
+                opened_at       TEXT,
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                message         TEXT,
+                payload         TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_mt5_closed_trades (
+                trade_key       TEXT PRIMARY KEY,
+                bot_id          TEXT,
+                symbol          TEXT,
+                magic_number    INTEGER,
+                side            TEXT,
+                lot             REAL,
+                entry           REAL,
+                exit_price      REAL,
+                sl              REAL,
+                tp1             REAL,
+                tp2             REAL,
+                tp3             REAL,
+                closed_percent  REAL,
+                profit          REAL,
+                balance         REAL,
+                equity          REAL,
+                status          TEXT,
+                opened_at       TEXT,
+                closed_at       TEXT,
+                message         TEXT,
+                payload         TEXT NOT NULL,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_active_lookup
+            ON native_mt5_active_trades (bot_id, symbol, magic_number)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_events_time
+            ON native_mt5_events (event_type, created_at)
+        """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),
             "dry_run": "true",
