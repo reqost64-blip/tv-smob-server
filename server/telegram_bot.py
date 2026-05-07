@@ -161,75 +161,238 @@ def notify_native_event(event: NativeMT5Event) -> bool:
     )
     if event_type not in NATIVE_MT5_TELEGRAM_EVENTS:
         return False
-    notification = format_native_event_notification(event_type, event)
+    notification = format_native_mt5_event_message(event.model_dump(mode="json", exclude={"secret"}))
     return send_telegram_message(notification) if notification else False
 
 
-def format_native_event_notification(event_type: str, event: NativeMT5Event) -> str:
-    symbol = event.symbol or "нет данных"
+def format_native_mt5_event_message(event: dict) -> str:
+    divider = "━━━━━━━━━━━━━━━━━━━━"
+    event = event or {}
+    event_type = str(event.get("event_type") or "").strip().lower()
+    symbol = event.get("symbol") or "n/a"
+    side = event.get("side")
+    profit = event.get("profit")
+
+    def fmt_price(value):
+        if value is None or value == "":
+            return "OFF"
+        try:
+            return f"{float(value):.2f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    def fmt_money(value):
+        if value is None or value == "":
+            return "n/a"
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if number > 0:
+            return f"+{number:.2f} €"
+        if number < 0:
+            return f"{number:.2f} €"
+        return "0.00 €"
+
+    def fmt_lot(value):
+        if value is None or value == "":
+            return "n/a"
+        try:
+            return f"{float(value):.2f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    def fmt_side(value):
+        normalized = str(value or "").strip().lower()
+        if normalized == "buy":
+            return "BUY"
+        if normalized == "sell":
+            return "SELL"
+        return str(value or "n/a").upper()
+
+    def side_icon(value):
+        normalized = str(value or "").strip().lower()
+        if normalized == "buy":
+            return "🟢"
+        if normalized == "sell":
+            return "🔴"
+        return "⚪"
+
+    def bot_id_pretty(bot_id):
+        mapping = {
+            "NAS100_ORB_VWAP_RSI_OF": "NAS100 ORB/VWAP",
+            "DJ30_ORB_VWAP_RSI_OF": "DJ30 ORB/VWAP",
+            "XAUUSD_ORB_VWAP_RSI_OF": "XAUUSD ORB/VWAP",
+            "BTCUSD_ORB_VWAP_RSI_OF": "BTCUSD ORB/VWAP",
+        }
+        return mapping.get(str(bot_id or ""), bot_id or "n/a")
+
+    def fmt_closed_percent(default: str) -> str:
+        value = event.get("closed_percent")
+        if value is None or value == "":
+            return default
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if 0 < number <= 1:
+            number *= 100
+        return f"{number:.0f}%"
+
     if event_type == "opened":
-        lines = [
-            "СДЕЛКА ОТКРЫТА",
-            f"Бот: {format_native_bot_id(event.bot_id)}",
-            f"Символ: {symbol}",
-            f"Тип: {fmt_side(event.side)}",
-            f"Лот: {fmt_price(event.lot)}",
-            f"Entry: {fmt_fixed(event.entry)}",
-            f"SL: {fmt_fixed(event.sl)}",
-        ]
-        if event.tp1 is not None:
-            lines.append(f"TP1: {fmt_fixed(event.tp1)}")
-        if event.tp2 is not None:
-            lines.append(f"TP2: {fmt_fixed(event.tp2)}")
-        if event.tp3 is not None:
-            lines.append(f"TP3: {fmt_fixed(event.tp3)}")
-        if event.balance is not None:
-            lines.append(f"Баланс: {fmt_fixed(event.balance)}")
-        if event.equity is not None:
-            lines.append(f"Equity: {fmt_fixed(event.equity)}")
-        return "\n".join(lines)
-    if event_type in TP_EXECUTION_STATUSES:
-        lines = [
-            f"{event_type[:3].upper()} ВЗЯТ",
-            f"Символ: {symbol}",
-        ]
-        if event.closed_percent is not None:
-            lines.append(f"Закрыто: {fmt_closed_percent(event.closed_percent)}")
-        lines.append(f"Profit: {fmt_pnl(event.profit, '')}")
-        if is_be_sl(event):
-            lines.append("SL: BE")
-        elif event.sl is not None:
-            lines.append(f"SL: {fmt_fixed(event.sl)}")
-        return "\n".join(lines)
+        return "\n".join(
+            [
+                f"{side_icon(side)} СДЕЛКА ОТКРЫТА",
+                "",
+                divider,
+                f"🤖 Бот: {bot_id_pretty(event.get('bot_id'))}",
+                f"📍 Символ: {symbol}",
+                f"{side_icon(side)} Направление: {fmt_side(side)}",
+                f"📦 Лот: {fmt_lot(event.get('lot'))}",
+                divider,
+                "",
+                f"🎯 Entry: {fmt_price(event.get('entry'))}",
+                f"🛡 Stop Loss: {fmt_price(event.get('sl'))}",
+                "",
+                f"TP1: {fmt_price(event.get('tp1'))}",
+                f"TP2: {fmt_price(event.get('tp2'))}",
+                f"TP3: {fmt_price(event.get('tp3'))}",
+                "",
+                divider,
+                f"💰 Баланс: {fmt_money(event.get('balance'))}",
+                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                f"Magic: {event.get('magic_number') or 'n/a'}",
+                "⏱ Режим: Native MT5",
+            ]
+        )
+
+    if event_type == "tp1_closed":
+        return "\n".join(
+            [
+                "🎯 TP1 ВЗЯТ",
+                "",
+                divider,
+                f"📍 Символ: {symbol}",
+                f"{side_icon(side)} Сделка: {fmt_side(side)}",
+                f"✅ Закрыто: {fmt_closed_percent('75%')}",
+                "",
+                f"Profit: {fmt_money(profit)}",
+                "SL переведён в BE",
+                divider,
+                "",
+                f"💰 Баланс: {fmt_money(event.get('balance'))}",
+                f"📊 Equity: {fmt_money(event.get('equity'))}",
+            ]
+        )
+
+    if event_type == "tp2_closed":
+        return "\n".join(
+            [
+                "🎯 TP2 ВЗЯТ",
+                "",
+                divider,
+                f"📍 Символ: {symbol}",
+                f"{side_icon(side)} Сделка: {fmt_side(side)}",
+                f"✅ Закрыто: {fmt_closed_percent('25%')}",
+                "",
+                f"Profit: {fmt_money(profit)}",
+                divider,
+                "",
+                f"💰 Баланс: {fmt_money(event.get('balance'))}",
+                f"📊 Equity: {fmt_money(event.get('equity'))}",
+            ]
+        )
+
+    if event_type == "tp3_closed":
+        return "\n".join(
+            [
+                "🎯 TP3 ВЗЯТ",
+                "",
+                divider,
+                f"📍 Символ: {symbol}",
+                f"{side_icon(side)} Сделка: {fmt_side(side)}",
+                "✅ Финальная фиксация",
+                "",
+                f"Profit: {fmt_money(profit)}",
+                divider,
+                "",
+                f"💰 Баланс: {fmt_money(event.get('balance'))}",
+                f"📊 Equity: {fmt_money(event.get('equity'))}",
+            ]
+        )
+
     if event_type == "be_moved":
         return "\n".join(
             [
-                "БЕЗУБЫТОК АКТИВИРОВАН",
-                f"Символ: {symbol}",
-                "SL перенесён в цену входа",
+                "🛡 БЕЗУБЫТОК АКТИВИРОВАН",
+                "",
+                divider,
+                f"📍 Символ: {symbol}",
+                f"{side_icon(side)} Сделка: {fmt_side(side)}",
+                "",
+                "SL перенесён в цену входа:",
+                f"BE: {fmt_price(event.get('entry'))}",
+                divider,
+                "",
+                "Теперь риск по сделке = 0",
             ]
         )
-    if event_type in CLOSE_EXECUTION_STATUSES:
-        lines = [
-            "✅ СДЕЛКА ЗАКРЫТА",
-            f"Символ: {symbol}",
-            f"Profit: {fmt_pnl(event.profit, '')}",
-        ]
-        if event.balance is not None:
-            lines.append(f"Баланс: {fmt_fixed(event.balance)}")
-        if event.equity is not None:
-            lines.append(f"Equity: {fmt_fixed(event.equity)}")
-        return "\n".join(lines)
-    if event_type in ERROR_EXECUTION_STATUSES or event_type == "error":
-        lines = [
-            "ОШИБКА NATIVE MT5",
-            f"Символ: {symbol}",
-            f"Тип: {event_type.upper()}",
-        ]
-        if event.message:
-            lines.append(f"Сообщение: {short_text(event.message, 240)}")
-        return "\n".join(lines)
+
+    if event_type in {"position_closed", "closed_by_signal"}:
+        try:
+            profit_value = float(profit or 0)
+        except (TypeError, ValueError):
+            profit_value = 0.0
+        result_icon = "✅" if profit_value > 0 else "🔻" if profit_value < 0 else "⚪"
+        return "\n".join(
+            [
+                f"{result_icon} СДЕЛКА ЗАКРЫТА",
+                "",
+                divider,
+                f"📍 Символ: {symbol}",
+                f"{side_icon(side)} Сделка: {fmt_side(side)}",
+                "",
+                f"{result_icon} Итог: {fmt_money(profit)}",
+                f"💰 Баланс: {fmt_money(event.get('balance'))}",
+                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                divider,
+                "",
+                "Статус: позиция закрыта",
+            ]
+        )
+
+    if event_type in {"open_failed", "close_failed", "error"}:
+        return "\n".join(
+            [
+                "⚠️ ОШИБКА ИСПОЛНЕНИЯ",
+                "",
+                divider,
+                f"📍 Символ: {symbol}",
+                f"🤖 Бот: {bot_id_pretty(event.get('bot_id'))}",
+                f"⚠️ Событие: {event_type}",
+                "",
+                "Причина:",
+                str(event.get("message") or "n/a"),
+                divider,
+                "",
+                "Проверить:",
+                "1. WebRequest",
+                "2. AutoTrading",
+                "3. Symbol",
+                "4. SL/TP distance",
+                "5. Минимальный лот",
+            ]
+        )
+
     return ""
+
+
+def format_native_event_notification(event_type: str, event: NativeMT5Event) -> str:
+    payload = event.model_dump(mode="json", exclude={"secret"})
+    payload["event_type"] = event_type
+    return format_native_mt5_event_message(payload)
+
+
 
 
 def format_execution_notification(status: str, report, payload: Optional[dict]) -> str:
