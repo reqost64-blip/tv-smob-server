@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -62,6 +63,10 @@ KNOWN_SETTING_KEYS = {
     "symbol_paused_until_US500",
     "symbol_paused_until_BTCUSD",
 }
+
+
+def allow_real_trading():
+    return os.getenv("ALLOW_REAL_TRADING", "false").lower() == "true"
 
 
 def send_telegram_message(text: str) -> bool:
@@ -451,6 +456,21 @@ def create_change_approval(chat_id: str, command_text: str, parsed_action: dict)
     parsed_action["setting_key"] = setting_key
     parsed_action["new_value"] = new_value
     approval = create_pending_approval(chat_id, command_text, parsed_action, old_value, new_value)
+    if setting_key == "dry_run" and new_value is False and allow_real_trading():
+        return "\n".join(
+            [
+                "⚠️ REAL TRADING UNLOCK",
+                fmt_divider(),
+                "",
+                "Ты пытаешься выключить DryRun на REAL account.",
+                f"Approval ID: {approval['approval_id']}",
+                f"Для подтверждения: /confirm {approval['approval_id']}",
+                "",
+                f"Для отмены: /reject {approval['approval_id']}",
+                "",
+                fmt_divider(),
+            ]
+        )
     return "\n".join(
         [
             "🧾 PENDING APPROVAL",
@@ -531,7 +551,7 @@ def validate_change(setting_key: Optional[str], new_value, symbol: Optional[str]
             return "max_lot должен быть больше 0."
         if numeric_value > 1.0:
             return "max_lot не может быть выше 1.0 в demo-first режиме."
-    if setting_key == "dry_run" and new_value is False:
+    if setting_key == "dry_run" and new_value is False and latest_account_is_real() and not allow_real_trading():
         return "dry_run=false заблокирован в demo-first режиме. Live trading из Telegram не включается."
     if setting_key in ("dry_run", "use_server_lot") and not isinstance(new_value, bool):
         return f"{setting_key} должен быть boolean."
@@ -599,6 +619,7 @@ def format_status() -> str:
         f"MT5:  {fmt_status_dot(mt5_active)} {'ACTIVE' if mt5_active else 'OFFLINE'}",
         f"Торговля:  {'ENABLED' if trading_enabled else '⏸ PAUSED'}",
         f"DryRun:  {'ON' if dry_run else '⚪ OFF'}",
+        f"Real unlock: {'ENABLED' if allow_real_trading() else 'DISABLED'}",
         "",
         fmt_section("СЧЁТ"),
         f"Баланс: {fmt_money(account.get('balance') if account else None, currency) if account else 'нет данных'}",
@@ -778,6 +799,7 @@ def format_settings(chat_id: Optional[str] = None) -> str:
             "",
             f"Торговля:  {'ENABLED' if trading_enabled else '⏸ PAUSED'}",
             f"DryRun:  {'ON' if dry_run else '⚪ OFF'}",
+            f"Real unlock: {'ENABLED' if allow_real_trading() else 'DISABLED'}",
             f"Подтверждения: {len(approvals)}",
             "",
             fmt_section("РИСК"),
@@ -967,6 +989,11 @@ def format_trade_mode(trade_mode) -> str:
 
 def is_real_trade_mode(trade_mode) -> bool:
     return format_trade_mode(trade_mode).lower() == "real"
+
+
+def latest_account_is_real() -> bool:
+    account = acct.latest_account_snapshot()
+    return bool(account and is_real_trade_mode(account.get("trade_mode")))
 
 
 def format_heartbeat(value) -> str:
