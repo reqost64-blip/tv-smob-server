@@ -33,15 +33,27 @@ DIVIDER = "━━━━━━━━━━━━━━━━━━"
 THIN_DIVIDER = "──────────────────"
 ASSETS_LINE = "XAUUSD · NAS100 · DJ30 · US500 · BTCUSD"
 
-NOTIFY_EXECUTION_STATUSES = {
-    "open_failed",
+ALLOWED_TRADE_STATUSES = {
     "opened",
+    "dry_run_open",
     "tp1_closed",
     "tp2_closed",
     "tp3_closed",
     "be_moved",
     "position_closed",
+    "closed_by_signal",
+    "dry_run_close",
+    "open_failed",
+    "close_failed",
+    "rejected",
+    "close_rejected",
 }
+NOTIFY_EXECUTION_STATUSES = ALLOWED_TRADE_STATUSES
+
+OPEN_EXECUTION_STATUSES = {"opened", "dry_run_open"}
+TP_EXECUTION_STATUSES = {"tp1_closed", "tp2_closed", "tp3_closed"}
+CLOSE_EXECUTION_STATUSES = {"position_closed", "closed_by_signal", "dry_run_close"}
+ERROR_EXECUTION_STATUSES = {"open_failed", "close_failed", "rejected", "close_rejected"}
 
 KNOWN_SETTING_KEYS = {
     "trading_enabled",
@@ -89,9 +101,12 @@ def send_telegram_message(text: str) -> bool:
         return False
 
 
+def should_notify_execution(status: str) -> bool:
+    return str(status or "").strip().lower() in ALLOWED_TRADE_STATUSES
+
+
 def notify_event(event_type: str, signal_id: Optional[str] = None, details: Optional[str] = None) -> None:
     q.record_event(event_type, signal_id, {"details": details})
-    send_telegram_message(format_notification(event_type, signal_id, details))
 
 
 def notify_close_signal(payload: WebhookPayload) -> None:
@@ -106,103 +121,100 @@ def notify_close_signal(payload: WebhookPayload) -> None:
             "parent_signal_id": payload.parent_signal_id,
         },
     )
-    send_telegram_message(
-        "\n".join(
-            [
-                "🔻 СИГНАЛ НА ЗАКРЫТИЕ",
-                fmt_divider(),
-                "",
-                f"Актив: {symbol or 'нет данных'}",
-                f"Сторона: {fmt_side(payload.side)}",
-                f"Причина: {payload.reason or 'close signal'}",
-                f"Parent: {payload.parent_signal_id or 'нет данных'}",
-                f"Signal: {short_text(payload.signal_id, 42)}",
-                "",
-                fmt_divider(),
-            ]
-        )
-    )
 
 
 def notify_execution(status: str, report) -> None:
+    status = str(status or "").strip().lower()
     payload = q.get_command_payload(report.signal_id)
     q.record_event(status, report.signal_id, {"ticket": report.ticket, "message": report.message})
-    send_telegram_message(format_execution_notification(status, report, payload))
+    if not should_notify_execution(status):
+        return
+    notification = format_execution_notification(status, report, payload)
+    if notification:
+        send_telegram_message(notification)
 
 
 def format_execution_notification(status: str, report, payload: Optional[dict]) -> str:
+    status = str(status or "").strip().lower()
     payload = payload or {}
     symbol = payload.get("mt5_symbol") or payload.get("symbol") or "нет данных"
     side = payload.get("side") or "нет данных"
-    lot = payload.get("lot")
-    if status == "opened":
+    if status in OPEN_EXECUTION_STATUSES:
         return "\n".join(
             [
-                "🟢 СДЕЛКА ОТКРЫТА",
+                "СДЕЛКА ОТКРЫТА",
                 fmt_divider(),
                 "",
                 f"Актив: {symbol}",
                 f"Сторона: {fmt_side(side)}",
-                f"Лот: {fmt_price(lot)}",
-                f"Вход: {fmt_price(report.executed_price)}",
+                f"Лот: {fmt_price(payload.get('lot'))}",
+                f"Вход: {fmt_price(first_present(report.executed_price, payload.get('entry')))}",
                 f"SL: {fmt_price(payload.get('sl'))}",
                 "",
-                fmt_section("Цели"),
+                "Цели",
                 f"TP1: {fmt_price(payload.get('tp1'))}",
                 f"TP2: {fmt_price(payload.get('tp2'))}",
                 f"TP3: {fmt_price(payload.get('tp3'))}",
                 "",
-                f"Signal: {short_text(report.signal_id, 54)}",
+                "Signal:",
+                str(report.signal_id or "нет данных"),
                 "",
                 fmt_divider(),
             ]
         )
-    if status == "position_closed":
+    if status in CLOSE_EXECUTION_STATUSES:
+        close_reason = normalize_trade_reason(
+            first_present(payload.get("reason"), extract_reason(report.message)),
+            status,
+        )
         return "\n".join(
             [
-                "🔴 СДЕЛКА ЗАКРЫТА",
+                "СДЕЛКА ЗАКРЫТА",
                 fmt_divider(),
                 "",
                 f"Актив: {symbol}",
                 f"Сторона: {fmt_side(side)}",
-                f"Лот: {fmt_price(lot)}",
+                f"Лот: {fmt_price(payload.get('lot'))}",
                 "",
                 f"Вход: {fmt_price(payload.get('entry'))}",
-                f"Выход: {fmt_price(report.executed_price)}",
+                f"Выход: {fmt_price(first_present(report.executed_price, payload.get('close_price')))}",
                 f"Net PnL: {extract_pnl(report.message)}",
                 "",
-                f"Причина: {payload.get('reason') or 'close signal'}",
+                f"Причина: {close_reason}",
                 f"Ticket: {report.ticket or 'нет данных'}",
                 "",
                 fmt_divider(),
             ]
         )
-    if status in ("tp1_closed", "tp2_closed", "tp3_closed"):
-        return "\n".join(
-            [
-                "🎯 TAKE PROFIT",
-                fmt_divider(),
-                "",
-                f"Актив: {symbol}",
-                f"Цель: {status[:3].upper()}",
-                f"Закрыто: {extract_closed_part(report.message)}",
-                f"PnL: {extract_pnl(report.message)}",
-            ]
-        )
+    if status in TP_EXECUTION_STATUSES:
+        lines = [
+            "TAKE PROFIT",
+            fmt_divider(),
+            "",
+            f"Актив: {symbol}",
+            f"Цель: {status[:3].upper()}",
+        ]
+        closed_part = extract_closed_part(report.message)
+        if closed_part:
+            lines.append(f"Закрыто: {closed_part}")
+        lines.extend([f"PnL: {extract_pnl(report.message)}", "", fmt_divider()])
+        return "\n".join(lines)
     if status == "be_moved":
         return "\n".join(
             [
-                "🛡 БЕЗУБЫТОК",
+                "БЕЗУБЫТОК",
                 fmt_divider(),
                 "",
                 f"Актив: {symbol}",
                 "SL перенесён в Entry.",
-                f"Цена BE: {fmt_price(payload.get('entry') or report.executed_price)}",
+                f"Цена BE: {fmt_price(first_present(payload.get('entry'), report.executed_price))}",
+                "",
+                fmt_divider(),
             ]
         )
-    if status == "open_failed":
+    if status in ERROR_EXECUTION_STATUSES:
         return format_execution_error(report.signal_id, symbol, report.message or "нет данных")
-    return format_notification(status, report.signal_id, report.message)
+    return ""
 
 
 def format_execution_report(report: Optional[dict]) -> str:
@@ -906,7 +918,25 @@ def format_notification(event_type: str, signal_id: Optional[str], details: Opti
 
 
 def format_execution_error(signal_id: Optional[str], symbol: str, error: str) -> str:
-    return "\n".join(["⚠️ ОШИБКА ИСПОЛНЕНИЯ", fmt_divider(), "", f"Signal: {short_text(signal_id, 54)}", f"Актив: {symbol}", f"Ошибка: {short_text(error, 180)}", "", "Проверить:", "1. MT5 запущен", "2. Algo Trading включён", "3. Символ существует", "4. Лот допустим", "5. WebRequest разрешён"])
+    return "\n".join(
+        [
+            "ОШИБКА ИСПОЛНЕНИЯ",
+            fmt_divider(),
+            "",
+            f"Актив: {symbol or 'нет данных'}",
+            f"Signal: {short_text(signal_id, 120)}",
+            f"Ошибка: {short_text(error, 180)}",
+            "",
+            "Проверить:",
+            "1. MT5 запущен",
+            "2. Algo Trading включён",
+            "3. Символ есть у брокера",
+            "4. Лот допустим",
+            "5. WebRequest разрешён",
+            "",
+            fmt_divider(),
+        ]
+    )
 
 
 def fmt_money(value, currency: str = "USD") -> str:
@@ -1056,6 +1086,13 @@ def float_or_zero(value) -> float:
         return 0.0
 
 
+def first_present(*values):
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
 def short_text(value, limit: int) -> str:
     text = str(value or "нет данных").replace("\n", " ").strip()
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -1091,13 +1128,72 @@ def is_web_timeout(text: str) -> bool:
 
 
 def extract_pnl(message: Optional[str]) -> str:
-    match = re.search(r"([+-]?\d+(?:\.\d+)?)\s*(?:usd|pnl)?", str(message or ""), re.I)
-    return fmt_pnl(match.group(1), "USD") if match else "нет данных"
+    text = str(message or "")
+    patterns = [
+        r"(?:net\s*)?pnl\s*[:=]?\s*([+-]?\d+(?:\.\d+)?)",
+        r"(?:net_profit|profit)\s*[:=]?\s*([+-]?\d+(?:\.\d+)?)",
+        r"([+-]\d+(?:\.\d+)?)\s*(?:usd|pnl)",
+        r"(?:usd)\s*([+-]?\d+(?:\.\d+)?)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            return fmt_pnl(match.group(1), "USD")
+    return "нет данных"
 
 
-def extract_closed_part(message: Optional[str]) -> str:
-    match = re.search(r"(\d+(?:\.\d+)?)\s*%", str(message or ""))
-    return f"{match.group(1)}%" if match else "нет данных"
+def extract_closed_part(message: Optional[str]) -> Optional[str]:
+    text = str(message or "")
+    percent_match = re.search(r"close_percent\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?", text, re.I)
+    if percent_match:
+        return f"{percent_match.group(1)}%"
+    percent_match = re.search(r"(?:closed|close)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%", text, re.I)
+    if percent_match:
+        return f"{percent_match.group(1)}%"
+    percent_match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
+    if percent_match:
+        return f"{percent_match.group(1)}%"
+    volume_match = re.search(r"(?:volume|closed_volume|close_volume)\s*[:=]?\s*(\d+(?:\.\d+)?)", text, re.I)
+    if volume_match:
+        return volume_match.group(1)
+    return None
+
+
+def extract_reason(message: Optional[str]) -> Optional[str]:
+    text = str(message or "")
+    reason_match = re.search(r"(?:reason|причина)\s*[:=]\s*([^,;|\n]+)", text, re.I)
+    if reason_match:
+        return reason_match.group(1).strip()
+    lowered = text.lower()
+    for token, reason in {
+        "tp1_closed": "tp1_closed",
+        "tp2_closed": "tp2_closed",
+        "tp3_closed": "tp3_closed",
+        "closed_by_signal": "closed_by_signal",
+        "close signal": "close signal",
+        "manual": "manual",
+        "stop loss": "SL",
+        "sl": "SL",
+    }.items():
+        if token in lowered:
+            return reason
+    return None
+
+
+def normalize_trade_reason(reason, fallback_status: str) -> str:
+    normalized = str(reason or fallback_status or "").strip()
+    mapping = {
+        "tp1_closed": "TP1",
+        "tp2_closed": "TP2",
+        "tp3_closed": "TP3",
+        "be_moved": "BE",
+        "closed_by_signal": "close signal",
+        "dry_run_close": "dry run close",
+        "position_closed": "final TP",
+        "open_failed": "ошибка открытия",
+        "close_failed": "ошибка закрытия",
+    }
+    return mapping.get(normalized.lower(), normalized or "нет данных")
 
 
 def format_error(title: str, details: str) -> str:

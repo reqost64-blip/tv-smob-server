@@ -126,7 +126,7 @@ Supported Telegram commands:
 | `/pause` | Создать approval на остановку новых входов |
 | `/resume` | Создать approval на включение новых входов |
 | `/dryrun_on` | Создать approval на включение DryRun |
-| `/dryrun_off` | Заблокировано demo-first режимом |
+| `/dryrun_off` | Создать approval на выключение DryRun, если `ALLOW_REAL_TRADING=true` |
 | `/help` | Список команд |
 
 Natural-language questions are supported in Russian without `/ask`:
@@ -208,6 +208,57 @@ Telegram webhook:
 https://<your-render-service>.onrender.com/api/telegram/webhook
 ```
 
+## Telegram Notification Policy
+
+Automatic Telegram notifications are limited to trade execution events only.
+System lifecycle events are still stored in SQLite logs, but they are not pushed
+to Telegram.
+
+Allowed automatic trade statuses:
+
+```text
+opened
+dry_run_open
+tp1_closed
+tp2_closed
+tp3_closed
+be_moved
+position_closed
+closed_by_signal
+dry_run_close
+open_failed
+close_failed
+rejected
+close_rejected
+```
+
+Hidden system events:
+
+```text
+ack
+ack_received
+acknowledged
+sent
+queued
+command_queued
+webhook_signal_received
+mt5_command_sent
+close_signal_received
+rejected_signal
+account_snapshot
+positions_snapshot
+heartbeat
+command_received
+settings_changed
+audit_log
+execution_report_received without a trade status from the whitelist
+```
+
+Telegram commands such as `/status`, `/account`, `/positions`, `/trades`, and
+`/news` still return direct replies when requested, but they do not create extra
+automatic notifications. Confirmation stays enabled for risk/live actions:
+`/dryrun_off`, lot changes, risk setting changes, and `/pause`/`/resume`.
+
 ## Safety
 
 - Risk settings change only through `/confirm <approval_id>`.
@@ -220,7 +271,8 @@ https://<your-render-service>.onrender.com/api/telegram/webhook
 Demo-first guardrails:
 
 - `dry_run` defaults to `true`.
-- Telegram cannot set `dry_run=false`.
+- Telegram can set `dry_run=false` only through pending approval when
+  `ALLOW_REAL_TRADING=true`; otherwise real-account unlock is blocked.
 - Lot multipliers cannot exceed `3.0`.
 - Unknown symbols are rejected.
 - `trading_enabled=false` blocks new open signals on the server, while close

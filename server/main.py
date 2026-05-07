@@ -22,13 +22,13 @@ from .validators import validate_signal
 from . import queue as q
 from .symbol_mapper import load_symbols
 from .telegram_bot import (
-    NOTIFY_EXECUTION_STATUSES,
     handle_command,
     notify_close_signal,
     notify_event,
     notify_execution,
     parse_telegram_update,
     send_telegram_message,
+    should_notify_execution,
     validate_change,
 )
 
@@ -148,13 +148,13 @@ async def mt5_ack(body: AckRequest):
 @app.post("/api/mt5/execution-report")
 async def mt5_execution_report(report: ExecutionReport):
     q.save_execution_report(report)
-    notify_event(
+    q.record_event(
         "execution_report_received",
         report.signal_id,
-        f"status: {report.status}",
+        {"status": report.status},
     )
-    normalized_status = report.status.lower()
-    if normalized_status in NOTIFY_EXECUTION_STATUSES:
+    normalized_status = report.status.strip().lower()
+    if should_notify_execution(normalized_status):
         notify_execution(normalized_status, report)
     return {"ok": True, "signal_id": report.signal_id}
 
