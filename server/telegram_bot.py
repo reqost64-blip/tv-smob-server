@@ -181,13 +181,15 @@ def format_native_mt5_event_message(event: dict) -> str:
         except (TypeError, ValueError):
             return str(value)
 
-    def fmt_money(value):
+    def fmt_money(value, signed=True):
         if value is None or value == "":
             return "n/a"
         try:
             number = float(value)
         except (TypeError, ValueError):
             return str(value)
+        if not signed:
+            return f"{number:.2f} €"
         if number > 0:
             return f"+{number:.2f} €"
         if number < 0:
@@ -213,9 +215,9 @@ def format_native_mt5_event_message(event: dict) -> str:
     def side_icon(value):
         normalized = str(value or "").strip().lower()
         if normalized == "buy":
-            return "🟢"
+            return "⬆️"
         if normalized == "sell":
-            return "🔴"
+            return "⬇️"
         return "⚪"
 
     def bot_id_pretty(bot_id):
@@ -242,7 +244,7 @@ def format_native_mt5_event_message(event: dict) -> str:
     if event_type == "opened":
         return "\n".join(
             [
-                f"{side_icon(side)} СДЕЛКА ОТКРЫТА",
+                "🟢 СДЕЛКА ОТКРЫТА",
                 "",
                 divider,
                 f"🤖 Бот: {bot_id_pretty(event.get('bot_id'))}",
@@ -259,10 +261,10 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"TP3: {fmt_price(event.get('tp3'))}",
                 "",
                 divider,
-                f"💰 Баланс: {fmt_money(event.get('balance'))}",
-                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
+                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
                 f"Magic: {event.get('magic_number') or 'n/a'}",
-                "⏱ Режим: Native MT5",
+                "⚙️ Режим: Native MT5",
             ]
         )
 
@@ -280,8 +282,8 @@ def format_native_mt5_event_message(event: dict) -> str:
                 "SL переведён в BE",
                 divider,
                 "",
-                f"💰 Баланс: {fmt_money(event.get('balance'))}",
-                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
+                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -298,8 +300,8 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"Profit: {fmt_money(profit)}",
                 divider,
                 "",
-                f"💰 Баланс: {fmt_money(event.get('balance'))}",
-                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
+                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -316,8 +318,8 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"Profit: {fmt_money(profit)}",
                 divider,
                 "",
-                f"💰 Баланс: {fmt_money(event.get('balance'))}",
-                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
+                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -343,7 +345,7 @@ def format_native_mt5_event_message(event: dict) -> str:
             profit_value = float(profit or 0)
         except (TypeError, ValueError):
             profit_value = 0.0
-        result_icon = "✅" if profit_value > 0 else "🔻" if profit_value < 0 else "⚪"
+        result_icon = "✅" if profit_value > 0 else "🔴" if profit_value < 0 else "⚪"
         return "\n".join(
             [
                 f"{result_icon} СДЕЛКА ЗАКРЫТА",
@@ -353,8 +355,8 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"{side_icon(side)} Сделка: {fmt_side(side)}",
                 "",
                 f"{result_icon} Итог: {fmt_money(profit)}",
-                f"💰 Баланс: {fmt_money(event.get('balance'))}",
-                f"📊 Equity: {fmt_money(event.get('equity'))}",
+                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
+                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
                 divider,
                 "",
                 "Статус: позиция закрыта",
@@ -364,7 +366,7 @@ def format_native_mt5_event_message(event: dict) -> str:
     if event_type in {"open_failed", "close_failed", "error"}:
         return "\n".join(
             [
-                "⚠️ ОШИБКА ИСПОЛНЕНИЯ",
+                "🔴 ОШИБКА ИСПОЛНЕНИЯ",
                 "",
                 divider,
                 f"📍 Символ: {symbol}",
