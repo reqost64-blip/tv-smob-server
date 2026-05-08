@@ -129,6 +129,7 @@ class NativeMT5AccountSnapshot(BaseModel):
 
     secret: str
     source: Optional[str] = None
+    bot_id: Optional[str] = None
     symbol: Optional[str] = None
     magic_number: Optional[int] = None
     balance: float

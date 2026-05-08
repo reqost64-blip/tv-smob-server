@@ -29,9 +29,9 @@ from .settings_store import (
 
 
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
-DIVIDER = "━━━━━━━━━━━━━━━━━━"
-THIN_DIVIDER = "──────────────────"
-ASSETS_LINE = "XAUUSD · NAS100 · DJ30 · US500 · BTCUSD"
+DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
+THIN_DIVIDER = "────────────────────"
+DEFAULT_ASSETS_LINE = "XAUUSD · NAS100 · DJ30 · US500 · BTCUSD · GER40FT"
 
 ALLOWED_TRADE_STATUSES = {
     "opened",
@@ -307,8 +307,6 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"TP3: {fmt_price(event.get('tp3'))}",
                 "",
                 divider,
-                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
-                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
                 f"Magic: {event.get('magic_number') or 'n/a'}",
                 "⚙️ Режим: Native MT5",
             ]
@@ -328,8 +326,6 @@ def format_native_mt5_event_message(event: dict) -> str:
                 "SL переведён в BE",
                 divider,
                 "",
-                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
-                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -346,8 +342,6 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"Profit: {fmt_money(profit)}",
                 divider,
                 "",
-                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
-                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -364,8 +358,6 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"Profit: {fmt_money(profit)}",
                 divider,
                 "",
-                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
-                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -401,8 +393,6 @@ def format_native_mt5_event_message(event: dict) -> str:
                 f"{side_icon(side)} Сделка: {fmt_side(side)}",
                 "",
                 f"{result_icon} Итог: {fmt_money(profit)}",
-                f"💰 Баланс: {fmt_money(event.get('balance'), signed=False)}",
-                f"📊 Equity: {fmt_money(event.get('equity'), signed=False)}",
                 divider,
                 "",
                 "Статус: позиция закрыта",
@@ -499,8 +489,6 @@ def format_native_screenshot_caption(event: dict) -> str:
                 f"{symbol} | {side}",
                 "",
                 f"Итог: {fmt_native_money(profit, signed=True)}",
-                f"Баланс: {fmt_native_money(event.get('balance'), signed=False)}",
-                f"Equity: {fmt_native_money(event.get('equity'), signed=False)}",
             ]
         )
 
@@ -680,7 +668,9 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return format_positions()
     if command == "/trades":
         return format_trades_today()
-    if command in ("/history_today", "/pnl_today"):
+    if command == "/pnl_today":
+        return format_pnl_today()
+    if command == "/history_today":
         return format_history_today()
     if command == "/news":
         return attach_ai_risk_action_approval(format_market_research(get_market_news_today()), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
@@ -1023,52 +1013,51 @@ def format_start() -> str:
             "Настройки, пауза, подтверждения",
             "",
             fmt_divider(),
-            f"Активы: {ASSETS_LINE}",
+            f"Активы: {format_assets_line()}",
         ]
     )
 
 
 def format_status() -> str:
-    if config.is_native_mt5_only() and not acct.native_data_available():
+    account = acct.latest_account_snapshot()
+    if config.is_native_mt5_only() and not account:
         return NATIVE_NO_DATA_MESSAGE
     counts = q.command_counts()
     if config.is_native_mt5_only():
         counts = {"queued": 0, "sent": 0, "acknowledged": 0}
-    account = acct.latest_account_snapshot()
     positions = acct.current_positions()
     pnl = acct.pnl_today()
-    currency = account.get("currency") if account else "USD"
+    currency = account_currency(account)
     heartbeat = acct.last_mt5_heartbeat()
-    mt5_active = heartbeat is not None
-    trading_enabled = bool(get_setting("trading_enabled", config.TRADING_ENABLED))
-    dry_run = bool(get_setting("dry_run", True))
+    closed_pnl = pnl.get("closed_pnl", pnl.get("net_pnl"))
+    total_pnl = pnl.get("total_pnl", pnl.get("net_pnl"))
     lines = [
-        "⚡ AI TRADING CORE",
+        "TRADING CONTROL AGENT",
         fmt_divider(),
         "",
-        fmt_section("СИСТЕМА"),
-        f"Режим: {config.SYSTEM_MODE}",
-        f"Сервер:  {fmt_status_dot(True)} ONLINE",
-        f"MT5:  {fmt_status_dot(mt5_active)} {'ACTIVE' if mt5_active else 'OFFLINE'}",
-        f"Торговля:  {'ENABLED' if trading_enabled else '⏸ PAUSED'}",
-        f"DryRun:  {'ON' if dry_run else '⚪ OFF'}",
-        f"Real unlock: {'ENABLED' if allow_real_trading() else 'DISABLED'}",
-        "",
-        fmt_section("СЧЁТ"),
-        f"Баланс: {fmt_money(account.get('balance') if account else None, currency) if account else 'нет данных'}",
-        f"Equity: {fmt_money(account.get('equity') if account else None, currency) if account else 'нет данных'}",
-        f"PnL сегодня: {fmt_pnl(pnl.get('net_pnl'), currency)}",
-        "",
-        fmt_section("ИСПОЛНЕНИЕ"),
-        f"Открытых позиций: {len(positions)}",
+        "Режим: Native MT5" if config.is_native_mt5_only() else f"Режим: {config.SYSTEM_MODE}",
+        f"Последний MT5 сигнал: {format_heartbeat(heartbeat)}",
         f"Команд в очереди: {counts.get('queued', 0)}",
-        f"MT5 heartbeat: {format_heartbeat(heartbeat)}",
         "",
-        fmt_section("АКТИВЫ"),
-        ASSETS_LINE,
+        "АККАУНТ",
+        f"Баланс: {fmt_money(account.get('balance') if account else None, currency)}",
+        f"Equity: {fmt_money(account.get('equity') if account else None, currency)}",
+        f"Margin: {fmt_money(account.get('margin') if account else None, currency)}",
+        f"Free margin: {fmt_money(account.get('free_margin') if account else None, currency)}",
+        "",
+        "PnL сегодня",
+        f"Закрытый: {fmt_pnl_or_unavailable(closed_pnl, currency, pnl.get('realized_available', True))}",
+        f"Плавающий: {fmt_pnl(pnl.get('floating_pnl'), currency)}",
+        f"Итого: {fmt_pnl(total_pnl, currency)}",
+        "",
+        "Позиции",
+        f"Открытых: {account_open_positions(account, positions)}",
+        "",
+        "Активы",
+        format_assets_line(),
     ]
     if account and is_real_trade_mode(account.get("trade_mode")):
-        lines.extend(["", "⚠️ REAL ACCOUNT DETECTED", "Проверить риск перед торговлей."])
+        lines.extend(["", "REAL ACCOUNT DETECTED", "Проверить риск перед торговлей."])
     lines.extend(["", fmt_divider(), f"Обновлено: {berlin_now()} Berlin"])
     return "\n".join(lines)
 
@@ -1091,25 +1080,20 @@ def format_account() -> str:
                 "4. Сервер Render онлайн",
             ]
         )
-    currency = account.get("currency") or "USD"
+    currency = account_currency(account)
+    positions = acct.current_positions()
     lines = [
-        "💠 ACCOUNT MATRIX",
-        fmt_divider(),
+        "АККАУНТ MT5",
         "",
-        f"Логин: {mask_login(account.get('account_login'))}",
-        f"Сервер: {account.get('account_server') or 'нет данных'}",
-        f"Режим: {format_trade_mode(account.get('trade_mode')).upper()}",
-        f"Валюта: {currency}",
-        "",
-        f"Баланс: {fmt_money(account.get('balance'), '')}",
-        f"Equity: {fmt_money(account.get('equity'), '')}",
-        f"Маржа: {fmt_money(account.get('margin'), '')}",
-        f"Свободно: {fmt_money(account.get('free_margin'), '')}",
-        f"Margin Level: {fmt_percent(account.get('margin_level'))}",
+        f"Баланс: {fmt_money(account.get('balance'), currency)}",
+        f"Equity: {fmt_money(account.get('equity'), currency)}",
+        f"Margin: {fmt_money(account.get('margin'), currency)}",
+        f"Free margin: {fmt_money(account.get('free_margin'), currency)}",
+        f"Открытых позиций: {account_open_positions(account, positions)}",
+        f"Последнее обновление: {format_heartbeat(account.get('created_at') or account.get('snapshot_at'))}",
     ]
     if is_real_trade_mode(account.get("trade_mode")):
-        lines.extend(["", "⚠️ REAL ACCOUNT DETECTED", "Проверить риск перед торговлей."])
-    lines.extend(["", fmt_divider()])
+        lines.extend(["", "REAL ACCOUNT DETECTED", "Проверить риск перед торговлей."])
     return "\n".join(lines)
 
 
@@ -1117,9 +1101,9 @@ def format_account_short(key: str) -> str:
     account = acct.latest_account_snapshot()
     if not account:
         return format_account()
-    currency = account.get("currency") or "USD"
+    currency = account_currency(account)
     label = "Баланс" if key == "balance" else "Equity"
-    return "\n".join(["💠 ACCOUNT MATRIX", fmt_divider(), f"{label}: {fmt_money(account.get(key), currency)}"])
+    return "\n".join(["АККАУНТ MT5", "", f"{label}: {fmt_money(account.get(key), currency)}"])
 
 
 def format_positions() -> str:
@@ -1127,61 +1111,104 @@ def format_positions() -> str:
     if not positions:
         if config.is_native_mt5_only() and not acct.native_data_available():
             return NATIVE_NO_DATA_MESSAGE
-        return "\n".join(["📭 ОТКРЫТЫХ ПОЗИЦИЙ НЕТ", fmt_divider(), "", "Система подключена.", "Новых активных позиций нет."])
+        return "\n".join(["ОТКРЫТЫХ ПОЗИЦИЙ НЕТ", "", "Новых активных позиций нет."])
     account = acct.latest_account_snapshot() or {}
-    currency = account.get("currency") or "USD"
+    currency = account_currency(account)
     total = 0.0
-    lines = ["📈 ОТКРЫТЫЕ ПОЗИЦИИ", fmt_divider(), ""]
+    lines = ["ОТКРЫТЫЕ ПОЗИЦИИ", ""]
     for index, position in enumerate(positions[:10], start=1):
         total += float_or_zero(position.get("profit"))
         if index > 1:
             lines.extend(["", THIN_DIVIDER, ""])
+        prefix = f"{position.get('symbol') or 'нет данных'} {fmt_side(position.get('side'))} {fmt_lot(position.get('lot'))}"
         lines.extend(
             [
-                f"{index}. {position.get('symbol') or 'нет данных'}  {fmt_side(position.get('side'))}",
-                f"Лот: {fmt_price(position.get('lot'))}",
-                f"Вход: {fmt_price(position.get('entry_price'))}",
-                f"Цена: {fmt_price(position.get('current_price'))}",
+                prefix,
+                f"Entry: {fmt_price(first_present(position.get('entry'), position.get('entry_price')))}",
                 f"SL: {fmt_price(position.get('sl'))}",
-                f"TP: {fmt_price(position.get('tp'))}",
+                f"TP1: {fmt_price(position.get('tp1'))}",
+                f"TP2: {fmt_price(position.get('tp2'))}",
+                f"TP3: {fmt_price(position.get('tp3'))}",
+                f"BE: {yes_no(position.get('be_done'))}",
                 f"PnL: {fmt_pnl(position.get('profit'), currency)}",
-                f"Ticket: {position.get('ticket') or 'нет данных'}",
             ]
         )
     if len(positions) > 10:
         lines.append(f"Ещё позиций: {len(positions) - 10}")
-    lines.extend(["", fmt_divider(), f"Floating PnL: {fmt_pnl(total, currency)}"])
+    lines.extend(["", f"Floating PnL: {fmt_pnl(total, currency)}"])
     return "\n".join(lines)
 
 
 def format_trades_today() -> str:
+    positions = acct.current_positions()
     trades = acct.trades_today()
-    if not trades:
+    if not positions and not trades:
         if config.is_native_mt5_only() and not acct.native_data_available():
             return NATIVE_NO_DATA_MESSAGE
-        return "\n".join(["📭 СЕГОДНЯ СДЕЛОК НЕТ", fmt_divider()])
+        return "СЕГОДНЯ СДЕЛОК НЕТ"
     account = acct.latest_account_snapshot() or {}
-    currency = account.get("currency") or "USD"
+    currency = account_currency(account)
     total = 0.0
-    lines = ["💼 СДЕЛКИ СЕГОДНЯ", fmt_divider(), ""]
+    lines: list[str] = []
+    if positions:
+        lines.extend(["ОТКРЫТЫЕ ПОЗИЦИИ", ""])
+        for index, position in enumerate(positions[:10], start=1):
+            if index > 1:
+                lines.extend(["", THIN_DIVIDER, ""])
+            lines.extend(
+                [
+                    f"{position.get('symbol') or 'нет данных'} {fmt_side(position.get('side'))} {fmt_lot(position.get('lot'))}",
+                    f"Entry: {fmt_price(first_present(position.get('entry'), position.get('entry_price')))}",
+                    f"SL: {fmt_price(position.get('sl'))}",
+                    f"TP1: {fmt_price(position.get('tp1'))}",
+                    f"TP2: {fmt_price(position.get('tp2'))}",
+                    f"BE: {yes_no(position.get('be_done'))}",
+                    f"PnL: {fmt_pnl(position.get('profit'), currency)}",
+                ]
+            )
+        if len(positions) > 10:
+            lines.append(f"Ещё позиций: {len(positions) - 10}")
+    if trades:
+        if lines:
+            lines.extend(["", fmt_divider(), ""])
+        lines.extend(["✅ ЗАКРЫТЫЕ СДЕЛКИ СЕГОДНЯ", ""])
     for index, trade in enumerate(trades[:10], start=1):
         total += float_or_zero(trade.get("net_profit"))
         if index > 1:
             lines.extend(["", THIN_DIVIDER, ""])
         lines.extend(
             [
-                f"{index}. {trade.get('symbol') or 'нет данных'} {fmt_side(trade.get('side'))}",
-                f"Лот: {fmt_price(trade.get('lot'))}",
-                f"Вход: {fmt_price(trade.get('entry_price'))}",
-                f"Выход: {fmt_price(trade.get('exit_price'))}",
-                f"Net PnL: {fmt_pnl(trade.get('net_profit'), currency)}",
-                f"Причина: {trade.get('reason') or 'close signal'}",
-                f"Время: {format_time(trade.get('closed_at') or trade.get('created_at'))}",
+                f"{trade.get('symbol') or 'нет данных'} {fmt_side(trade.get('side'))}",
+                f"Profit: {fmt_pnl(trade.get('net_profit'), currency)}",
+                f"Закрыта: {format_time(trade.get('closed_at') or trade.get('created_at'))}",
             ]
         )
     if len(trades) > 10:
         lines.append(f"Ещё сделок: {len(trades) - 10}")
-    lines.extend(["", fmt_divider(), f"Итого: {fmt_pnl(total, currency)}"])
+    if trades:
+        lines.extend(["", f"Итог дня: {fmt_pnl(total, currency)}"])
+    return "\n".join(lines)
+
+
+def format_pnl_today() -> str:
+    if config.is_native_mt5_only() and not acct.native_data_available():
+        return NATIVE_NO_DATA_MESSAGE
+    summary = acct.pnl_today()
+    account = acct.latest_account_snapshot() or {}
+    currency = account_currency(account)
+    closed_pnl = summary.get("closed_pnl", summary.get("net_pnl"))
+    total_pnl = summary.get("total_pnl", summary.get("net_pnl"))
+    lines = [
+        "PnL СЕГОДНЯ",
+        "",
+        f"Закрытый PnL: {fmt_pnl_or_unavailable(closed_pnl, currency, summary.get('realized_available', True))}",
+        f"Плавающий PnL: {fmt_pnl(summary.get('floating_pnl'), currency)}",
+        f"Итого: {fmt_pnl(total_pnl, currency)}",
+        "",
+        f"Сделок закрыто: {summary.get('closed_trades_count', summary.get('trades_count', 0))}",
+        f"TP событий: {summary.get('tp_events', 0)}",
+        f"Ошибок исполнения: {summary.get('execution_errors', 0)}",
+    ]
     return "\n".join(lines)
 
 
@@ -1199,7 +1226,7 @@ def format_history_today() -> str:
     losses = summary.get("losses") or 0
     winrate = round((wins / trades_count) * 100, 1) if trades_count else 0.0
     account = acct.latest_account_snapshot() or {}
-    currency = account.get("currency") or "USD"
+    currency = account_currency(account)
     lines = [
         "📊 СТАТИСТИКА ДНЯ",
         fmt_divider(),
@@ -1423,6 +1450,21 @@ def fmt_pnl(value, currency: str = "USD") -> str:
         return str(value)
 
 
+def fmt_pnl_or_unavailable(value, currency: str = "USD", available: bool = True) -> str:
+    if not available:
+        return "realized unavailable"
+    return fmt_pnl(value, currency)
+
+
+def fmt_lot(value) -> str:
+    if value is None or value == "":
+        return "нет данных"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def fmt_price(value) -> str:
     if value is None or value == "":
         return "нет данных"
@@ -1510,14 +1552,24 @@ def format_time(value) -> str:
 
 
 def parse_datetime(value) -> Optional[datetime]:
-    try:
-        text = str(value).replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(text)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed
-    except (TypeError, ValueError):
+    if value is None or value == "":
         return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        parsed = None
+        for pattern in ("%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(text, pattern)
+                break
+            except ValueError:
+                parsed = None
+        if parsed is None:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def berlin_now() -> str:
@@ -1554,6 +1606,33 @@ def first_present(*values):
         if value is not None and value != "":
             return value
     return None
+
+
+def account_currency(account: Optional[dict]) -> str:
+    currency = str((account or {}).get("currency") or "").strip()
+    if not currency and config.is_native_mt5_only():
+        return "€"
+    if currency.upper() == "EUR":
+        return "€"
+    return currency or "USD"
+
+
+def account_open_positions(account: Optional[dict], positions: list[dict]) -> int:
+    value = (account or {}).get("open_positions")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return len(positions)
+
+
+def format_assets_line() -> str:
+    if config.is_native_mt5_only():
+        return " · ".join(acct.native_assets()) or DEFAULT_ASSETS_LINE
+    return DEFAULT_ASSETS_LINE
+
+
+def yes_no(value) -> str:
+    return "YES" if bool(value) else "NO"
 
 
 def short_text(value, limit: int) -> str:

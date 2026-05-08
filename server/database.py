@@ -158,6 +158,23 @@ def init_db() -> None:
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_account_snapshots (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                source          TEXT,
+                bot_id          TEXT,
+                symbol          TEXT,
+                magic_number    INTEGER,
+                balance         REAL NOT NULL,
+                equity          REAL NOT NULL,
+                margin          REAL,
+                free_margin     REAL,
+                open_positions  INTEGER,
+                snapshot_at     TEXT,
+                payload         TEXT NOT NULL,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS native_mt5_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 source          TEXT,
@@ -188,6 +205,10 @@ def init_db() -> None:
                 tp1             REAL,
                 tp2             REAL,
                 tp3             REAL,
+                tp1_done        INTEGER NOT NULL DEFAULT 0,
+                tp2_done        INTEGER NOT NULL DEFAULT 0,
+                tp3_done        INTEGER NOT NULL DEFAULT 0,
+                be_done         INTEGER NOT NULL DEFAULT 0,
                 closed_percent  REAL,
                 profit          REAL,
                 balance         REAL,
@@ -214,6 +235,10 @@ def init_db() -> None:
                 tp1             REAL,
                 tp2             REAL,
                 tp3             REAL,
+                tp1_done        INTEGER NOT NULL DEFAULT 0,
+                tp2_done        INTEGER NOT NULL DEFAULT 0,
+                tp3_done        INTEGER NOT NULL DEFAULT 0,
+                be_done         INTEGER NOT NULL DEFAULT 0,
                 closed_percent  REAL,
                 profit          REAL,
                 balance         REAL,
@@ -227,12 +252,54 @@ def init_db() -> None:
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_mt5_state (
+                key         TEXT PRIMARY KEY,
+                value       TEXT NOT NULL,
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        _ensure_columns(
+            conn,
+            "native_account_snapshots",
+            {
+                "bot_id": "TEXT",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "native_mt5_active_trades",
+            {
+                "tp1_done": "INTEGER NOT NULL DEFAULT 0",
+                "tp2_done": "INTEGER NOT NULL DEFAULT 0",
+                "tp3_done": "INTEGER NOT NULL DEFAULT 0",
+                "be_done": "INTEGER NOT NULL DEFAULT 0",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "native_mt5_closed_trades",
+            {
+                "tp1_done": "INTEGER NOT NULL DEFAULT 0",
+                "tp2_done": "INTEGER NOT NULL DEFAULT 0",
+                "tp3_done": "INTEGER NOT NULL DEFAULT 0",
+                "be_done": "INTEGER NOT NULL DEFAULT 0",
+            },
+        )
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_active_lookup
             ON native_mt5_active_trades (bot_id, symbol, magic_number)
         """)
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_events_time
             ON native_mt5_events (event_type, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_account_snapshots_time
+            ON native_account_snapshots (created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_closed_trades_time
+            ON native_mt5_closed_trades (closed_at, created_at)
         """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),
@@ -259,3 +326,10 @@ def init_db() -> None:
                 "INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)",
                 (key, value),
             )
+
+
+def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")

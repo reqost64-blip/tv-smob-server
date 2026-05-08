@@ -352,11 +352,14 @@ def is_symbol_paused(symbol: str) -> bool:
 
 
 def native_secret_matches(body_secret: str | None, request: Request) -> bool:
-    expected = config.MT5_NATIVE_SECRET
+    expected = config.MT5_NATIVE_SECRET or config.WEBHOOK_SECRET
     return (
-        body_secret == expected
-        or request.headers.get("x-mt5-native-secret", "") == expected
-        or request.headers.get("x-webhook-secret", "") == expected
+        bool(expected)
+        and (
+            body_secret == expected
+            or request.headers.get("x-mt5-native-secret", "") == expected
+            or request.headers.get("x-webhook-secret", "") == expected
+        )
     )
 
 

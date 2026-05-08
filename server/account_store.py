@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from . import config
 from .database import db
@@ -12,6 +13,11 @@ from .models import AccountSnapshot, DealReport, NativeMT5AccountSnapshot, Nativ
 
 NATIVE_EVENT_UPDATES_ACTIVE = {"tp1_closed", "tp2_closed", "tp3_closed", "be_moved"}
 NATIVE_EVENT_CLOSES_ACTIVE = {"position_closed", "closed_by_signal"}
+NATIVE_REALIZED_EVENT_TYPES = {"position_closed", "closed_by_signal"}
+NATIVE_TP_EVENT_TYPES = {"tp1_closed", "tp2_closed", "tp3_closed"}
+NATIVE_ERROR_EVENT_TYPES = {"open_failed", "close_failed", "rejected", "close_rejected", "error"}
+DEFAULT_NATIVE_ASSETS = ["XAUUSD", "NAS100", "DJ30", "US500", "BTCUSD", "GER40FT"]
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 
 def save_account_snapshot(snapshot: AccountSnapshot) -> None:
@@ -123,6 +129,27 @@ def save_native_account_snapshot(snapshot: NativeMT5AccountSnapshot) -> None:
     with db() as conn:
         conn.execute(
             """
+            INSERT INTO native_account_snapshots
+                (source, bot_id, symbol, magic_number, balance, equity, margin,
+                 free_margin, open_positions, snapshot_at, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.get("source") or "mt5_native",
+                payload.get("bot_id"),
+                payload.get("symbol"),
+                payload.get("magic_number"),
+                snapshot.balance,
+                snapshot.equity,
+                snapshot.margin,
+                snapshot.free_margin,
+                snapshot.open_positions,
+                snapshot.time,
+                json.dumps(payload, ensure_ascii=False, default=str),
+            ),
+        )
+        conn.execute(
+            """
             INSERT INTO native_mt5_accounts
                 (source, symbol, magic_number, balance, equity, margin, free_margin,
                  open_positions, snapshot_at, payload)
@@ -141,6 +168,7 @@ def save_native_account_snapshot(snapshot: NativeMT5AccountSnapshot) -> None:
                 json.dumps(payload, ensure_ascii=False, default=str),
             ),
         )
+        _update_native_heartbeat(conn)
 
 
 def save_native_event(event: NativeMT5Event) -> None:
@@ -165,6 +193,7 @@ def save_native_event(event: NativeMT5Event) -> None:
                 json.dumps(payload, ensure_ascii=False, default=str),
             ),
         )
+        _update_native_heartbeat(conn)
         if event_type == "opened":
             _upsert_native_active_trade(conn, event, payload, force_new=False)
         elif event_type in NATIVE_EVENT_UPDATES_ACTIVE:
@@ -183,6 +212,9 @@ def latest_account_snapshot() -> Optional[dict]:
 
 def latest_native_account_snapshot() -> Optional[dict]:
     with db() as conn:
+        row = conn.execute("SELECT * FROM native_account_snapshots ORDER BY id DESC LIMIT 1").fetchone()
+        if row:
+            return _native_account_from_row(row)
         row = conn.execute("SELECT * FROM native_mt5_accounts ORDER BY id DESC LIMIT 1").fetchone()
         if not row:
             rows = conn.execute(
@@ -200,7 +232,8 @@ def latest_native_account_snapshot() -> Optional[dict]:
                         "margin": payload.get("margin"),
                         "free_margin": payload.get("free_margin"),
                         "margin_level": payload.get("margin_level"),
-                        "currency": payload.get("currency") or "USD",
+                        "currency": payload.get("currency") or "€",
+                        "bot_id": payload.get("bot_id"),
                         "account_login": payload.get("account_login"),
                         "account_server": payload.get("account_server"),
                         "trade_mode": payload.get("trade_mode"),
@@ -212,25 +245,34 @@ def latest_native_account_snapshot() -> Optional[dict]:
                         "created_at": event_row["created_at"],
                     }
             return None
-        data = dict(row)
-        payload = _decode_payload(data.get("payload"))
-        return {
-            "balance": data.get("balance"),
-            "equity": data.get("equity"),
-            "margin": data.get("margin"),
-            "free_margin": data.get("free_margin"),
-            "margin_level": payload.get("margin_level"),
-            "currency": payload.get("currency") or "USD",
-            "account_login": payload.get("account_login"),
-            "account_server": payload.get("account_server"),
-            "trade_mode": payload.get("trade_mode"),
-            "open_positions": data.get("open_positions"),
-            "symbol": data.get("symbol"),
-            "magic_number": data.get("magic_number"),
-            "source": data.get("source") or "mt5_native",
-            "snapshot_at": data.get("snapshot_at"),
-            "created_at": data.get("created_at"),
-        }
+        return _native_account_from_row(row)
+
+
+def get_latest_native_account() -> Optional[dict]:
+    return latest_native_account_snapshot()
+
+
+def _native_account_from_row(row) -> dict:
+    data = dict(row)
+    payload = _decode_payload(data.get("payload"))
+    return {
+        "balance": data.get("balance"),
+        "equity": data.get("equity"),
+        "margin": data.get("margin"),
+        "free_margin": data.get("free_margin"),
+        "margin_level": payload.get("margin_level"),
+        "currency": payload.get("currency") or "€",
+        "bot_id": first_present(data.get("bot_id"), payload.get("bot_id")),
+        "account_login": payload.get("account_login"),
+        "account_server": payload.get("account_server"),
+        "trade_mode": payload.get("trade_mode"),
+        "open_positions": data.get("open_positions"),
+        "symbol": data.get("symbol"),
+        "magic_number": data.get("magic_number"),
+        "source": data.get("source") or "mt5_native",
+        "snapshot_at": data.get("snapshot_at"),
+        "created_at": data.get("created_at"),
+    }
 
 
 def current_positions() -> list[dict]:
@@ -258,10 +300,19 @@ def current_native_positions() -> list[dict]:
                     "symbol": data.get("symbol"),
                     "side": data.get("side"),
                     "lot": data.get("lot"),
+                    "bot_id": data.get("bot_id"),
+                    "entry": data.get("entry"),
                     "entry_price": data.get("entry"),
                     "current_price": first_present(data.get("current_price"), data.get("exit_price")),
                     "sl": data.get("sl"),
                     "tp": first_present(data.get("tp3"), data.get("tp2"), data.get("tp1")),
+                    "tp1": data.get("tp1"),
+                    "tp2": data.get("tp2"),
+                    "tp3": data.get("tp3"),
+                    "tp1_done": bool(data.get("tp1_done")),
+                    "tp2_done": bool(data.get("tp2_done")),
+                    "tp3_done": bool(data.get("tp3_done")),
+                    "be_done": bool(data.get("be_done")),
                     "profit": data.get("profit"),
                     "swap": None,
                     "commission": None,
@@ -295,13 +346,15 @@ def native_trades_today() -> list[dict]:
         rows = conn.execute(
             """
             SELECT * FROM native_mt5_closed_trades
-            WHERE date(COALESCE(closed_at, created_at)) = date('now')
-            ORDER BY COALESCE(closed_at, created_at) DESC
+            ORDER BY COALESCE(closed_at, created_at) DESC, created_at DESC
+            LIMIT 500
             """
         ).fetchall()
         trades = []
         for row in rows:
             data = dict(row)
+            if not _is_today_berlin(first_present(data.get("closed_at"), data.get("created_at"))):
+                continue
             ticket = _synthetic_ticket(data.get("trade_key"))
             trades.append(
                 {
@@ -321,6 +374,11 @@ def native_trades_today() -> list[dict]:
                     "reason": data.get("status"),
                     "magic": data.get("magic_number"),
                     "comment": data.get("bot_id") or "mt5_native",
+                    "bot_id": data.get("bot_id"),
+                    "tp1_done": bool(data.get("tp1_done")),
+                    "tp2_done": bool(data.get("tp2_done")),
+                    "tp3_done": bool(data.get("tp3_done")),
+                    "be_done": bool(data.get("be_done")),
                     "created_at": data.get("created_at"),
                     "source": "mt5_native",
                 }
@@ -329,6 +387,8 @@ def native_trades_today() -> list[dict]:
 
 
 def pnl_today() -> dict:
+    if config.is_native_mt5_only():
+        return native_pnl_today()
     trades = trades_today()
     net_values = [float(trade.get("net_profit") or 0.0) for trade in trades]
     wins = [value for value in net_values if value > 0]
@@ -343,13 +403,82 @@ def pnl_today() -> dict:
     }
 
 
+def native_pnl_today() -> dict:
+    close_profits = []
+    tp_events = 0
+    execution_errors = 0
+    with db() as conn:
+        event_rows = conn.execute(
+            """
+            SELECT event_type, event_time, payload, created_at
+            FROM native_mt5_events
+            ORDER BY id DESC
+            LIMIT 5000
+            """
+        ).fetchall()
+        for row in event_rows:
+            event_time = first_present(row["event_time"], row["created_at"])
+            if not _is_today_berlin(event_time):
+                continue
+            event_type = str(row["event_type"] or "").strip().lower()
+            payload = _decode_payload(row["payload"])
+            if event_type in NATIVE_REALIZED_EVENT_TYPES:
+                close_profits.append(_payload_profit(payload))
+            elif event_type in NATIVE_TP_EVENT_TYPES:
+                tp_events += 1
+            elif event_type in NATIVE_ERROR_EVENT_TYPES:
+                execution_errors += 1
+
+        active_rows = conn.execute("SELECT profit FROM native_mt5_active_trades").fetchall()
+        floating_values = [float(row["profit"]) for row in active_rows if row["profit"] is not None]
+
+    closed_count = len(close_profits)
+    wins = [value for value in close_profits if value > 0]
+    losses = [value for value in close_profits if value < 0]
+    active_count = len(active_rows)
+    floating_pnl = round(sum(floating_values), 2) if floating_values else (0.0 if active_count == 0 else None)
+    if floating_pnl is None and active_count > 0:
+        account = latest_native_account_snapshot()
+        if account and account.get("balance") is not None and account.get("equity") is not None:
+            try:
+                floating_pnl = round(float(account["equity"]) - float(account["balance"]), 2)
+            except (TypeError, ValueError):
+                floating_pnl = None
+
+    realized_available = bool(close_profits) or tp_events == 0
+    closed_pnl = round(sum(close_profits), 2) if realized_available else None
+    total_pnl = None if closed_pnl is None else round(closed_pnl + (floating_pnl or 0.0), 2)
+    return {
+        "trades_count": closed_count,
+        "closed_trades_count": closed_count,
+        "wins": len(wins),
+        "losses": len(losses),
+        "closed_pnl": closed_pnl,
+        "floating_pnl": floating_pnl,
+        "total_pnl": total_pnl,
+        "net_pnl": total_pnl,
+        "best_trade": round(max(close_profits), 2) if close_profits else None,
+        "worst_trade": round(min(close_profits), 2) if close_profits else None,
+        "tp_events": tp_events,
+        "execution_errors": execution_errors,
+        "realized_available": realized_available,
+    }
+
+
 def last_mt5_heartbeat() -> Optional[str]:
     if config.is_native_mt5_only():
         with db() as conn:
+            state = conn.execute(
+                "SELECT value FROM native_mt5_state WHERE key = 'last_native_heartbeat_at'"
+            ).fetchone()
+            if state and state["value"]:
+                return state["value"]
             row = conn.execute(
                 """
                 SELECT MAX(ts) AS ts
                 FROM (
+                    SELECT created_at AS ts FROM native_account_snapshots
+                    UNION ALL
                     SELECT created_at AS ts FROM native_mt5_accounts
                     UNION ALL
                     SELECT created_at AS ts FROM native_mt5_events
@@ -370,11 +499,38 @@ def native_data_available() -> bool:
         row = conn.execute(
             """
             SELECT
+                (SELECT COUNT(*) FROM native_account_snapshots) +
                 (SELECT COUNT(*) FROM native_mt5_accounts) +
                 (SELECT COUNT(*) FROM native_mt5_events) AS count
             """
         ).fetchone()
         return bool(row and row["count"])
+
+
+def native_assets(limit: int = 8) -> list[str]:
+    symbols: list[str] = []
+    seen: set[str] = set()
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT symbol, created_at FROM native_mt5_events WHERE symbol IS NOT NULL AND symbol != ''
+            UNION ALL
+            SELECT symbol, created_at FROM native_account_snapshots WHERE symbol IS NOT NULL AND symbol != ''
+            UNION ALL
+            SELECT symbol, created_at FROM native_mt5_accounts WHERE symbol IS NOT NULL AND symbol != ''
+            ORDER BY created_at DESC
+            LIMIT 200
+            """
+        ).fetchall()
+    for row in rows:
+        symbol = str(row["symbol"] or "").strip()
+        key = symbol.lower()
+        if symbol and key not in seen:
+            symbols.append(symbol)
+            seen.add(key)
+        if len(symbols) >= limit:
+            break
+    return symbols or DEFAULT_NATIVE_ASSETS
 
 
 def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, force_new: bool) -> str:
@@ -385,9 +541,10 @@ def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, forc
         """
         INSERT INTO native_mt5_active_trades
             (trade_key, bot_id, symbol, magic_number, side, lot, entry, exit_price,
-             current_price, sl, tp1, tp2, tp3, closed_percent, profit, balance,
-             equity, status, last_event_type, opened_at, updated_at, message, payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             current_price, sl, tp1, tp2, tp3, tp1_done, tp2_done, tp3_done,
+             be_done, closed_percent, profit, balance, equity, status,
+             last_event_type, opened_at, updated_at, message, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 datetime('now'), ?, ?)
         ON CONFLICT(trade_key) DO UPDATE SET
             bot_id = excluded.bot_id,
@@ -402,6 +559,10 @@ def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, forc
             tp1 = excluded.tp1,
             tp2 = excluded.tp2,
             tp3 = excluded.tp3,
+            tp1_done = excluded.tp1_done,
+            tp2_done = excluded.tp2_done,
+            tp3_done = excluded.tp3_done,
+            be_done = excluded.be_done,
             closed_percent = excluded.closed_percent,
             profit = excluded.profit,
             balance = excluded.balance,
@@ -427,6 +588,10 @@ def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, forc
             merged.get("tp1"),
             merged.get("tp2"),
             merged.get("tp3"),
+            int(bool(merged.get("tp1_done"))),
+            int(bool(merged.get("tp2_done"))),
+            int(bool(merged.get("tp3_done"))),
+            int(bool(merged.get("be_done"))),
             merged.get("closed_percent"),
             merged.get("profit"),
             merged.get("balance"),
@@ -454,9 +619,10 @@ def _close_native_active_trade(conn, event: NativeMT5Event, payload: dict) -> No
         """
         INSERT INTO native_mt5_closed_trades
             (trade_key, bot_id, symbol, magic_number, side, lot, entry, exit_price,
-             sl, tp1, tp2, tp3, closed_percent, profit, balance, equity, status,
-             opened_at, closed_at, message, payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             sl, tp1, tp2, tp3, tp1_done, tp2_done, tp3_done, be_done,
+             closed_percent, profit, balance, equity, status, opened_at,
+             closed_at, message, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(trade_key) DO UPDATE SET
             bot_id = excluded.bot_id,
             symbol = excluded.symbol,
@@ -469,6 +635,10 @@ def _close_native_active_trade(conn, event: NativeMT5Event, payload: dict) -> No
             tp1 = excluded.tp1,
             tp2 = excluded.tp2,
             tp3 = excluded.tp3,
+            tp1_done = excluded.tp1_done,
+            tp2_done = excluded.tp2_done,
+            tp3_done = excluded.tp3_done,
+            be_done = excluded.be_done,
             closed_percent = excluded.closed_percent,
             profit = excluded.profit,
             balance = excluded.balance,
@@ -492,6 +662,10 @@ def _close_native_active_trade(conn, event: NativeMT5Event, payload: dict) -> No
             merged.get("tp1"),
             merged.get("tp2"),
             merged.get("tp3"),
+            int(bool(merged.get("tp1_done"))),
+            int(bool(merged.get("tp2_done"))),
+            int(bool(merged.get("tp3_done"))),
+            int(bool(merged.get("be_done"))),
             merged.get("closed_percent"),
             merged.get("profit"),
             merged.get("balance"),
@@ -526,6 +700,54 @@ def _find_native_active_trade(conn, event: NativeMT5Event) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def _update_native_heartbeat(conn) -> None:
+    conn.execute(
+        """
+        INSERT INTO native_mt5_state (key, value, updated_at)
+        VALUES ('last_native_heartbeat_at', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = datetime('now')
+        """,
+        (now_iso(),),
+    )
+
+
+def _payload_profit(payload: dict) -> float:
+    value = first_present(payload.get("profit"), payload.get("net_profit"), payload.get("pnl"))
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_today_berlin(value) -> bool:
+    parsed = _parse_datetime(value)
+    if not parsed:
+        return False
+    return parsed.astimezone(BERLIN_TZ).date() == datetime.now(BERLIN_TZ).date()
+
+
+def _parse_datetime(value) -> Optional[datetime]:
+    if value is None or value == "":
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        for pattern in ("%Y.%m.%d %H:%M:%S", "%Y.%m.%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(text, pattern)
+                break
+            except ValueError:
+                parsed = None
+        if parsed is None:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload: dict) -> dict:
     existing = existing or {}
     event_type = str(event.event_type or "").strip().lower()
@@ -533,6 +755,10 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
     sl = first_present(event.sl, existing.get("sl"))
     if event_type == "be_moved" and event.sl is None:
         sl = entry
+    tp1_done = bool(existing.get("tp1_done")) or event_type in {"tp1_closed", "tp2_closed", "tp3_closed"}
+    tp2_done = bool(existing.get("tp2_done")) or event_type in {"tp2_closed", "tp3_closed"}
+    tp3_done = bool(existing.get("tp3_done")) or event_type == "tp3_closed"
+    be_done = bool(existing.get("be_done")) or event_type == "be_moved"
     return {
         "bot_id": first_present(event.bot_id, existing.get("bot_id")),
         "symbol": first_present(event.symbol, existing.get("symbol")),
@@ -546,6 +772,10 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
         "tp1": first_present(event.tp1, existing.get("tp1")),
         "tp2": first_present(event.tp2, existing.get("tp2")),
         "tp3": first_present(event.tp3, existing.get("tp3")),
+        "tp1_done": tp1_done,
+        "tp2_done": tp2_done,
+        "tp3_done": tp3_done,
+        "be_done": be_done,
         "closed_percent": first_present(event.closed_percent, existing.get("closed_percent")),
         "profit": first_present(event.profit, existing.get("profit")),
         "balance": first_present(event.balance, existing.get("balance")),
