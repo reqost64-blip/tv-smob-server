@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import json
@@ -18,7 +19,9 @@ from .models import (
     ErrorResponse,
     ExecutionReport,
     NativeMT5AccountSnapshot,
+    NativeMT5ControlRequest,
     NativeMT5Event,
+    NativeMT5Heartbeat,
     NativeMT5Screenshot,
     OkResponse,
     PositionsSnapshot,
@@ -31,6 +34,7 @@ from . import queue as q
 from .symbol_mapper import load_symbols
 from .telegram_bot import (
     handle_command,
+    format_daily_report,
     format_native_screenshot_caption,
     notify_close_signal,
     notify_event,
@@ -42,6 +46,7 @@ from .telegram_bot import (
     should_notify_execution,
     validate_change,
 )
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +64,8 @@ NATIVE_SCREENSHOT_EVENTS = {
 MAX_NATIVE_SCREENSHOT_BYTES = 10 * 1024 * 1024
 SCREENSHOT_DIR = Path("data") / "screenshots"
 SCREENSHOTS_TO_KEEP = 100
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
+_daily_report_task: asyncio.Task | None = None
 
 
 SYMBOL_ALIASES = {
@@ -77,8 +84,16 @@ def err(msg: str, status: int = 400) -> JSONResponse:
 
 @app.on_event("startup")
 async def startup() -> None:
+    global _daily_report_task
     init_db()
     load_symbols()
+    _daily_report_task = asyncio.create_task(daily_report_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    if _daily_report_task:
+        _daily_report_task.cancel()
 
 
 # ── 1. Health ──────────────────────────────────────────────────────────────────
@@ -226,11 +241,12 @@ async def mt5_deal_report(report: DealReport):
 async def mt5_native_event(event: NativeMT5Event, request: Request):
     if not native_secret_matches(event.secret, request):
         return err("Invalid secret", status=403)
-    acct.save_native_event(event)
-    notified = notify_native_event(event)
+    saved = acct.save_native_event(event)
+    notified = notify_native_event(event) if saved else False
     return {
         "ok": True,
         "event_type": str(event.event_type or "").strip().lower(),
+        "duplicate": not saved,
         "notified": notified,
     }
 
@@ -241,6 +257,40 @@ async def mt5_native_account(snapshot: NativeMT5AccountSnapshot, request: Reques
         return err("Invalid secret", status=403)
     acct.save_native_account_snapshot(snapshot)
     return {"ok": True}
+
+
+@app.post("/api/mt5/native-heartbeat")
+async def mt5_native_heartbeat(heartbeat: NativeMT5Heartbeat, request: Request):
+    if not native_secret_matches(heartbeat.secret, request):
+        return err("Invalid secret", status=403)
+    control = acct.save_native_heartbeat(heartbeat)
+    enabled = bool(control.get("enabled", 1))
+    return {
+        "ok": True,
+        "bot_id": heartbeat.bot_id,
+        "enabled": enabled,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "control": {
+            "enabled": enabled,
+            "pause_new_entries": not enabled,
+        },
+    }
+
+
+@app.get("/api/mt5/native-control")
+async def mt5_native_control_get(bot_id: str, request: Request, secret: str | None = None):
+    if not native_secret_matches(secret, request):
+        return err("Invalid secret", status=403)
+    control = acct.get_native_control(bot_id)
+    return {"ok": True, **control}
+
+
+@app.post("/api/mt5/native-control")
+async def mt5_native_control_post(body: NativeMT5ControlRequest, request: Request):
+    if not native_secret_matches(body.secret, request):
+        return err("Invalid secret", status=403)
+    control = acct.get_native_control(body.bot_id, body.symbol, body.magic_number)
+    return {"ok": True, **control}
 
 
 @app.post("/api/mt5/native-screenshot")
@@ -262,6 +312,7 @@ async def mt5_native_screenshot(screenshot: NativeMT5Screenshot, request: Reques
     event = screenshot.model_dump(mode="json", exclude={"secret", "image_base64"})
     event["event_type"] = event_type
     caption = format_native_screenshot_caption(event)
+    acct.save_native_screenshot_record(screenshot, str(file_path), caption)
     sent = send_telegram_photo(file_path, caption)
     if not sent:
         return JSONResponse({"ok": False, "error": "Telegram sendPhoto failed"}, status_code=502)
@@ -330,6 +381,21 @@ async def api_trades_today():
 @app.get("/api/pnl/today")
 async def api_pnl_today():
     return {"ok": True, "pnl": acct.pnl_today()}
+
+
+async def daily_report_loop() -> None:
+    while True:
+        try:
+            now = datetime.now(BERLIN_TZ)
+            today_key = now.strftime("%Y-%m-%d")
+            if now.hour == 21 and acct.state_get("last_daily_report_date") != today_key:
+                send_telegram_message(format_daily_report())
+                acct.state_set("last_daily_report_date", today_key)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Daily report loop failed")
+        await asyncio.sleep(60)
 
 
 def normalize_control_symbol(symbol: str | None) -> str | None:

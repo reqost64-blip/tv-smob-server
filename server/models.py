@@ -122,6 +122,8 @@ class NativeMT5Event(BaseModel):
     equity: Optional[float] = None
     time: Optional[str] = None
     message: Optional[str] = None
+    ticket: Optional[int] = None
+    trade_uid: Optional[str] = None
 
 
 class NativeMT5AccountSnapshot(BaseModel):
@@ -162,6 +164,32 @@ class NativeMT5Screenshot(BaseModel):
     profit: Optional[float] = None
     balance: Optional[float] = None
     equity: Optional[float] = None
+    ticket: Optional[int] = None
+    trade_uid: Optional[str] = None
+
+
+class NativeMT5Heartbeat(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    secret: str
+    source: Optional[str] = None
+    bot_id: str
+    symbol: Optional[str] = None
+    magic_number: Optional[int] = None
+    status: Optional[str] = None
+    has_position: Optional[bool] = None
+    account_balance: Optional[float] = None
+    account_equity: Optional[float] = None
+    time: Optional[str] = None
+
+
+class NativeMT5ControlRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    secret: Optional[str] = None
+    bot_id: str
+    symbol: Optional[str] = None
+    magic_number: Optional[int] = None
 
 
 class ErrorResponse(BaseModel):

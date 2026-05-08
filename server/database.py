@@ -258,6 +258,91 @@ def init_db() -> None:
                 updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_bot_controls (
+                bot_id              TEXT PRIMARY KEY,
+                symbol              TEXT,
+                magic_number        INTEGER,
+                enabled             INTEGER NOT NULL DEFAULT 1,
+                paused_reason       TEXT,
+                status              TEXT,
+                has_position        INTEGER NOT NULL DEFAULT 0,
+                last_event_type     TEXT,
+                settings_summary    TEXT,
+                last_heartbeat_at   TEXT,
+                last_account_at     TEXT,
+                last_event_at       TEXT,
+                last_screenshot_at  TEXT,
+                created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_trade_journal (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_uid            TEXT UNIQUE NOT NULL,
+                bot_id               TEXT,
+                symbol               TEXT,
+                magic_number         INTEGER,
+                side                 TEXT,
+                lot                  REAL,
+                entry                REAL,
+                sl                   REAL,
+                tp1                  REAL,
+                tp2                  REAL,
+                tp3                  REAL,
+                opened_at            TEXT,
+                closed_at            TEXT,
+                status               TEXT,
+                close_reason         TEXT,
+                profit               REAL,
+                balance_after        REAL,
+                equity_after         REAL,
+                tp1_done             INTEGER NOT NULL DEFAULT 0,
+                tp2_done             INTEGER NOT NULL DEFAULT 0,
+                tp3_done             INTEGER NOT NULL DEFAULT 0,
+                be_done              INTEGER NOT NULL DEFAULT 0,
+                open_screenshot_id   INTEGER,
+                close_screenshot_id  INTEGER,
+                created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_trade_events (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_uid     TEXT,
+                event_type    TEXT NOT NULL,
+                symbol        TEXT,
+                bot_id        TEXT,
+                side          TEXT,
+                price         REAL,
+                profit        REAL,
+                message       TEXT,
+                time          TEXT,
+                dedupe_key    TEXT UNIQUE,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_screenshots (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_uid     TEXT,
+                bot_id        TEXT,
+                symbol        TEXT,
+                event_type    TEXT,
+                file_path     TEXT NOT NULL,
+                caption       TEXT,
+                time          TEXT,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS native_event_dedupe (
+                dedupe_key    TEXT PRIMARY KEY,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         _ensure_columns(
             conn,
             "native_account_snapshots",
@@ -285,6 +370,30 @@ def init_db() -> None:
                 "be_done": "INTEGER NOT NULL DEFAULT 0",
             },
         )
+        _ensure_columns(
+            conn,
+            "native_mt5_active_trades",
+            {
+                "trade_uid": "TEXT",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "native_mt5_closed_trades",
+            {
+                "trade_uid": "TEXT",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "native_bot_controls",
+            {
+                "status": "TEXT",
+                "has_position": "INTEGER NOT NULL DEFAULT 0",
+                "last_event_type": "TEXT",
+                "settings_summary": "TEXT",
+            },
+        )
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_active_lookup
             ON native_mt5_active_trades (bot_id, symbol, magic_number)
@@ -300,6 +409,22 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_closed_trades_time
             ON native_mt5_closed_trades (closed_at, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_journal_time
+            ON native_trade_journal (opened_at, closed_at, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_journal_bot
+            ON native_trade_journal (bot_id, symbol, magic_number)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_trade_events_time
+            ON native_trade_events (event_type, time, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_native_screenshots_lookup
+            ON native_screenshots (bot_id, symbol, created_at)
         """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),

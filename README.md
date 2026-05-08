@@ -73,6 +73,9 @@ API keys.
 | POST | `/api/mt5/ack` | Legacy ack; accepted and ignored in `NATIVE_MT5_ONLY` |
 | POST | `/api/mt5/native-event` | Native MT5 EA trade event |
 | POST | `/api/mt5/native-account` | Native MT5 EA account snapshot |
+| POST | `/api/mt5/native-heartbeat` | Native MT5 EA heartbeat and control sync |
+| GET | `/api/mt5/native-control?bot_id=...&secret=...` | Remote control state for an EA |
+| POST | `/api/mt5/native-control` | Remote control state for an EA |
 | POST | `/api/mt5/execution-report` | Legacy MT5 execution status |
 | POST | `/api/mt5/account-snapshot` | MT5 posts account snapshot |
 | POST | `/api/mt5/positions-snapshot` | MT5 posts open positions |
@@ -85,6 +88,186 @@ API keys.
 | GET | `/api/positions` | Current open positions |
 | GET | `/api/trades/today` | Today's deals |
 | GET | `/api/pnl/today` | Today's PnL summary |
+
+## Native MT5 Control Center
+
+`NATIVE_MT5_ONLY` now includes a Telegram control center for native MT5 bots.
+The server stores one `native_bot_controls` record per bot with `bot_id`,
+`symbol`, `magic_number`, enabled/disabled state, heartbeat timestamps, last
+account/event/screenshot timestamps, and a settings summary if the EA sends it.
+
+Default behavior is conservative:
+
+- Unknown bots are treated as `enabled=true`.
+- The first `native-account`, `native-event`, or `native-heartbeat` creates the bot control row.
+- Disabling a bot means `pause_new_entries=true`: no new entries only.
+- Open positions are still managed by the EA: TP, SL, BE, partial closes, and invalid exits continue.
+- Account snapshots do not auto-notify Telegram.
+- The old TradingView queue remains disabled in `NATIVE_MT5_ONLY`; `/api/mt5/commands` is not used for trading.
+
+Heartbeat example:
+
+```json
+{
+  "secret": "your-secret-here",
+  "source": "mt5_native",
+  "bot_id": "NAS100_ORB_VWAP_RSI_OF",
+  "symbol": "NAS100.r",
+  "magic_number": 26043001,
+  "status": "running",
+  "has_position": false,
+  "account_balance": 500.0,
+  "account_equity": 500.0,
+  "time": "2026-05-08T19:00:00Z"
+}
+```
+
+The heartbeat response includes:
+
+```json
+{
+  "ok": true,
+  "bot_id": "NAS100_ORB_VWAP_RSI_OF",
+  "enabled": true,
+  "server_time": "2026-05-08T19:00:00+00:00",
+  "control": {
+    "enabled": true,
+    "pause_new_entries": false
+  }
+}
+```
+
+## Telegram Bot Controls
+
+Control commands:
+
+```text
+/bots
+/bot NAS100
+/enable NAS100
+/disable NAS100
+/enable_all
+/disable_all
+```
+
+The main keyboard includes:
+
+```text
+Статус
+Сделки
+⚙️ Управление
+Статистика
+Последний скрин
+⚙️ Настройки
+Новости
+```
+
+`/disable NAS100` sets `enabled=false` for that bot and the EA receives
+`pause_new_entries=true` from `/api/mt5/native-control`. It does not close any
+position.
+
+## Performance Control
+
+Commands:
+
+```text
+/performance
+/performance NAS100
+/performance 7d
+/performance 30d
+/performance_all
+/symbols
+```
+
+Performance is calculated from native journal and native event storage. Closed
+PnL only uses final close events: `position_closed` and `closed_by_signal`.
+`tp1_closed`, `tp2_closed`, and `tp3_closed` are counted as TP events but are
+not added to closed PnL, which prevents duplicate realized PnL. Floating PnL
+comes from active native trades.
+
+Status rules:
+
+- `closed_pnl > 0` and `profit_factor >= 1.2`: working asset.
+- `closed_pnl < 0` and at least five trades: weak asset.
+- execution errors: execution warning.
+- fewer than three trades: low data.
+
+## Trade Journal
+
+The server maintains:
+
+```text
+native_trade_journal
+native_trade_events
+native_screenshots
+```
+
+Commands:
+
+```text
+/journal
+/journal today
+/journal 7d
+/trade_last
+/trade <id>
+```
+
+Native event handling:
+
+- `opened`: creates/updates a journal trade.
+- `tp1_closed`, `tp2_closed`, `tp3_closed`: mark TP flags.
+- `be_moved`: marks BE.
+- `position_closed`, `closed_by_signal`: close the journal trade and store final profit.
+- `open_failed`, `close_failed`: stored as journal events.
+
+If the EA sends `trade_uid`, the server uses it. Otherwise it derives one from
+`bot_id`, `symbol`, `magic_number`, ticket if available, and open time.
+
+## Last Screenshot
+
+Commands:
+
+```text
+/last_screenshot
+/last_screenshot NAS100
+/screenshot NAS100
+```
+
+Screenshots posted through `/api/mt5/native-screenshot` are stored in
+`native_screenshots` and can be retrieved later from Telegram. Captions are
+plain text.
+
+## Daily Report 21:00 Berlin
+
+The FastAPI app starts an internal background task on Render. It checks once per
+minute and sends the daily report once per Europe/Berlin date at 21:00. The
+state key `last_daily_report_date` prevents duplicate sends.
+
+Manual test command:
+
+```text
+/daily_report_now
+```
+
+If there is no native data, the report says that no native MT5 bot data is
+available for the day.
+
+## EA Remote Control Polling
+
+Native EAs should poll:
+
+```text
+POST /api/mt5/native-control
+POST /api/mt5/native-heartbeat
+```
+
+Required EA behavior:
+
+- Poll remote control every `InpControlPollSeconds`.
+- Send heartbeat every `InpHeartbeatSeconds`.
+- If control returns `enabled=false` or `pause_new_entries=true`, block only new entries.
+- Keep managing open positions: TP/SL/BE and partial exits must continue.
+- Do not print the native secret in logs.
 
 ## Native MT5 Event Contract
 

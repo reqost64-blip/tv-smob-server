@@ -672,6 +672,36 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return format_pnl_today()
     if command == "/history_today":
         return format_history_today()
+    if command == "/bots":
+        return format_bots()
+    if command == "/bot":
+        return format_bot_detail(parts[1] if len(parts) > 1 else "")
+    if command == "/enable":
+        return format_bot_toggle(parts[1] if len(parts) > 1 else "", True)
+    if command == "/disable":
+        return format_bot_toggle(parts[1] if len(parts) > 1 else "", False)
+    if command == "/enable_all":
+        return format_all_bots_toggle(True)
+    if command == "/disable_all":
+        return format_all_bots_toggle(False)
+    if command == "/performance":
+        return format_performance(parts[1] if len(parts) > 1 else "today")
+    if command == "/performance_all":
+        return format_performance("all")
+    if command == "/symbols":
+        return format_symbols()
+    if command == "/journal":
+        return format_journal(parts[1] if len(parts) > 1 else "today")
+    if command == "/trade_last":
+        return format_trade_last()
+    if command == "/trade":
+        return format_trade_detail(parts[1] if len(parts) > 1 else "")
+    if command in ("/last_screenshot", "/screenshot"):
+        return send_last_screenshot(parts[1] if len(parts) > 1 else "")
+    if command == "/bot_settings":
+        return format_bot_settings(parts[1] if len(parts) > 1 else "")
+    if command == "/daily_report_now":
+        return format_daily_report()
     if command == "/news":
         return attach_ai_risk_action_approval(format_market_research(get_market_news_today()), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
     if command == "/calendar":
@@ -720,7 +750,9 @@ def dashboard_keyboard() -> dict:
     return {
         "keyboard": [
             [{"text": "Статус"}, {"text": "Сделки"}],
-            [{"text": "Новости"}, {"text": "⚙️ Управление"}],
+            [{"text": "⚙️ Управление"}, {"text": "Статистика"}],
+            [{"text": "Последний скрин"}, {"text": "⚙️ Настройки"}],
+            [{"text": "Новости"}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -733,15 +765,24 @@ def normalize_dashboard_button(text: str) -> str:
         "Trade Center": "/trades",
         "Market Intel": "/market_today",
         "Control Panel": "/settings",
+        "Statistics": "/performance",
+        "Last Screenshot": "/last_screenshot",
         "📊 Core Status": "/status",
         "📈 Trade Center": "/trades",
         "📰 Market Intel": "/market_today",
-        "⚙️ Control Panel": "/settings",
+        "⚙️ Control Panel": "/bots",
         "Статус": "/status",
         "Сделки": "/trades",
         "Новости": "/market_today",
-        "Управление": "/settings",
-        "⚙️ Управление": "/settings",
+        "Управление": "/bots",
+        "⚙️ Управление": "/bots",
+        "Статистика": "/performance",
+        "Последний скрин": "/last_screenshot",
+        "Настройки": "/bot_settings",
+        "⚙️ Настройки": "/bot_settings",
+        "Назад": "/bots",
+        "⬅️ Назад": "/bots",
+        "Все боты": "/bots",
     }
     return mapping.get(text, text)
 
@@ -1212,6 +1253,328 @@ def format_pnl_today() -> str:
     return "\n".join(lines)
 
 
+def format_bots() -> str:
+    controls = acct.list_native_bot_controls(include_defaults=True)
+    if not controls:
+        return NATIVE_NO_DATA_MESSAGE
+    lines = ["NATIVE MT5 BOTS", ""]
+    for control in controls:
+        position = control.get("active_position")
+        position_text = "нет"
+        if position:
+            position_text = f"{fmt_side(position.get('side'))} {fmt_lot(position.get('lot'))}"
+        lines.extend(
+            [
+                bot_display(control),
+                f"Статус: {control.get('online_status') or 'offline'}",
+                f"Trading: {'enabled' if control_enabled(control) else 'disabled'}",
+                f"Heartbeat: {format_heartbeat(control.get('last_heartbeat_at'))}",
+                f"Позиция: {position_text}",
+                "",
+            ]
+        )
+    lines.extend(["Команды:", "/bot NAS100", "/enable NAS100", "/disable NAS100", "/performance 7d", "/journal today"])
+    return "\n".join(lines).rstrip()
+
+
+def format_bot_detail(selector: str) -> str:
+    control = acct.get_native_bot_control(selector)
+    if not control:
+        return "Бот не найден. Используй /bots или /bot NAS100."
+    position = control.get("active_position")
+    position_text = "none"
+    if position:
+        position_text = f"{fmt_side(position.get('side'))} {fmt_lot(position.get('lot'))}"
+    perf = acct.performance_summary("today", control.get("bot_id"))
+    total = perf.get("totals", {})
+    lines = [
+        bot_display(control),
+        "",
+        f"Статус: {'Включён' if control_enabled(control) else 'Остановлен'}",
+        f"Символ: {control.get('symbol') or 'нет данных'}",
+        f"Magic: {control.get('magic_number') or 'нет данных'}",
+        f"Heartbeat: {format_heartbeat(control.get('last_heartbeat_at'))}",
+        f"Последнее событие: {control.get('last_event_type') or 'none'}",
+        f"Открытая позиция: {position_text}",
+        f"PnL сегодня: {fmt_pnl(total.get('total_pnl'), '€')}",
+        "",
+        "Кнопки:",
+        "▶️ Включить бота",
+        "⏸ Остановить бота",
+        "Статистика",
+        "Последний скрин",
+        "⚙️ Настройки",
+        "⬅️ Назад",
+        "",
+        f"Команды: /enable {control.get('asset')} | /disable {control.get('asset')}",
+    ]
+    return "\n".join(lines)
+
+
+def format_bot_toggle(selector: str, enabled: bool) -> str:
+    if not selector:
+        return "Формат: /enable NAS100 или /disable NAS100"
+    control = acct.set_native_bot_enabled(selector, enabled, "Telegram control")
+    if not control:
+        return "Бот не найден. Используй /bots."
+    if enabled:
+        return "\n".join(
+            [
+                "▶️ БОТ ВКЛЮЧЁН",
+                "",
+                f"Бот: {bot_display(control)}",
+                f"Символ: {control.get('symbol') or 'нет данных'}",
+                "Новые сделки разрешены.",
+            ]
+        )
+    return "\n".join(
+        [
+            "⏸ БОТ ОСТАНОВЛЕН",
+            "",
+            f"Бот: {bot_display(control)}",
+            f"Символ: {control.get('symbol') or 'нет данных'}",
+            "Новые сделки запрещены.",
+            "Если позиция уже открыта, сопровождение TP/SL/BE продолжается.",
+        ]
+    )
+
+
+def format_all_bots_toggle(enabled: bool) -> str:
+    controls = acct.set_all_native_bots_enabled(enabled, "Telegram control")
+    state = "включены" if enabled else "остановлены"
+    return "\n".join([f"Все native MT5 боты {state}.", "", f"Ботов: {len(controls)}", "Открытые позиции не закрываются."])
+
+
+def format_symbols() -> str:
+    controls = acct.list_native_bot_controls(include_defaults=True)
+    lines = ["АКТИВЫ", ""]
+    for control in controls:
+        lines.append(f"{control.get('asset')}: {control.get('symbol')} | {control.get('bot_id')}")
+    return "\n".join(lines)
+
+
+def format_performance(arg: str = "today") -> str:
+    period, selector = parse_performance_arg(arg)
+    summary = acct.performance_summary(period, selector)
+    label = period_label(period)
+    items = summary.get("items", [])
+    if not items:
+        return "\n".join(["PERFORMANCE CONTROL", "", f"Период: {label}", "", "Данных пока нет."])
+    lines = ["PERFORMANCE CONTROL", "", f"Период: {label}", ""]
+    for item in items:
+        lines.extend(
+            [
+                item.get("symbol") or "UNKNOWN",
+                f"Trades: {item.get('trades_count', 0)}",
+                f"Winrate: {item.get('winrate', 0):.1f}%",
+                f"Closed PnL: {fmt_pnl(item.get('closed_pnl'), '€')}",
+                f"Floating: {fmt_pnl(item.get('floating_pnl'), '€')}",
+                f"Total: {fmt_pnl(item.get('total_pnl'), '€')}",
+                f"PF: {fmt_pf(item.get('profit_factor'))}",
+                f"Best: {fmt_pnl(item.get('best_trade'), '€')}",
+                f"Worst: {fmt_pnl(item.get('worst_trade'), '€')}",
+                f"TP1: {item.get('tp1_count', 0)} | TP2: {item.get('tp2_count', 0)} | BE: {item.get('be_count', 0)}",
+                f"Errors: {(item.get('open_failed_count', 0) or 0) + (item.get('close_failed_count', 0) or 0)}",
+                f"Status: {item.get('status')}",
+                "",
+            ]
+        )
+    totals = summary.get("totals", {})
+    lines.extend(
+        [
+            "ИТОГО:",
+            f"Trades: {totals.get('trades_count', 0)}",
+            f"Closed PnL: {fmt_pnl(totals.get('closed_pnl'), '€')}",
+            f"Floating PnL: {fmt_pnl(totals.get('floating_pnl'), '€')}",
+            f"Total PnL: {fmt_pnl(totals.get('total_pnl'), '€')}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def format_journal(arg: str = "today") -> str:
+    period = parse_period_arg(arg)
+    entries = acct.journal_entries(period, None, limit=30)
+    today = datetime.now(BERLIN_TZ).strftime("%Y-%m-%d")
+    if not entries:
+        return "\n".join(["ЖУРНАЛ СДЕЛОК", "", f"Сегодня: {today}", "", "Сделок нет."])
+    total = 0.0
+    wins = 0
+    closed = 0
+    lines = ["ЖУРНАЛ СДЕЛОК", "", f"Сегодня: {today}" if period == "today" else f"Период: {period_label(period)}", ""]
+    for index, trade in enumerate(entries, start=1):
+        profit = trade.get("profit")
+        if trade.get("closed_at"):
+            closed += 1
+            total += float_or_zero(profit)
+            wins += 1 if float_or_zero(profit) > 0 else 0
+        lines.extend(
+            [
+                f"{index}. {trade.get('symbol') or 'нет данных'} {fmt_side(trade.get('side'))} {fmt_lot(trade.get('lot'))}",
+                f"Entry: {fmt_price(trade.get('entry'))}",
+                f"Result: {fmt_pnl(profit, '€')}",
+                f"TP1: {checkmark(trade.get('tp1_done'))} TP2: {checkmark(trade.get('tp2_done'))} BE: {checkmark(trade.get('be_done'))}",
+                f"Открыта: {format_time(trade.get('opened_at'))}",
+                f"Закрыта: {format_time(trade.get('closed_at')) if trade.get('closed_at') else trade.get('status') or 'open'}",
+                "",
+            ]
+        )
+    winrate = round((wins / closed) * 100, 1) if closed else 0.0
+    lines.extend(["ИТОГ ДНЯ:", f"Сделок: {closed}", f"Winrate: {winrate:.1f}%", f"Closed PnL: {fmt_pnl(total, '€')}"])
+    return "\n".join(lines)
+
+
+def format_trade_last() -> str:
+    trade = acct.last_journal_trade()
+    if not trade:
+        return "Сделок пока нет."
+    screenshot = acct.last_native_screenshot(trade.get("symbol"))
+    if screenshot:
+        send_telegram_photo(screenshot.get("file_path"), screenshot.get("caption") or "Последний скрин")
+    return format_trade_record(trade)
+
+
+def format_trade_detail(trade_id: str) -> str:
+    if not trade_id:
+        return "Формат: /trade <id>"
+    trade = acct.get_journal_trade(trade_id)
+    if not trade:
+        return "Сделка не найдена."
+    return format_trade_record(trade)
+
+
+def format_trade_record(trade: dict) -> str:
+    return "\n".join(
+        [
+            "СДЕЛКА",
+            "",
+            f"ID: {trade.get('id')}",
+            f"UID: {trade.get('trade_uid')}",
+            f"Бот: {trade.get('bot_id') or 'нет данных'}",
+            f"Символ: {trade.get('symbol') or 'нет данных'}",
+            f"Сторона: {fmt_side(trade.get('side'))}",
+            f"Лот: {fmt_lot(trade.get('lot'))}",
+            f"Entry: {fmt_price(trade.get('entry'))}",
+            f"SL: {fmt_price(trade.get('sl'))}",
+            f"TP1: {fmt_price(trade.get('tp1'))}",
+            f"TP2: {fmt_price(trade.get('tp2'))}",
+            f"TP3: {fmt_price(trade.get('tp3'))}",
+            f"TP1: {checkmark(trade.get('tp1_done'))} TP2: {checkmark(trade.get('tp2_done'))} TP3: {checkmark(trade.get('tp3_done'))} BE: {checkmark(trade.get('be_done'))}",
+            f"Статус: {trade.get('status') or 'нет данных'}",
+            f"Причина закрытия: {trade.get('close_reason') or 'нет данных'}",
+            f"Profit: {fmt_pnl(trade.get('profit'), '€')}",
+            f"Открыта: {format_time(trade.get('opened_at'))}",
+            f"Закрыта: {format_time(trade.get('closed_at'))}",
+        ]
+    )
+
+
+def send_last_screenshot(selector: str = "") -> str:
+    screenshot = acct.last_native_screenshot(selector or None)
+    label = selector.upper() if selector else "ботам"
+    if not screenshot:
+        return f"Скриншотов по {label} пока нет."
+    sent = send_telegram_photo(screenshot.get("file_path"), screenshot.get("caption") or "Последний скрин")
+    if not sent:
+        return "Скрин найден, но Telegram sendPhoto не прошёл."
+    return "Последний скрин отправлен."
+
+
+def format_bot_settings(selector: str = "") -> str:
+    control = acct.get_native_bot_control(selector) if selector else None
+    if not control:
+        controls = acct.list_native_bot_controls(include_defaults=True)
+        control = controls[0] if controls else None
+    if not control:
+        return "EA settings unavailable. Будут добавлены после следующего heartbeat."
+    summary = decode_settings_summary(control.get("settings_summary"))
+    lines = [
+        "⚙️ НАСТРОЙКИ БОТА",
+        "",
+        f"Бот: {bot_display(control)}",
+        f"Символ: {control.get('symbol') or 'нет данных'}",
+        f"Magic: {control.get('magic_number') or 'нет данных'}",
+        f"Статус: {'Включён' if control_enabled(control) else 'Остановлен'}",
+        "",
+        "Remote control: ON",
+        "Notifications: ON",
+        "Screenshots: ON",
+        "Account snapshot: every 1 min",
+        "",
+    ]
+    if not summary:
+        lines.append("EA settings unavailable. Будут добавлены после следующего heartbeat.")
+    else:
+        lines.extend(
+            [
+                f"ORB: {summary.get('orb_window', 'unavailable')}",
+                f"Mode: {summary.get('mode', summary.get('retest', 'unavailable'))}",
+                f"VWAP filter: {on_off(summary.get('vwap_filter'))}",
+                f"TP: {summary.get('tp_mode', 'unavailable')}",
+                f"TP1/TP2/TP3: {summary.get('tp1', 'n/a')} / {summary.get('tp2', 'n/a')} / {summary.get('tp3', 'n/a')}",
+                f"BE after TP1: {on_off(summary.get('be_enabled'))}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def format_daily_report() -> str:
+    if not acct.native_data_available():
+        return "\n".join(["DAILY REPORT", "Сегодня данных от native MT5 bots пока нет."])
+    account = acct.latest_account_snapshot() or {}
+    pnl = acct.pnl_today()
+    perf = acct.performance_summary("today")
+    totals = perf.get("totals", {})
+    items = perf.get("items", [])
+    best = max(items, key=lambda item: item.get("closed_pnl", 0), default=None)
+    worst = min(items, key=lambda item: item.get("closed_pnl", 0), default=None)
+    controls = acct.list_native_bot_controls(include_defaults=True)
+    lines = [
+        "DAILY REPORT",
+        "Время: 21:00 Berlin",
+        f"Дата: {datetime.now(BERLIN_TZ).strftime('%Y-%m-%d')}",
+        "",
+        fmt_divider(),
+        "АККАУНТ",
+        f"Баланс: {fmt_money(account.get('balance'), account_currency(account))}",
+        f"Equity: {fmt_money(account.get('equity'), account_currency(account))}",
+        f"Margin: {fmt_money(account.get('margin'), account_currency(account))}",
+        f"Free margin: {fmt_money(account.get('free_margin'), account_currency(account))}",
+        "",
+        fmt_divider(),
+        "PnL ДНЯ",
+        f"Closed PnL: {fmt_pnl(pnl.get('closed_pnl'), account_currency(account))}",
+        f"Floating PnL: {fmt_pnl(pnl.get('floating_pnl'), account_currency(account))}",
+        f"Total PnL: {fmt_pnl(pnl.get('total_pnl'), account_currency(account))}",
+        "",
+        fmt_divider(),
+        "СДЕЛКИ",
+        f"Всего: {totals.get('trades_count', 0)}",
+        f"Побед: {totals.get('wins', 0)}",
+        f"Убытков: {totals.get('losses', 0)}",
+        f"Winrate: {totals.get('winrate', 0):.1f}%",
+        "",
+        f"TP1: {totals.get('tp1_count', 0)}",
+        f"TP2: {totals.get('tp2_count', 0)}",
+        f"TP3: {totals.get('tp3_count', 0)}",
+        f"BE: {totals.get('be_count', 0)}",
+        f"Ошибок исполнения: {(totals.get('open_failed_count', 0) or 0) + (totals.get('close_failed_count', 0) or 0)}",
+        "",
+        fmt_divider(),
+        "Лучший актив:",
+        f"{best.get('symbol')} {fmt_pnl(best.get('closed_pnl'), account_currency(account))}" if best else "нет данных",
+        "",
+        "⚠️ Худший актив:",
+        f"{worst.get('symbol')} {fmt_pnl(worst.get('closed_pnl'), account_currency(account))}" if worst else "нет данных",
+        "",
+        fmt_divider(),
+        "БОТЫ",
+    ]
+    for control in controls:
+        lines.append(f"{control.get('asset')}: {control.get('online_status')}")
+    return "\n".join(lines)
+
+
 def format_history_today() -> str:
     if config.is_native_mt5_only() and not acct.native_data_available():
         return NATIVE_NO_DATA_MESSAGE
@@ -1633,6 +1996,81 @@ def format_assets_line() -> str:
 
 def yes_no(value) -> str:
     return "YES" if bool(value) else "NO"
+
+
+def control_enabled(control: dict) -> bool:
+    return bool(int(control.get("enabled", 1) or 0))
+
+
+def bot_display(control: dict) -> str:
+    return control.get("display_name") or str(control.get("bot_id") or control.get("symbol") or "native bot")
+
+
+def parse_period_arg(value: str) -> str:
+    normalized = str(value or "today").strip().lower()
+    if normalized in ("7d", "7", "week"):
+        return "7d"
+    if normalized in ("30d", "30", "month"):
+        return "30d"
+    if normalized in ("all", "alltime"):
+        return "all"
+    return "today"
+
+
+def parse_performance_arg(value: str) -> tuple[str, Optional[str]]:
+    normalized = str(value or "today").strip()
+    lower = normalized.lower()
+    if lower in ("today", "7d", "7", "30d", "30", "all", "alltime"):
+        return parse_period_arg(normalized), None
+    return "today", normalized
+
+
+def period_label(period: str) -> str:
+    return {
+        "today": "сегодня",
+        "7d": "7 дней",
+        "30d": "30 дней",
+        "all": "all",
+    }.get(period, period)
+
+
+def fmt_pf(value) -> str:
+    if value is None:
+        return "n/a"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number >= 999:
+        return "∞"
+    return f"{number:.2f}"
+
+
+def checkmark(value) -> str:
+    return "✅" if bool(value) else "❌"
+
+
+def decode_settings_summary(value) -> dict:
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        data = json.loads(value)
+        return data if isinstance(data, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def on_off(value) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("1", "true", "yes", "on"):
+            return "ON"
+        if normalized in ("0", "false", "no", "off"):
+            return "OFF"
+        return value
+    return "ON" if bool(value) else "OFF"
 
 
 def short_text(value, limit: int) -> str:
