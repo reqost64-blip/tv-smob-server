@@ -15,6 +15,7 @@ env/
 
 # Database
 *.db
+tests/*.sqlite3
 server/*.db
 
 # Logs

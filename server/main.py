@@ -15,6 +15,8 @@ from .database import init_db
 from .models import (
     AckRequest,
     AccountSnapshot,
+    BotControlRequest,
+    DailyReportTaskRequest,
     DealReport,
     ErrorResponse,
     ExecutionReport,
@@ -64,6 +66,7 @@ NATIVE_SCREENSHOT_EVENTS = {
 MAX_NATIVE_SCREENSHOT_BYTES = 10 * 1024 * 1024
 SCREENSHOT_DIR = Path("data") / "screenshots"
 SCREENSHOTS_TO_KEEP = 100
+SCREENSHOTS_TO_KEEP_PER_BOT = 20
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 _daily_report_task: asyncio.Task | None = None
 
@@ -75,6 +78,8 @@ SYMBOL_ALIASES = {
     "DJ30": "DJ30",
     "XAUUSD": "XAUUSD",
     "BTCUSD": "BTCUSD",
+    "GER40": "GER40",
+    "GER40FT": "GER40",
 }
 
 
@@ -277,6 +282,22 @@ async def mt5_native_heartbeat(heartbeat: NativeMT5Heartbeat, request: Request):
     }
 
 
+@app.get("/api/mt5/native-config")
+async def mt5_native_config(bot_id: str, request: Request, secret: str | None = None):
+    if not native_secret_matches(secret, request):
+        return err("Invalid secret", status=403)
+    control = acct.native_config(bot_id)
+    return {
+        "ok": True,
+        "bot_id": control.get("bot_id"),
+        "enabled": bool(control.get("enabled")),
+        "symbol": control.get("symbol") or "",
+        "reason": control.get("reason") or "",
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "mode": config.SYSTEM_MODE,
+    }
+
+
 @app.get("/api/mt5/native-control")
 async def mt5_native_control_get(bot_id: str, request: Request, secret: str | None = None):
     if not native_secret_matches(secret, request):
@@ -291,6 +312,47 @@ async def mt5_native_control_post(body: NativeMT5ControlRequest, request: Reques
         return err("Invalid secret", status=403)
     control = acct.get_native_control(body.bot_id, body.symbol, body.magic_number)
     return {"ok": True, **control}
+
+
+@app.get("/api/bots/status")
+async def api_bots_status():
+    controls = acct.list_native_bot_controls(include_defaults=True)
+    return {
+        "ok": True,
+        "bots": [
+            {
+                "bot_id": control.get("bot_id"),
+                "asset": control.get("asset"),
+                "symbol": control.get("symbol"),
+                "enabled": bool(control.get("enabled", 1)),
+                "status": "ENABLED" if bool(control.get("enabled", 1)) else "DISABLED",
+                "reason": control.get("paused_reason") or "",
+                "online_status": control.get("online_status"),
+                "last_heartbeat_at": control.get("last_heartbeat_at"),
+            }
+            for control in controls
+        ],
+    }
+
+
+@app.post("/api/bots/enable")
+async def api_bots_enable(body: BotControlRequest, request: Request):
+    if not task_secret_matches(body.secret, request):
+        return err("Invalid secret", status=403)
+    control = acct.set_native_bot_enabled(body.bot_id, True, "")
+    if not control:
+        return err("Bot not found", status=404)
+    return {"ok": True, "bot_id": control.get("bot_id"), "enabled": True}
+
+
+@app.post("/api/bots/disable")
+async def api_bots_disable(body: BotControlRequest, request: Request):
+    if not task_secret_matches(body.secret, request):
+        return err("Invalid secret", status=403)
+    control = acct.set_native_bot_enabled(body.bot_id, False, body.reason or "api pause")
+    if not control:
+        return err("Bot not found", status=404)
+    return {"ok": True, "bot_id": control.get("bot_id"), "enabled": False, "reason": control.get("paused_reason") or ""}
 
 
 @app.post("/api/mt5/native-screenshot")
@@ -313,6 +375,7 @@ async def mt5_native_screenshot(screenshot: NativeMT5Screenshot, request: Reques
     event["event_type"] = event_type
     caption = format_native_screenshot_caption(event)
     acct.save_native_screenshot_record(screenshot, str(file_path), caption)
+    prune_native_screenshot_records()
     sent = send_telegram_photo(file_path, caption)
     if not sent:
         return JSONResponse({"ok": False, "error": "Telegram sendPhoto failed"}, status_code=502)
@@ -336,6 +399,14 @@ async def telegram_webhook(request: Request):
     response = handle_command(text, chat_id)
     send_telegram_message(response)
     return {"ok": True, "handled": True}
+
+
+@app.post("/api/tasks/daily-report")
+async def api_daily_report_task(body: DailyReportTaskRequest, request: Request):
+    if not task_secret_matches(body.secret, request):
+        return err("Invalid secret", status=403)
+    sent, reason, berlin_day = send_daily_report_if_due(force=body.force)
+    return {"ok": True, "sent": sent, "reason": reason, "berlin_day": berlin_day}
 
 
 @app.get("/api/settings")
@@ -386,16 +457,28 @@ async def api_pnl_today():
 async def daily_report_loop() -> None:
     while True:
         try:
-            now = datetime.now(BERLIN_TZ)
-            today_key = now.strftime("%Y-%m-%d")
-            if now.hour == 21 and acct.state_get("last_daily_report_date") != today_key:
-                send_telegram_message(format_daily_report())
-                acct.state_set("last_daily_report_date", today_key)
+            send_daily_report_if_due(force=False)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Daily report loop failed")
         await asyncio.sleep(60)
+
+
+def send_daily_report_if_due(force: bool = False) -> tuple[bool, str, str]:
+    now = datetime.now(BERLIN_TZ)
+    today_key = now.strftime("%Y-%m-%d")
+    state_key = "last_daily_report_date"
+    if not force and now.hour != 21:
+        return False, "not_due", today_key
+    if not force and acct.state_get(state_key) == today_key:
+        return False, "already_sent", today_key
+    text = format_daily_report()
+    sent = send_telegram_message(text)
+    if sent:
+        acct.state_set(state_key, today_key)
+        return True, "sent", today_key
+    return False, "telegram_send_failed", today_key
 
 
 def normalize_control_symbol(symbol: str | None) -> str | None:
@@ -423,6 +506,19 @@ def native_secret_matches(body_secret: str | None, request: Request) -> bool:
         bool(expected)
         and (
             body_secret == expected
+            or request.headers.get("x-mt5-native-secret", "") == expected
+            or request.headers.get("x-webhook-secret", "") == expected
+        )
+    )
+
+
+def task_secret_matches(body_secret: str | None, request: Request) -> bool:
+    expected = config.TASK_SECRET or config.MT5_NATIVE_SECRET or config.WEBHOOK_SECRET
+    return (
+        bool(expected)
+        and (
+            body_secret == expected
+            or request.headers.get("x-task-secret", "") == expected
             or request.headers.get("x-mt5-native-secret", "") == expected
             or request.headers.get("x-webhook-secret", "") == expected
         )
@@ -471,6 +567,16 @@ def prune_native_screenshots() -> None:
             old_file.unlink()
         except OSError:
             logger.info("Could not remove old native screenshot file")
+
+
+def prune_native_screenshot_records() -> None:
+    for deleted_path in acct.prune_native_screenshot_records(SCREENSHOTS_TO_KEEP_PER_BOT):
+        try:
+            path = Path(deleted_path)
+            if path.exists():
+                path.unlink()
+        except OSError:
+            logger.info("Could not remove old native screenshot record file")
 
 
 def safe_filename_part(value: str) -> str:

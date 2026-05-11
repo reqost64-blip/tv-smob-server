@@ -696,3 +696,99 @@ server/
   ai_web_research.py    Market news and web research
   symbol_mapper.py      TradingView -> MT5 symbol lookup
 ```
+## Trading Control Center
+
+Trading Control Center is a compatibility layer over the existing FastAPI,
+Telegram, and native MT5 storage. It does not replace the old native endpoints
+or the `native_*` tables.
+
+Telegram main buttons:
+
+```text
+Включить бота | Остановить бота
+📊 Статистика | 📒 Журнал
+📸 Последний скрин | Настройки
+Статус | Сделки
+```
+
+Bot control uses these assets and bot IDs:
+
+```text
+NAS100  -> NAS100_ORB_VWAP_RSI_OF
+SP500   -> SP500_ORB_VWAP_RSI_OF
+DJ30    -> DJ30_ORB_VWAP_RSI_OF
+BTCUSD  -> BTCUSD_ORB_VWAP_RSI_OF
+GER40   -> GER40_ORB_VWAP_RSI_OF
+```
+
+Telegram commands:
+
+```text
+/performance
+/performance NAS100
+/performance SP500
+/performance DJ30
+/performance BTCUSD
+/performance GER40
+/journal
+/journal NAS100
+/trades_today
+/trades_today NAS100
+/last_screenshot
+/last_screenshot NAS100
+/daily_report
+/symbols
+```
+
+Control endpoints:
+
+```text
+GET  /api/mt5/native-config?secret=...&bot_id=...
+GET  /api/bots/status
+POST /api/bots/enable
+POST /api/bots/disable
+POST /api/tasks/daily-report
+```
+
+`GET /api/mt5/native-config` is intended for MT5 polling. It checks
+`MT5_NATIVE_SECRET`, with fallback to `WEBHOOK_SECRET`, and returns the bot
+enabled state. If a bot is disabled, the EA should block only new entries and
+continue managing already open positions.
+
+`POST /api/bots/enable`, `POST /api/bots/disable`, and
+`POST /api/tasks/daily-report` check body `secret` against `TASK_SECRET`, with
+fallback to `MT5_NATIVE_SECRET`, then `WEBHOOK_SECRET`.
+
+Example bot disable body:
+
+```json
+{
+  "secret": "$TASK_SECRET",
+  "bot_id": "NAS100_ORB_VWAP_RSI_OF",
+  "reason": "manual pause"
+}
+```
+
+Render Cron:
+
+```text
+0 * * * *
+```
+
+Cron should call:
+
+```text
+POST https://<service>.onrender.com/api/tasks/daily-report
+```
+
+Body:
+
+```json
+{
+  "secret": "$TASK_SECRET"
+}
+```
+
+The endpoint checks the Europe/Berlin hour and sends the report once per Berlin
+day at 21:00. `force=true` bypasses the hour and idempotency checks for manual
+use.

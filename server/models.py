@@ -192,6 +192,17 @@ class NativeMT5ControlRequest(BaseModel):
     magic_number: Optional[int] = None
 
 
+class BotControlRequest(BaseModel):
+    secret: Optional[str] = None
+    bot_id: str
+    reason: Optional[str] = None
+
+
+class DailyReportTaskRequest(BaseModel):
+    secret: Optional[str] = None
+    force: bool = False
+
+
 class ErrorResponse(BaseModel):
     ok: bool = False
     error: str

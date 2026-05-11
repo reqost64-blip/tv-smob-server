@@ -17,13 +17,13 @@ NATIVE_EVENT_CLOSES_ACTIVE = {"position_closed", "closed_by_signal"}
 NATIVE_REALIZED_EVENT_TYPES = {"position_closed", "closed_by_signal"}
 NATIVE_TP_EVENT_TYPES = {"tp1_closed", "tp2_closed", "tp3_closed"}
 NATIVE_ERROR_EVENT_TYPES = {"open_failed", "close_failed", "rejected", "close_rejected", "error"}
-DEFAULT_NATIVE_ASSETS = ["XAUUSD", "NAS100", "DJ30", "US500", "BTCUSD", "GER40FT"]
+DEFAULT_NATIVE_ASSETS = ["NAS100", "SP500", "DJ30", "BTCUSD", "GER40"]
 DEFAULT_NATIVE_BOTS = [
     {"asset": "NAS100", "bot_id": "NAS100_ORB_VWAP_RSI_OF", "symbol": "NAS100.r", "magic_number": 26043001},
+    {"asset": "SP500", "bot_id": "SP500_ORB_VWAP_RSI_OF", "symbol": "US500.r", "magic_number": 26043003},
     {"asset": "DJ30", "bot_id": "DJ30_ORB_VWAP_RSI_OF", "symbol": "DJ30.r", "magic_number": 26043002},
-    {"asset": "US500", "bot_id": "US500_ORB_VWAP_RSI_OF", "symbol": "US500.r", "magic_number": 26043003},
     {"asset": "BTCUSD", "bot_id": "BTCUSD_ORB_VWAP_RSI_OF", "symbol": "BTCUSD", "magic_number": 26043004},
-    {"asset": "GER40FT", "bot_id": "GER40FT_ORB_VWAP_RSI_OF", "symbol": "GER40FT", "magic_number": 26043005},
+    {"asset": "GER40", "bot_id": "GER40_ORB_VWAP_RSI_OF", "symbol": "GER40", "magic_number": 26043005},
 ]
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
@@ -605,10 +605,10 @@ def list_native_bot_controls(include_defaults: bool = True) -> list[dict]:
             ORDER BY
                 CASE
                     WHEN bot_id LIKE 'NAS100%' THEN 1
-                    WHEN bot_id LIKE 'DJ30%' THEN 2
-                    WHEN bot_id LIKE 'US500%' THEN 3
+                    WHEN bot_id LIKE 'SP500%' OR bot_id LIKE 'US500%' THEN 2
+                    WHEN bot_id LIKE 'DJ30%' THEN 3
                     WHEN bot_id LIKE 'BTCUSD%' THEN 4
-                    WHEN bot_id LIKE 'GER40FT%' THEN 5
+                    WHEN bot_id LIKE 'GER40%' THEN 5
                     ELSE 99
                 END,
                 symbol,
@@ -643,6 +643,20 @@ def get_native_bot_control(selector: str) -> Optional[dict]:
         if normalized in keys:
             return control
     return None
+
+
+def native_config(bot_id: str) -> dict:
+    control = get_native_bot_control(bot_id)
+    if not control:
+        with db() as conn:
+            control = _ensure_native_bot_control(conn, bot_id, None, None)
+        control = get_native_bot_control(bot_id) or control
+    return {
+        "bot_id": control.get("bot_id"),
+        "enabled": bool(control.get("enabled", 1)),
+        "symbol": _asset_from_bot(control.get("bot_id"), control.get("symbol")),
+        "reason": control.get("paused_reason") or "",
+    }
 
 
 def set_native_bot_enabled(selector: str, enabled: bool, reason: str = "") -> Optional[dict]:
@@ -829,6 +843,30 @@ def last_native_screenshot(selector: Optional[str] = None) -> Optional[dict]:
             params,
         ).fetchone()
         return dict(row) if row else None
+
+
+def prune_native_screenshot_records(limit_per_bot: int = 20) -> list[str]:
+    deleted_paths: list[str] = []
+    with db() as conn:
+        bot_ids = [
+            row["bot_id"] or ""
+            for row in conn.execute("SELECT DISTINCT COALESCE(bot_id, '') AS bot_id FROM native_screenshots").fetchall()
+        ]
+        for bot_id in bot_ids:
+            rows = conn.execute(
+                """
+                SELECT id, file_path
+                FROM native_screenshots
+                WHERE COALESCE(bot_id, '') = ?
+                ORDER BY COALESCE(time, created_at) DESC, id DESC
+                LIMIT -1 OFFSET ?
+                """,
+                (bot_id, limit_per_bot),
+            ).fetchall()
+            for row in rows:
+                deleted_paths.append(row["file_path"])
+                conn.execute("DELETE FROM native_screenshots WHERE id = ?", (row["id"],))
+    return deleted_paths
 
 
 def state_get(key: str) -> Optional[str]:
@@ -1117,6 +1155,8 @@ def _native_event_dedupe_key(event: NativeMT5Event, payload: dict, event_type: s
 
 def _record_native_trade_event(conn, event: NativeMT5Event, payload: dict, event_type: str, dedupe_key: str) -> str:
     existing = _find_native_active_trade(conn, event)
+    if not existing and event_type in NATIVE_EVENT_CLOSES_ACTIVE:
+        existing = _find_open_journal_trade(conn, event)
     trade_uid = _trade_uid_from_event(event, payload, existing)
     price = first_present(payload.get("price"), event.exit_price, event.current_price, event.entry)
     conn.execute(
@@ -1140,6 +1180,32 @@ def _record_native_trade_event(conn, event: NativeMT5Event, payload: dict, event
     )
     _apply_journal_event(conn, event, payload, event_type, trade_uid)
     return trade_uid
+
+
+def _find_open_journal_trade(conn, event: NativeMT5Event) -> Optional[dict]:
+    filters = ["closed_at IS NULL", "status != 'closed'"]
+    params = []
+    if event.bot_id:
+        filters.append("bot_id = ?")
+        params.append(event.bot_id)
+    if event.symbol:
+        filters.append("symbol = ?")
+        params.append(event.symbol)
+    if event.magic_number is not None:
+        filters.append("magic_number = ?")
+        params.append(event.magic_number)
+    if len(filters) <= 2:
+        return None
+    row = conn.execute(
+        f"""
+        SELECT * FROM native_trade_journal
+        WHERE {" AND ".join(filters)}
+        ORDER BY COALESCE(opened_at, created_at) DESC, id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def _apply_journal_event(conn, event: NativeMT5Event, payload: dict, event_type: str, trade_uid: str) -> None:
@@ -1341,6 +1407,13 @@ def _trade_uid_from_event(event, payload: dict, existing: Optional[dict] = None)
 def _default_bot(bot_id: Optional[str], symbol: Optional[str] = None) -> dict:
     normalized_bot = _normalize_selector(bot_id)
     normalized_symbol = _normalize_selector(symbol)
+    aliases = {
+        "US500": "SP500",
+        "US500R": "SP500",
+        "GER40FT": "GER40",
+    }
+    normalized_bot = aliases.get(normalized_bot, normalized_bot)
+    normalized_symbol = aliases.get(normalized_symbol, normalized_symbol)
     for bot in DEFAULT_NATIVE_BOTS:
         if normalized_bot in {_normalize_selector(bot["bot_id"]), _normalize_selector(bot["asset"])}:
             return bot
@@ -1367,12 +1440,13 @@ def _asset_from_bot(bot_id: Optional[str], symbol: Optional[str]) -> str:
     if bot:
         return bot["asset"]
     text = str(bot_id or symbol or "UNKNOWN")
-    return text.split("_", 1)[0].replace(".r", "").replace(".R", "").upper()
+    asset = text.split("_", 1)[0].replace(".r", "").replace(".R", "").upper()
+    return {"US500": "SP500", "GER40FT": "GER40"}.get(asset, asset)
 
 
 def _bot_display_name(bot_id: Optional[str], symbol: Optional[str] = None) -> str:
     asset = _asset_from_bot(bot_id, symbol)
-    if "ORB" in str(bot_id or "") or asset in {"NAS100", "DJ30", "US500", "BTCUSD", "GER40FT"}:
+    if "ORB" in str(bot_id or "") or asset in {"NAS100", "SP500", "DJ30", "BTCUSD", "GER40"}:
         return f"{asset} ORB/VWAP"
     return str(bot_id or symbol or "native bot")
 

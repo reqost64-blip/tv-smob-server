@@ -5,6 +5,7 @@ load_dotenv()
 
 WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
 MT5_NATIVE_SECRET: str = os.getenv("MT5_NATIVE_SECRET") or WEBHOOK_SECRET
+TASK_SECRET: str = os.getenv("TASK_SECRET", "")
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./bridge.db")
 DB_FILE: str = os.getenv("DB_FILE", "bridge.db")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
