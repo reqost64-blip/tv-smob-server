@@ -156,6 +156,45 @@
     .stat-val.yellow { color: var(--yellow); }
     .stat-val.sm     { font-size: 12px; }
 
+    .source-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .source-tab {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 10px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .source-tab.active {
+      color: var(--green);
+      border-color: var(--green);
+      background: rgba(0,255,136,.08);
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(90px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 540px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .metric-card {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      padding: 8px;
+    }
+
     /* ── PnL hero ── */
     .pnl-hero { text-align: center; padding: 8px 0 6px; }
 
@@ -429,6 +468,8 @@
 
 const BASE    = 'https://tv-smob-server-1.onrender.com';
 const REFRESH = 30;
+let tradesSource = 'bot';
+let statsSource = 'bot';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -494,6 +535,47 @@ function sideOf(t) {
   if (s === 'buy'  || s === '0') return 'BUY';
   if (s === 'sell' || s === '1') return 'SELL';
   return s.toUpperCase() || '—';
+}
+
+function sourceIcon(src) {
+  const s = (src || 'bot').toString().toLowerCase();
+  if (s === 'backtest') return '📊';
+  if (s === 'manual' || s === 'all') return '👤';
+  return '🤖';
+}
+
+function sourceTabs(active, target) {
+  const options = target === 'stats'
+    ? [['bot', '🤖 Только бот'], ['all', '👤 Все сделки'], ['backtest', '📊 Бэктест']]
+    : [['bot', '🤖 Бот'], ['all', '👤 Все сделки'], ['backtest', '📊 Бэктест']];
+  return '<div class="source-tabs">' + options.map(([value, label]) =>
+    `<button class="source-tab ${active === value ? 'active' : ''}" onclick="set${target === 'stats' ? 'Stats' : 'Trades'}Source('${value}')">${label}</button>`
+  ).join('') + '</div>';
+}
+
+function summarizeTrades(trades) {
+  const profits = trades.map(t => Number(t.profit_money ?? t.profit ?? t.pnl ?? 0));
+  const wins = profits.filter(v => v > 0);
+  const losses = profits.filter(v => v < 0);
+  const grossProfit = wins.reduce((a, b) => a + b, 0);
+  const grossLoss = losses.reduce((a, b) => a + b, 0);
+  return {
+    total: trades.length,
+    wins: wins.length,
+    losses: losses.length,
+    winRate: trades.length ? wins.length / trades.length * 100 : 0,
+    totalPnl: profits.reduce((a, b) => a + b, 0),
+    profitFactor: grossLoss < 0 ? grossProfit / Math.abs(grossLoss) : 0
+  };
+}
+
+function metricCards(items) {
+  return '<div class="metric-grid">' + items.map(item => `
+    <div class="metric-card">
+      <div class="stat-lbl">${item.label}</div>
+      <div class="stat-val ${item.cls || ''}">${item.value}</div>
+    </div>
+  `).join('') + '</div>';
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -716,31 +798,47 @@ function renderTrades(d) {
 
   el('trades-badge').textContent = trades.length + ' trade' + (trades.length !== 1 ? 's' : '');
 
-  if (!trades.length) { setEmpty(panel, 'No trades today'); return; }
+  const summary = summarizeTrades(trades);
+  const cards = metricCards([
+    { label: 'Total', value: d.total ?? summary.total },
+    { label: 'Wins', value: summary.wins, cls: 'green' },
+    { label: 'Losses', value: summary.losses, cls: 'red' },
+    { label: 'Win Rate', value: summary.winRate.toFixed(0) + '%', cls: summary.winRate >= 50 ? 'green' : 'red' },
+    { label: 'Total P&L', value: fmtMoney(summary.totalPnl), cls: pnlBig(summary.totalPnl) },
+    { label: 'Profit Factor', value: summary.profitFactor.toFixed(2), cls: 'blue' },
+  ]);
+
+  if (!trades.length) {
+    panel.innerHTML = sourceTabs(tradesSource, 'trades') + cards + '<div class="state">No trades today</div>';
+    return;
+  }
 
   const trs = trades.map(t => {
     const side = sideOf(t);
     const sCls = side === 'BUY' ? 'c-green' : 'c-red';
-    const pnl  = t.profit ?? t.pnl ?? null;
+    const pnl  = t.profit_money ?? t.profit ?? t.pnl ?? null;
     return `
       <tr>
+        <td>${sourceIcon(t.source)}</td>
         <td class="c-hi">${t.symbol || t.asset || '—'}</td>
         <td class="${sCls}">${side}</td>
         <td>${fmt(t.volume ?? t.lots, 2)}</td>
-        <td>${fmt(t.price_open ?? t.open_price, 5)}</td>
-        <td>${fmt(t.price_close ?? t.close_price, 5)}</td>
+        <td>${fmt(t.price_open ?? t.open_price ?? t.entry_price, 5)}</td>
+        <td>${fmt(t.price_close ?? t.close_price ?? t.exit_price, 5)}</td>
         <td class="${pnlCls(pnl)}">${fmtMoney(pnl)}</td>
         <td class="c-dim">${t.bot_id || '—'}</td>
-        <td class="c-dim">${fmtTime(t.time_close ?? t.closed_at)}</td>
+        <td class="c-dim">${fmtTime(t.time_close ?? t.closed_at ?? t.close_time)}</td>
       </tr>
     `;
   }).join('');
 
   panel.innerHTML = `
+    ${sourceTabs(tradesSource, 'trades')}
+    ${cards}
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Symbol</th><th>Side</th><th>Volume</th>
+          <th>Src</th><th>Symbol</th><th>Side</th><th>Volume</th>
           <th>Open</th><th>Close</th><th>P&amp;L</th>
           <th>Bot</th><th>Closed</th>
         </tr></thead>
@@ -752,44 +850,23 @@ function renderTrades(d) {
 
 function renderPerformance(d) {
   const panel = el('perf-panel');
-  const perf  = d.performance;
-
-  if (!perf || !perf.items || !perf.items.length) { setEmpty(panel); return; }
-
-  const trs = perf.items.map(item => {
-    const pnl = item.closed_pnl ?? item.net_pnl ?? 0;
-    const wr  = item.trades > 0 ? (item.wins / item.trades * 100).toFixed(0) : '0';
-    return `
-      <tr>
-        <td class="c-blue">${item.bot_id ?? item.selector ?? '—'}</td>
-        <td class="c-hi">${item.symbol || '—'}</td>
-        <td>${item.trades ?? 0}</td>
-        <td><span class="c-green">${item.wins ?? 0}</span>/<span class="c-red">${item.losses ?? 0}</span></td>
-        <td style="color:${Number(wr) >= 50 ? 'var(--green)' : 'var(--red)'}">${wr}%</td>
-        <td class="${pnlCls(pnl)}">${fmtMoney(pnl)}</td>
-      </tr>
-    `;
-  }).join('');
-
-  const tot    = perf.totals || {};
-  const totPnl = tot.closed_pnl ?? tot.net_pnl ?? null;
+  const stats = d.stats || {};
 
   panel.innerHTML = `
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr>
-          <th>Bot</th><th>Symbol</th><th>Trades</th>
-          <th>W/L</th><th>WR%</th><th>P&amp;L</th>
-        </tr></thead>
-        <tbody>${trs}</tbody>
-        ${totPnl != null ? `
-        <tfoot>
-          <tr style="border-top:1px solid var(--border-hi)">
-            <td colspan="5" class="c-dim" style="font-size:9px;letter-spacing:.1em">TOTAL</td>
-            <td class="${pnlCls(totPnl)}" style="font-weight:700">${fmtMoney(totPnl)}</td>
-          </tr>
-        </tfoot>` : ''}
-      </table>
+    ${sourceTabs(statsSource, 'stats')}
+    ${metricCards([
+      { label: 'Total', value: stats.total_trades ?? 0 },
+      { label: 'Wins', value: stats.wins ?? 0, cls: 'green' },
+      { label: 'Losses', value: stats.losses ?? 0, cls: 'red' },
+      { label: 'Win Rate', value: fmt(stats.win_rate ?? 0, 0) + '%', cls: Number(stats.win_rate || 0) >= 50 ? 'green' : 'red' },
+      { label: 'Total P&L', value: fmtMoney(stats.total_pnl ?? 0), cls: pnlBig(stats.total_pnl ?? 0) },
+      { label: 'Profit Factor', value: fmt(stats.profit_factor ?? 0, 2), cls: 'blue' },
+    ])}
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-lbl">Best Trade</div><div class="stat-val green">${stats.best_trade != null ? fmtMoney(stats.best_trade) : '—'}</div></div>
+      <div class="stat"><div class="stat-lbl">Worst Trade</div><div class="stat-val red">${stats.worst_trade != null ? fmtMoney(stats.worst_trade) : '—'}</div></div>
+      <div class="stat"><div class="stat-lbl">Average</div><div class="stat-val">${stats.avg_trade != null ? fmtMoney(stats.avg_trade) : '—'}</div></div>
+      <div class="stat"><div class="stat-lbl">Avg R</div><div class="stat-val blue">${stats.avg_r != null ? fmt(stats.avg_r, 2) + 'R' : '—'}</div></div>
     </div>
   `;
 }
@@ -835,6 +912,16 @@ function renderJournal(d) {
 
 // ── Main fetch ────────────────────────────────────────────────────────────────
 
+function setTradesSource(source) {
+  tradesSource = source;
+  fetchAll().then(startCountdown);
+}
+
+function setStatsSource(source) {
+  statsSource = source;
+  fetchAll().then(startCountdown);
+}
+
 async function fetchAll() {
   el('spin-icon').style.display = 'inline-block';
 
@@ -845,8 +932,8 @@ async function fetchAll() {
       apiFetch('/api/dashboard/pnl?period=today'),
       apiFetch('/api/dashboard/bots'),
       apiFetch('/api/dashboard/positions'),
-      apiFetch('/api/dashboard/trades?period=today&limit=50'),
-      apiFetch('/api/dashboard/performance?period=today'),
+      apiFetch('/api/dashboard/trades?source=' + encodeURIComponent(tradesSource) + '&period=today&limit=50'),
+      apiFetch('/api/dashboard/stats?source=' + encodeURIComponent(statsSource) + '&period=week&asset=ALL'),
       apiFetch('/api/dashboard/journal?period=today&limit=100'),
     ]);
 

@@ -1105,14 +1105,27 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
         if data == "menu_status":
             return render_menu_status()
         if data == "menu_trades":
-            user_state.setdefault(chat_id, {})["screen"] = "trades_period"
+            user_state.setdefault(chat_id, {})["screen"] = "trades_source"
+            return render_trades_source()
+        if data == "trades_back_src":
+            user_state.setdefault(chat_id, {})["screen"] = "trades_source"
+            return render_trades_source()
+        if data.startswith("trades_src_"):
+            source = data.replace("trades_src_", "", 1)
+            state = user_state.setdefault(chat_id, {})
+            state["screen"] = "trades_period"
+            state["trades_source"] = source
             return render_trades_period()
-        if data.startswith("trades_"):
-            period = data.replace("trades_", "", 1)
+        if data.startswith("trades_p_"):
+            period = data.replace("trades_p_", "", 1)
             state = user_state.setdefault(chat_id, {})
             state["screen"] = "trades_result"
             state["trades_period"] = period
-            return render_trades_result(period)
+            source = state.get("trades_source", "bot")
+            return render_trades_result(source, period)
+        if data == "trades_refresh":
+            state = user_state.setdefault(chat_id, {})
+            return render_trades_result(state.get("trades_source", "bot"), state.get("trades_period", "today"))
         if data == "backtest_menu":
             user_state.setdefault(chat_id, {})["screen"] = "backtest_select"
             return render_backtest_selector()
@@ -1121,27 +1134,32 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
             user_state.setdefault(chat_id, {})["screen"] = "backtest_result"
             return render_backtest_result(asset)
         if data == "menu_stats":
-            user_state.setdefault(chat_id, {})["screen"] = "stats_period"
+            user_state.setdefault(chat_id, {})["screen"] = "stats_source"
+            return render_stats_source()
+        if data.startswith("stats_src_"):
+            source = data.replace("stats_src_", "", 1)
+            state = user_state.setdefault(chat_id, {})
+            state["screen"] = "stats_period"
+            state["stats_source"] = source
             return render_stats_period()
-        if data in {"stats_day", "stats_week", "stats_month"}:
-            period = data.replace("stats_", "", 1)
+        if data.startswith("stats_p_"):
+            period = data.replace("stats_p_", "", 1)
             state = user_state.setdefault(chat_id, {})
             state["screen"] = "stats_asset"
             state["stats_period"] = period
-            return render_stats_asset(period)
-        if data.startswith("stats_asset_"):
-            asset = data.replace("stats_asset_", "", 1)
+            return render_stats_asset()
+        if data.startswith("stats_a_"):
+            asset = data.replace("stats_a_", "", 1)
             period = user_state.get(chat_id, {}).get("stats_period", "day")
             state = user_state.setdefault(chat_id, {})
             state["screen"] = "stats_result"
             state["stats_asset"] = asset
-            return render_stats_result(period, asset)
+            return render_stats_result(state.get("stats_source", "bot"), period, asset)
         if data == "stats_refresh":
             state = user_state.get(chat_id, {})
-            return render_stats_result(state.get("stats_period", "day"), state.get("stats_asset", "ALL"))
+            return render_stats_result(state.get("stats_source", "bot"), state.get("stats_period", "day"), state.get("stats_asset", "ALL"))
         if data == "stats_back_asset":
-            period = user_state.get(chat_id, {}).get("stats_period", "day")
-            return render_stats_asset(period)
+            return render_stats_asset()
         if data == "menu_actions":
             user_state[chat_id] = {"screen": "actions"}
             return render_actions_menu()
@@ -1212,11 +1230,22 @@ def render_menu_status() -> tuple[str, dict]:
         return menu_message("🔴 ОШИБКА СТАТУСА", ["Не удалось получить данные аккаунта."], True), menu_back_keyboard("menu_status")
 
 
+def render_trades_source() -> tuple[str, dict]:
+    text = menu_message("📋 СДЕЛКИ  ИСТОЧНИК", [], False)
+    keyboard = inline_keyboard(
+        [
+            [("🤖 Только бот", "trades_src_bot"), ("👤 Все сделки", "trades_src_all")],
+            [("📊 Бэктест", "trades_src_backtest")],
+        ]
+    )
+    return text, keyboard
+
+
 def render_trades_period() -> tuple[str, dict]:
     text = menu_message("📋 СДЕЛКИ  ПЕРИОД", [], False)
     keyboard = inline_keyboard(
         [
-            [("Сегодня", "trades_today"), ("Вчера", "trades_yesterday"), ("Неделя", "trades_week")],
+            [("Сегодня", "trades_p_today"), ("Вчера", "trades_p_yesterday"), ("Неделя", "trades_p_week")],
         ]
     )
     return text, keyboard
@@ -1227,7 +1256,7 @@ def period_to_store(period: str) -> str:
 
 
 def period_title(period: str) -> str:
-    return {"today": "СЕГОДНЯ", "yesterday": "ВЧЕРА", "week": "НЕДЕЛЯ", "day": "ДЕНЬ", "month": "МЕСЯЦ"}.get(period, period.upper())
+    return {"today": "СЕГОДНЯ", "yesterday": "ВЧЕРА", "week": "НЕДЕЛЯ", "day": "ДЕНЬ", "month": "МЕСЯЦ", "all": "ВСЁ ВРЕМЯ"}.get(period, period.upper())
 
 
 def menu_journal(period: str, selector: Optional[str] = None, limit: int = 500) -> list[dict]:
@@ -1248,23 +1277,42 @@ def menu_journal(period: str, selector: Optional[str] = None, limit: int = 500) 
     return acct.journal_entries(period_to_store(period), selector_arg, limit=limit)
 
 
-def render_trades_result(period: str) -> tuple[str, dict]:
+def source_icon(source: str) -> str:
+    return {"bot": "🤖", "manual": "👤", "all": "👤", "backtest": "📊"}.get(str(source or "bot").lower(), "🤖")
+
+
+def source_label(source: str) -> str:
+    return {"bot": "🤖 БОТ", "manual": "👤 РУЧНЫЕ", "all": "👤 ВСЕ СДЕЛКИ", "backtest": "📊 БЭКТЕСТ"}.get(str(source or "bot").lower(), "🤖 БОТ")
+
+
+def status_icon(row: dict) -> str:
+    status = str(row.get("status") or "").lower()
+    profit = float_or_zero(first_present(row.get("profit_money"), row.get("profit")))
+    if status == "open" or not first_present(row.get("close_time"), row.get("closed_at")):
+        return "🔵"
+    if profit > 0 or status == "win":
+        return "🟢"
+    if profit < 0 or status == "loss":
+        return "🔴"
+    return "🟡"
+
+
+def render_trades_result(source: str, period: str) -> tuple[str, dict]:
     try:
-        rows = acct.get_all_trades(period=period, limit=500)
-        total = sum(float_or_zero(r.get("profit")) for r in rows)
-        wins = sum(1 for r in rows if float_or_zero(r.get("profit")) > 0)
-        losses = sum(1 for r in rows if float_or_zero(r.get("profit")) < 0)
+        rows = acct.get_trades_filtered(source=source, period=period, asset="ALL", limit=500)
+        total = sum(float_or_zero(first_present(r.get("profit_money"), r.get("profit"))) for r in rows)
+        wins = sum(1 for r in rows if float_or_zero(first_present(r.get("profit_money"), r.get("profit"))) > 0)
+        losses = sum(1 for r in rows if float_or_zero(first_present(r.get("profit_money"), r.get("profit"))) < 0)
         closed = wins + losses
         winrate = round((wins / closed) * 100) if closed else 0
         body = []
         for row in rows[:10]:
-            profit = float_or_zero(row.get("profit"))
-            icon = "🟢" if profit > 0 else "🔴" if profit < 0 else "🟡"
+            profit = float_or_zero(first_present(row.get("profit_money"), row.get("profit")))
             pnl = menu_number(profit, 2, signed=True)
             risk_value = safe_float(row.get("r_multiple"))
             risk = f"{risk_value:.2f}R" if risk_value is not None else estimate_r_multiple(row)
             duration = format_minutes(row.get("duration_minutes")) if row.get("duration_minutes") is not None else menu_duration(row.get("opened_at"), row.get("closed_at"))
-            parts = [icon, menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4)]
+            parts = [status_icon(row), source_icon(row.get("source") or source), menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4)]
             if pnl:
                 parts.append(pnl.rjust(5))
             if risk:
@@ -1274,10 +1322,10 @@ def render_trades_result(period: str) -> tuple[str, dict]:
             body.append(" ".join(parts))
         if not body:
             body.append("Сделок пока нет")
-        body.extend(["", f"Итого: {menu_number(total, 2, True) or '+0.00'}  |  {wins}W / {losses}L  |  {winrate}%", "", "📊 Показаны реальные сделки. Для бэктеста: /backtest"])
-        return menu_message(f"📋 СДЕЛКИ  {period_title(period)}", body), menu_back_keyboard(f"trades_{period}", "menu_trades")
+        body.extend(["", f"Итого: {menu_number(total, 2, True) or '+0.00'} | {wins}W / {losses}L | {winrate}%"])
+        return menu_message(f"📋 {source_label(source)}  {period_title(period)}", body), inline_keyboard([[("🔁 Обновить", "trades_refresh"), ("Источник", "trades_back_src")]])
     except Exception:
-        return menu_message("🔴 ОШИБКА СДЕЛОК", ["Не удалось получить журнал сделок."], True), menu_back_keyboard(f"trades_{period}", "menu_trades")
+        return menu_message("🔴 ОШИБКА СДЕЛОК", ["Не удалось получить журнал сделок."], True), inline_keyboard([[("🔁 Обновить", "trades_refresh"), ("Источник", "trades_back_src")]])
 
 
 def render_backtest_selector() -> tuple[str, dict]:
@@ -1340,65 +1388,69 @@ def estimate_r_multiple(row: dict) -> Optional[str]:
     return f"{profit / risk:.2f}R"
 
 
+def render_stats_source() -> tuple[str, dict]:
+    text = menu_message("📈 СТАТИСТИКА  ИСТОЧНИК", [], False)
+    keyboard = inline_keyboard(
+        [
+            [("🤖 Только бот", "stats_src_bot"), ("👤 Все сделки", "stats_src_all")],
+            [("📊 Бэктест", "stats_src_backtest")],
+        ]
+    )
+    return text, keyboard
+
+
 def render_stats_period() -> tuple[str, dict]:
     text = menu_message("📈 СТАТИСТИКА  ПЕРИОД", [], False)
     keyboard = inline_keyboard(
         [
-            [("День", "stats_day"), ("Неделя", "stats_week"), ("Месяц", "stats_month")],
+            [("День", "stats_p_day"), ("Неделя", "stats_p_week")],
+            [("Месяц", "stats_p_month"), ("Всё время", "stats_p_all")],
         ]
     )
     return text, keyboard
 
 
-def render_stats_asset(period: str) -> tuple[str, dict]:
+def render_stats_asset() -> tuple[str, dict]:
     text = menu_message("📈 СТАТИСТИКА  АКТИВ", [], False)
     keyboard = inline_keyboard(
         [
-            [("Все", "stats_asset_ALL")],
-            [("NAS100", "stats_asset_NAS100"), ("SP500", "stats_asset_SP500")],
-            [("DJ30", "stats_asset_DJ30"), ("BTCUSD", "stats_asset_BTCUSD"), ("GER40", "stats_asset_GER40")],
-            [(" Назад", "menu_stats")],
+            [("Все", "stats_a_ALL"), ("NAS100", "stats_a_NAS100"), ("SP500", "stats_a_SP500")],
+            [("DJ30", "stats_a_DJ30"), ("BTCUSD", "stats_a_BTCUSD"), ("GER40", "stats_a_GER40")],
         ]
     )
     return text, keyboard
 
 
-def render_stats_result(period: str, asset: str) -> tuple[str, dict]:
+def render_stats_result(source: str, period: str, asset: str) -> tuple[str, dict]:
     try:
-        store_period = {"day": "today", "week": "7d", "month": "30d"}.get(period, "today")
-        selector = None if str(asset).upper() == "ALL" else asset
-        summary = acct.performance_summary(store_period, selector)
-        stats = summary.get("totals") or {}
-        trades = int(stats.get("trades_count") or 0)
+        stats = acct.get_stats_filtered(source=source, period=period, asset=asset)
+        trades = int(stats.get("total_trades") or 0)
         wins = int(stats.get("wins") or 0)
         losses = int(stats.get("losses") or 0)
         win_pct = round((wins / trades) * 100) if trades else 0
         loss_pct = round((losses / trades) * 100) if trades else 0
-        avg = (float_or_zero(stats.get("closed_pnl")) / trades) if trades else 0
-        avg_r = average_r(menu_journal(store_period, selector))
         title_asset = "ВСЕ" if str(asset).upper() == "ALL" else asset
         body = [
             f"🎯 Сделок:         {trades}",
             f" Побед:           {wins} ({win_pct}%)",
             f" Убытков:         {losses} ({loss_pct}%)",
             "",
-            f"💰 P&L:        {menu_number(stats.get('closed_pnl'), 2, True) or '+0.00'}",
+            f"💰 P&L:        {menu_number(stats.get('total_pnl'), 2, True) or '+0.00'}",
             f"🏆 Лучшая:     {menu_number(stats.get('best_trade'), 2, True) or '+0.00'}",
             f"📉 Худшая:      {menu_number(stats.get('worst_trade'), 2, True) or '0.00'}",
-            f" Средняя:    {menu_number(avg, 2, True) or '+0.00'}",
+            f" Средняя:    {menu_number(stats.get('avg_trade'), 2, True) or '+0.00'}",
             "",
             "📊 МЕТРИКИ",
         ]
-        pf = 0.0 if float_or_zero(stats.get("gross_loss")) >= 0 else abs(float_or_zero(stats.get("gross_profit")) / float_or_zero(stats.get("gross_loss")))
-        body.append(f"Profit Factor:   {pf:.2f}")
-        if avg_r is not None:
-            body.append(f"Avg R:           {avg_r:.2f}R")
+        body.append(f"Profit Factor:   {float_or_zero(stats.get('profit_factor')):.2f}")
+        if stats.get("avg_r") is not None:
+            body.append(f"Avg R:           {float_or_zero(stats.get('avg_r')):.2f}R")
         if trades:
-            body.append(f"TP1 взят:        {round((int(stats.get('tp1_count') or 0) / trades) * 100)}%")
-            body.append(f"TP2 взят:        {round((int(stats.get('tp2_count') or 0) / trades) * 100)}%")
-        return menu_message(f"📈 {title_asset}  {period_title(period)}", body), menu_back_keyboard("stats_refresh", "stats_back_asset")
+            body.append(f"TP1 взят:        {round(float_or_zero(stats.get('tp1_hit_rate')))}%")
+            body.append(f"TP2 взят:        {round(float_or_zero(stats.get('tp2_hit_rate')))}%")
+        return menu_message(f"📈 {source_label(source)} | {title_asset} | {period_title(period)}", body), inline_keyboard([[("🔁 Обновить", "stats_refresh"), ("Актив", "stats_back_asset")]])
     except Exception:
-        return menu_message("🔴 ОШИБКА СТАТИСТИКИ", ["Не удалось рассчитать статистику."], True), menu_back_keyboard("stats_refresh", "menu_stats")
+        return menu_message("🔴 ОШИБКА СТАТИСТИКИ", ["Не удалось рассчитать статистику."], True), inline_keyboard([[("🔁 Обновить", "stats_refresh"), ("Актив", "stats_back_asset")]])
 
 
 def average_r(rows: list[dict]) -> Optional[float]:

@@ -335,17 +335,25 @@ def init_db() -> None:
                 sl_price       REAL,
                 tp1_price      REAL,
                 tp2_price      REAL,
+                tp3_price      REAL,
                 open_time      TEXT,
                 close_time     TEXT,
                 exit_price     REAL,
                 profit_money   REAL,
+                r_multiple     REAL,
                 status         TEXT,
+                tp1_hit        INTEGER NOT NULL DEFAULT 0,
+                tp2_hit        INTEGER NOT NULL DEFAULT 0,
                 source         TEXT DEFAULT 'backtest',
                 created_at     TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
         conn.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_trades_unique
+            ON backtest_trades (bot_id, symbol, open_time)
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_unique
             ON backtest_trades (bot_id, symbol, open_time)
         """)
         conn.execute("""
@@ -422,6 +430,24 @@ def init_db() -> None:
             {
                 "tp1_profit": "REAL",
                 "tp2_profit": "REAL",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "native_trade_journal",
+            {
+                "source": "TEXT DEFAULT 'bot'",
+                "is_backtest": "INTEGER NOT NULL DEFAULT 0",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "backtest_trades",
+            {
+                "tp3_price": "REAL",
+                "r_multiple": "REAL",
+                "tp1_hit": "INTEGER NOT NULL DEFAULT 0",
+                "tp2_hit": "INTEGER NOT NULL DEFAULT 0",
             },
         )
         _ensure_columns(

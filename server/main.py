@@ -536,12 +536,15 @@ async def dashboard_positions():
 
 
 @app.get("/api/dashboard/trades")
-async def dashboard_trades(period: str = "today", bot_id: str | None = None, limit: int = 50):
+async def dashboard_trades(source: str = "bot", period: str = "today", asset: str = "ALL", limit: int = 50, offset: int = 0, bot_id: str | None = None):
     try:
-        trades = acct.get_all_trades(period=period, bot_id=bot_id, limit=min(limit, 500))
+        selector = bot_id or asset
+        trades = acct.get_trades_filtered(source=source, period=period, asset=selector or "ALL", limit=min(limit, 500), offset=offset)
+        total = len(acct.get_trades_filtered(source=source, period=period, asset=selector or "ALL", limit=10000, offset=0))
     except Exception:
         trades = []
-    return {"ok": True, "period": period, "trades": trades}
+        total = 0
+    return {"ok": True, "source": source, "period": period, "asset": asset, "trades": trades, "total": total}
 
 
 @app.post("/api/mt5/native-backtest")
@@ -559,18 +562,54 @@ async def mt5_native_backtest(body: dict, request: Request):
     except Exception as exc:
         logger.exception("Failed to save native backtest trades")
         return err(f"Failed to save backtest trades: {exc}", status=500)
-    return {"ok": True, "bot_id": bot_id, "received": len(trades), "saved": saved}
+    return {"ok": True, "status": "ok", "bot_id": bot_id, "received": len(trades), "saved": saved}
 
 
 @app.get("/api/dashboard/backtest")
-async def dashboard_backtest(bot_id: str | None = None, limit: int = 500):
+async def dashboard_backtest(bot_id: str | None = None, asset: str | None = None, limit: int = 500):
     try:
-        trades = acct.backtest_trades(bot_id=bot_id, limit=min(limit, 1000))
-        summary = acct.backtest_summary(bot_id=bot_id)
+        selector = bot_id or asset
+        trades = acct.get_trades_filtered(source="backtest", period="all", asset=selector or "ALL", limit=min(limit, 1000), offset=0)
+        stats = acct.get_stats_filtered(source="backtest", period="all", asset=selector or "ALL")
+        summary = {
+            "total": stats.get("total_trades", 0),
+            "wins": stats.get("wins", 0),
+            "losses": stats.get("losses", 0),
+            "win_rate": stats.get("win_rate", 0),
+            "total_pnl": stats.get("total_pnl", 0),
+        }
     except Exception:
         trades = []
-        summary = {"total_trades": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl": 0, "best": None, "worst": None}
-    return {"ok": True, "bot_id": bot_id, "summary": summary, "trades": trades}
+        summary = {"total": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl": 0}
+    return {"ok": True, "bot_id": bot_id, "asset": asset, "summary": summary, "trades": trades}
+
+
+@app.get("/api/dashboard/stats")
+async def dashboard_stats(source: str = "bot", period: str = "week", asset: str = "ALL"):
+    try:
+        stats = acct.get_stats_filtered(source=source, period=period, asset=asset)
+    except Exception:
+        stats = {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0,
+            "total_pnl": 0,
+            "best_trade": None,
+            "worst_trade": None,
+            "avg_trade": None,
+            "gross_profit": 0,
+            "gross_loss": 0,
+            "profit_factor": 0,
+            "avg_r": None,
+            "max_r": None,
+            "tp1_hit_rate": 0,
+            "tp2_hit_rate": 0,
+            "source": source,
+            "period": period,
+            "asset": asset,
+        }
+    return {"ok": True, "stats": stats}
 
 
 @app.get("/api/dashboard/pnl")

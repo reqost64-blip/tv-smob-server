@@ -1751,6 +1751,139 @@ def get_all_trades(period: str = "today", limit: int = 50, bot_id: Optional[str]
     return result[: max(0, int(limit or 50))]
 
 
+def _asset_matches(row: dict, asset: str = "ALL") -> bool:
+    normalized = str(asset or "ALL").strip().upper()
+    if normalized in ("", "ALL", "ВСЕ"):
+        return True
+    return normalized in str(row.get("symbol") or row.get("bot_id") or "").upper()
+
+
+def _normalize_filtered_journal_trade(row: dict) -> dict:
+    data = _normalize_trade_row(row)
+    data["id"] = row.get("id")
+    data["source"] = row.get("source") or ("manual" if not row.get("bot_id") else "bot")
+    data["profit_money"] = data.get("profit")
+    data["duration_minutes"] = data.get("duration_minutes")
+    return data
+
+
+def _normalize_filtered_backtest_trade(row: dict) -> dict:
+    profit = row.get("profit_money")
+    status = str(row.get("status") or "").strip().lower()
+    if not status:
+        if float_or_zero(profit) > 0:
+            status = "win"
+        elif float_or_zero(profit) < 0:
+            status = "loss"
+        else:
+            status = "breakeven"
+    return {
+        "id": row.get("id"),
+        "symbol": row.get("symbol"),
+        "side": row.get("side"),
+        "lots": row.get("lots"),
+        "entry_price": row.get("entry_price"),
+        "exit_price": row.get("exit_price"),
+        "profit_money": float_or_zero(profit),
+        "profit": float_or_zero(profit),
+        "r_multiple": first_present(row.get("r_multiple"), _estimate_r_multiple_value(profit, row.get("entry_price"), row.get("sl_price"), row.get("lots"))),
+        "status": status,
+        "open_time": row.get("open_time"),
+        "opened_at": row.get("open_time"),
+        "close_time": row.get("close_time"),
+        "closed_at": row.get("close_time"),
+        "duration_minutes": _trade_duration_minutes(row.get("open_time"), row.get("close_time")),
+        "tp1_hit": bool(row.get("tp1_hit")),
+        "tp2_hit": bool(row.get("tp2_hit")),
+        "source": row.get("source") or "backtest",
+        "bot_id": row.get("bot_id"),
+    }
+
+
+def get_trades_filtered(source: str = "all", period: str = "today", asset: str = "ALL", limit: int = 50, offset: int = 0) -> list[dict]:
+    normalized_source = str(source or "all").strip().lower()
+    normalized_period = {"day": "today", "month": "30d"}.get(str(period or "").strip().lower(), period)
+    trades: list[dict] = []
+    with db() as conn:
+        if normalized_source in ("bot", "manual", "all"):
+            rows = conn.execute(
+                """
+                SELECT * FROM native_trade_journal
+                ORDER BY
+                    CASE WHEN closed_at IS NULL OR closed_at = '' THEN 0 ELSE 1 END,
+                    COALESCE(closed_at, opened_at, created_at) DESC,
+                    id DESC
+                """
+            ).fetchall()
+            for raw in rows:
+                row = dict(raw)
+                row_source = row.get("source") or ("manual" if not row.get("bot_id") else "bot")
+                if normalized_source == "manual" and not (row_source == "manual" or row.get("bot_id") is None):
+                    continue
+                if normalized_source == "bot" and row_source == "manual":
+                    continue
+                if not _row_in_named_period(row, normalized_period) or not _asset_matches(row, asset):
+                    continue
+                trades.append(_normalize_filtered_journal_trade(row))
+        if normalized_source in ("backtest", "all"):
+            rows = conn.execute(
+                """
+                SELECT * FROM backtest_trades
+                ORDER BY open_time DESC, id DESC
+                """
+            ).fetchall()
+            for raw in rows:
+                row = dict(raw)
+                if not _row_in_named_period(row, normalized_period) or not _asset_matches(row, asset):
+                    continue
+                trades.append(_normalize_filtered_backtest_trade(row))
+
+    def sort_key(row: dict):
+        parsed = _parse_datetime(first_present(row.get("close_time"), row.get("open_time")))
+        stamp = parsed.timestamp() if parsed else 0
+        return (0 if not row.get("close_time") else 1, -stamp)
+
+    trades.sort(key=sort_key)
+    start = max(0, int(offset or 0))
+    end = start + max(0, int(limit or 50))
+    return trades[start:end]
+
+
+def get_stats_filtered(source: str = "bot", period: str = "week", asset: str = "ALL") -> dict:
+    normalized_period = {"day": "today", "month": "30d"}.get(str(period or "").strip().lower(), period)
+    rows = get_trades_filtered(source=source, period=normalized_period, asset=asset, limit=10000, offset=0)
+    closed_rows = [row for row in rows if row.get("close_time") or row.get("closed_at") or str(row.get("status") or "").lower() != "open"]
+    profits = [float_or_zero(row.get("profit_money")) for row in closed_rows]
+    r_values = [float_or_zero(row.get("r_multiple")) for row in closed_rows if row.get("r_multiple") is not None]
+    wins = [p for p in profits if p > 0]
+    losses = [p for p in profits if p < 0]
+    total = len(closed_rows)
+    gross_profit = round(sum(wins), 2)
+    gross_loss = round(sum(losses), 2)
+    best = max(profits) if profits else None
+    worst = min(profits) if profits else None
+    return {
+        "total_trades": total,
+        "wins": len(wins),
+        "losses": len(losses),
+        "win_rate": round((len(wins) / total) * 100, 1) if total else 0,
+        "total_pnl": round(sum(profits), 2),
+        "best_trade": round(best, 2) if best is not None else None,
+        "worst_trade": round(worst, 2) if worst is not None else None,
+        "avg_trade": round(sum(profits) / total, 2) if total else None,
+        "gross_profit": gross_profit,
+        "gross_loss": gross_loss,
+        "profit_factor": round(gross_profit / abs(gross_loss), 2) if gross_loss < 0 else 0,
+        "avg_r": round(sum(r_values) / len(r_values), 2) if r_values else None,
+        "max_r": round(max(r_values), 2) if r_values else None,
+        "tp1_hit_rate": round((sum(1 for row in closed_rows if row.get("tp1_hit")) / total) * 100, 1) if total else 0,
+        "tp2_hit_rate": round((sum(1 for row in closed_rows if row.get("tp2_hit")) / total) * 100, 1) if total else 0,
+        "source": source,
+        "period": period,
+        "asset": asset,
+    }
+
+
 def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
     saved = 0
     with db() as conn:
@@ -1764,10 +1897,11 @@ def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
                 continue
             cur = conn.execute(
                 """
-                INSERT OR IGNORE INTO backtest_trades
-                    (bot_id, symbol, side, lots, entry_price, sl_price, tp1_price, tp2_price,
-                     open_time, close_time, exit_price, profit_money, status, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO backtest_trades
+                    (bot_id, symbol, side, lots, entry_price, sl_price, tp1_price, tp2_price, tp3_price,
+                     open_time, close_time, exit_price, profit_money, r_multiple, status, tp1_hit, tp2_hit, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(bot_id, symbol, open_time) DO NOTHING
                 """,
                 (
                     resolved_bot,
@@ -1778,11 +1912,15 @@ def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
                     first_present(trade.get("sl_price"), trade.get("sl")),
                     first_present(trade.get("tp1_price"), trade.get("tp1")),
                     first_present(trade.get("tp2_price"), trade.get("tp2")),
+                    first_present(trade.get("tp3_price"), trade.get("tp3")),
                     open_time,
                     first_present(trade.get("close_time"), trade.get("closed_at")),
                     trade.get("exit_price"),
                     first_present(trade.get("profit_money"), trade.get("total_profit"), trade.get("profit")),
+                    first_present(trade.get("r_multiple"), trade.get("profit_r")),
                     trade.get("status"),
+                    1 if trade.get("tp1_hit") else 0,
+                    1 if trade.get("tp2_hit") else 0,
                     trade.get("source") or "backtest",
                 ),
             )
