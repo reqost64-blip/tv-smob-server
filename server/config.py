@@ -10,6 +10,18 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./bridge.db")
 DB_FILE: str = os.getenv("DB_FILE", "bridge.db")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_ADMIN_CHAT_ID: str = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
+TELEGRAM_TRADE_CLEAN_MODE: bool = os.getenv("TELEGRAM_TRADE_CLEAN_MODE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+TELEGRAM_DEBUG_TRADE_EVENTS: bool = os.getenv("TELEGRAM_DEBUG_TRADE_EVENTS", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.5")
 OPENAI_TIMEOUT_SECONDS: int = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "60"))

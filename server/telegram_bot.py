@@ -19,6 +19,7 @@ from .ai_web_research import (
     get_market_today_summary,
 )
 from .models import NativeMT5Event, WebhookPayload
+from .native_trade_notifications import clean_mode_enabled, format_clean_trade_message, normalizeNativeTradeEvent
 from .settings_store import (
     approve_pending_approval,
     create_pending_approval,
@@ -347,6 +348,15 @@ def notify_native_event(event: NativeMT5Event) -> bool:
 
 def format_native_mt5_event_message(event: dict) -> str:
     event = event or {}
+    normalized = normalizeNativeTradeEvent(event)
+    if clean_mode_enabled():
+        if not normalized["shouldNotifyTelegram"]:
+            return ""
+        try:
+            daily_stats = acct.native_pnl_today() if normalized["telegramTemplate"] == "closed" else None
+        except Exception:
+            daily_stats = None
+        return format_clean_trade_message(event, normalized, daily_stats)
     event_type = str(event.get("event_type") or "").strip().lower()
     symbol = event.get("symbol") or "n/a"
     side = fmt_native_side(event.get("side"))

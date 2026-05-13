@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from . import config
 from .database import db
 from .models import AccountSnapshot, DealReport, NativeMT5AccountSnapshot, NativeMT5Event, NativeMT5Heartbeat, NativeMT5Screenshot, PositionsSnapshot
+from .native_trade_notifications import accounting_event_type, normalizeNativeTradeEvent
 
 
 NATIVE_EVENT_UPDATES_ACTIVE = {"tp1_closed", "tp2_closed", "tp3_closed", "be_moved"}
@@ -188,8 +189,16 @@ def save_native_account_snapshot(snapshot: NativeMT5AccountSnapshot) -> None:
 
 def save_native_event(event: NativeMT5Event) -> bool:
     payload = _safe_payload(event)
-    event_type = str(event.event_type or "").strip().lower()
+    normalized = normalizeNativeTradeEvent(payload)
+    original_event_type = str(event.event_type or "").strip().lower()
+    event_type = accounting_event_type(payload, normalized)
+    payload["original_event_type"] = original_event_type
     payload["event_type"] = event_type
+    payload["normalized_type"] = normalized["normalizedType"]
+    payload["trade_uid"] = normalized["tradeUid"]
+    payload["event_id"] = normalized["eventId"]
+    payload["should_notify"] = bool(normalized["shouldNotifyTelegram"])
+    payload["tp_index"] = normalized.get("tpIndex")
     payload.setdefault("source", "mt5_native")
     dedupe_key = _native_event_dedupe_key(event, payload, event_type)
     with db() as conn:
@@ -207,8 +216,9 @@ def save_native_event(event: NativeMT5Event) -> bool:
         conn.execute(
             """
             INSERT INTO native_mt5_events
-                (event_type, source, bot_id, symbol, magic_number, event_time, payload)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (event_type, source, bot_id, symbol, magic_number, event_time, payload,
+                 event_id, trade_uid, normalized_type, should_notify, telegram_sent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 event_type,
@@ -218,6 +228,10 @@ def save_native_event(event: NativeMT5Event) -> bool:
                 event.magic_number,
                 event.time,
                 json.dumps(payload, ensure_ascii=False, default=str),
+                normalized["eventId"],
+                normalized["tradeUid"],
+                normalized["normalizedType"],
+                1 if normalized["shouldNotifyTelegram"] else 0,
             ),
         )
         _record_native_trade_event(conn, event, payload, event_type, dedupe_key)
@@ -945,6 +959,20 @@ def state_set(key: str, value: str) -> None:
         )
 
 
+def mark_native_event_telegram_sent(dedupe_key: str | None, sent: bool) -> None:
+    if not dedupe_key:
+        return
+    with db() as conn:
+        conn.execute(
+            "UPDATE native_trade_events SET telegram_sent = ? WHERE dedupe_key = ?",
+            (1 if sent else 0, dedupe_key),
+        )
+        conn.execute(
+            "UPDATE native_mt5_events SET telegram_sent = ? WHERE event_id = ?",
+            (1 if sent else 0, dedupe_key),
+        )
+
+
 def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, force_new: bool) -> str:
     existing = None if force_new else _find_native_active_trade(conn, event)
     trade_key = existing["trade_key"] if existing else _new_trade_key(event)
@@ -1200,20 +1228,26 @@ def _is_duplicate_native_event(conn, dedupe_key: str) -> bool:
 
 
 def _native_event_dedupe_key(event: NativeMT5Event, payload: dict, event_type: str) -> str:
+    explicit = first_present(payload.get("event_id"), payload.get("dedupe_key"))
+    if explicit:
+        return str(explicit)
     parsed = _parse_datetime(first_present(event.time, payload.get("time")))
     rounded_time = parsed.astimezone(timezone.utc).strftime("%Y%m%d%H%M") if parsed else str(first_present(event.time, payload.get("time"), ""))[:16]
-    price = first_present(payload.get("price"), event.exit_price, event.current_price, event.entry, "")
-    profit = first_present(event.profit, payload.get("net_profit"), "")
+    price = first_present(payload.get("close_price"), payload.get("price"), event.exit_price, event.current_price, event.entry, "")
+    profit = first_present(payload.get("realized_net"), payload.get("total_net"), event.profit, payload.get("net_profit"), "")
     basis = "|".join(
         [
             str(event.bot_id or ""),
             str(event.symbol or ""),
             str(event.magic_number or ""),
-            event_type,
+            str(payload.get("trade_uid") or ""),
+            str(payload.get("normalized_type") or event_type),
+            str(first_present(payload.get("deal_ticket"), payload.get("ticket"), "")),
+            str(first_present(payload.get("close_volume"), payload.get("closed_volume"), payload.get("volume"), "")),
             rounded_time,
             str(price),
             str(profit),
-            str(event.message or ""),
+            str(payload.get("tp_index") or ""),
         ]
     )
     return hashlib.sha1(basis.encode("utf-8")).hexdigest()
@@ -1228,8 +1262,10 @@ def _record_native_trade_event(conn, event: NativeMT5Event, payload: dict, event
     conn.execute(
         """
         INSERT OR IGNORE INTO native_trade_events
-            (trade_uid, event_type, symbol, bot_id, side, price, profit, message, time, dedupe_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (trade_uid, event_type, symbol, bot_id, side, price, profit, message, time, dedupe_key,
+             event_id, normalized_type, should_notify, telegram_sent, payload, magic, position_id,
+             order_ticket, deal_ticket, tp_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
         """,
         (
             trade_uid,
@@ -1242,6 +1278,15 @@ def _record_native_trade_event(conn, event: NativeMT5Event, payload: dict, event
             event.message,
             event.time,
             dedupe_key,
+            payload.get("event_id"),
+            payload.get("normalized_type"),
+            1 if payload.get("should_notify") else 0,
+            json.dumps(payload, ensure_ascii=False, default=str),
+            event.magic_number,
+            first_present(payload.get("position_id"), payload.get("position_ticket")),
+            first_present(payload.get("order_ticket"), payload.get("order")),
+            first_present(payload.get("deal_ticket"), payload.get("ticket")),
+            payload.get("tp_index"),
         ),
     )
     _apply_journal_event(conn, event, payload, event_type, trade_uid)
@@ -1276,6 +1321,7 @@ def _find_open_journal_trade(conn, event: NativeMT5Event) -> Optional[dict]:
 
 def _apply_journal_event(conn, event: NativeMT5Event, payload: dict, event_type: str, trade_uid: str) -> None:
     existing = conn.execute("SELECT * FROM native_trade_journal WHERE trade_uid = ?", (trade_uid,)).fetchone()
+    realized_net = _payload_profit(payload) if any(payload.get(key) is not None for key in ("realized_net", "total_net", "profit_money", "profit", "commission", "swap")) else event.profit
     if event_type == "opened":
         conn.execute(
             """
@@ -1314,6 +1360,32 @@ def _apply_journal_event(conn, event: NativeMT5Event, payload: dict, event_type:
                 event.profit,
                 event.balance,
                 event.equity,
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE native_trade_journal
+            SET position_id = COALESCE(?, position_id),
+                order_ticket = COALESCE(?, order_ticket),
+                lot_initial = COALESCE(?, lot_initial),
+                entry_price = COALESCE(?, entry_price),
+                sl_price = COALESCE(?, sl_price),
+                tp1_price = COALESCE(?, tp1_price),
+                tp2_price = COALESCE(?, tp2_price),
+                tp3_price = COALESCE(?, tp3_price),
+                updated_at = datetime('now')
+            WHERE trade_uid = ?
+            """,
+            (
+                first_present(payload.get("position_id"), payload.get("position_ticket")),
+                first_present(payload.get("order_ticket"), payload.get("order")),
+                first_present(payload.get("lot_initial"), event.lot),
+                first_present(payload.get("entry_price"), event.entry),
+                first_present(payload.get("sl_price"), event.sl),
+                first_present(payload.get("tp1_price"), event.tp1),
+                first_present(payload.get("tp2_price"), event.tp2),
+                first_present(payload.get("tp3_price"), event.tp3),
+                trade_uid,
             ),
         )
         return
@@ -1361,9 +1433,42 @@ def _apply_journal_event(conn, event: NativeMT5Event, payload: dict, event_type:
                 updated_at = datetime('now')
             WHERE trade_uid = ?
             """,
-            (event_type, event.profit, event.balance, event.equity, trade_uid),
+            (event_type, realized_net, event.balance, event.equity, trade_uid),
         )
+        tp_index = {"tp1_closed": 1, "tp2_closed": 2, "tp3_closed": 3}.get(event_type)
+        if tp_index:
+            conn.execute(
+                f"""
+                UPDATE native_trade_journal
+                SET tp{tp_index}_price = COALESCE(?, tp{tp_index}_price),
+                    tp{tp_index}_volume = COALESCE(?, tp{tp_index}_volume),
+                    tp{tp_index}_percent = COALESCE(?, tp{tp_index}_percent),
+                    tp{tp_index}_profit = COALESCE(?, tp{tp_index}_profit),
+                    tp{tp_index}_commission = COALESCE(?, tp{tp_index}_commission),
+                    tp{tp_index}_swap = COALESCE(?, tp{tp_index}_swap),
+                    tp{tp_index}_net = COALESCE(?, tp{tp_index}_net),
+                    updated_at = datetime('now')
+                WHERE trade_uid = ?
+                """,
+                (
+                    first_present(payload.get(f"tp{tp_index}_price"), payload.get(f"tp{tp_index}"), event.exit_price, event.current_price),
+                    first_present(payload.get(f"tp{tp_index}_volume"), payload.get("close_volume"), payload.get("closed_volume"), payload.get("volume")),
+                    first_present(payload.get(f"tp{tp_index}_percent"), payload.get("closed_percent")),
+                    first_present(payload.get(f"tp{tp_index}_profit"), payload.get("profit")),
+                    first_present(payload.get(f"tp{tp_index}_commission"), payload.get("commission")),
+                    first_present(payload.get(f"tp{tp_index}_swap"), payload.get("swap")),
+                    first_present(payload.get(f"tp{tp_index}_net"), realized_net),
+                    trade_uid,
+                ),
+            )
     elif event_type in NATIVE_EVENT_CLOSES_ACTIVE:
+        opened_at = existing["opened_at"] if existing and "opened_at" in existing.keys() else None
+        closed_at = first_present(event.time, now_iso())
+        duration_seconds = None
+        opened_dt = _parse_datetime(opened_at)
+        closed_dt = _parse_datetime(closed_at)
+        if opened_dt and closed_dt:
+            duration_seconds = max(0, int((closed_dt.astimezone(timezone.utc) - opened_dt.astimezone(timezone.utc)).total_seconds()))
         conn.execute(
             """
             UPDATE native_trade_journal
@@ -1371,12 +1476,33 @@ def _apply_journal_event(conn, event: NativeMT5Event, payload: dict, event_type:
                 close_reason = ?,
                 closed_at = ?,
                 profit = ?,
+                exit_price = COALESCE(?, exit_price),
+                total_profit = COALESCE(?, total_profit),
+                total_commission = COALESCE(?, total_commission),
+                total_swap = COALESCE(?, total_swap),
+                total_net = COALESCE(?, total_net),
+                deal_ticket = COALESCE(?, deal_ticket),
+                duration_seconds = COALESCE(?, duration_seconds),
                 balance_after = COALESCE(?, balance_after),
                 equity_after = COALESCE(?, equity_after),
                 updated_at = datetime('now')
             WHERE trade_uid = ?
             """,
-            (event_type, first_present(event.time, now_iso()), event.profit, event.balance, event.equity, trade_uid),
+            (
+                first_present(payload.get("close_reason"), payload.get("reason"), event_type),
+                closed_at,
+                realized_net,
+                first_present(payload.get("close_price"), event.exit_price, event.current_price),
+                first_present(payload.get("total_profit"), payload.get("profit")),
+                payload.get("commission"),
+                payload.get("swap"),
+                first_present(payload.get("total_net"), payload.get("realized_net"), realized_net),
+                first_present(payload.get("deal_ticket"), payload.get("ticket")),
+                duration_seconds,
+                event.balance,
+                event.equity,
+                trade_uid,
+            ),
         )
 
 
@@ -1417,7 +1543,12 @@ def _update_native_heartbeat(conn) -> None:
 
 
 def _payload_profit(payload: dict) -> float:
-    value = first_present(payload.get("profit"), payload.get("net_profit"), payload.get("pnl"))
+    value = first_present(payload.get("realized_net"), payload.get("total_net"), payload.get("profit_money"), payload.get("net_profit"), payload.get("pnl"))
+    if value is None and payload.get("profit") is not None:
+        try:
+            return float(payload.get("profit") or 0.0) + float(payload.get("commission") or 0.0) + float(payload.get("swap") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
     try:
         return float(value or 0.0)
     except (TypeError, ValueError):
@@ -1456,7 +1587,17 @@ def _trade_uid_from_event(event, payload: dict, existing: Optional[dict] = None)
     explicit = first_present(payload.get("trade_uid"), getattr(event, "trade_uid", None), existing.get("trade_uid"))
     if explicit:
         return str(explicit)
-    ticket = first_present(payload.get("ticket"), getattr(event, "ticket", None), payload.get("position_ticket"))
+    position_id = first_present(payload.get("position_id"), payload.get("position_ticket"), payload.get("position"))
+    if position_id:
+        return "|".join(
+            [
+                str(first_present(getattr(event, "bot_id", None), existing.get("bot_id"), "native")),
+                str(first_present(getattr(event, "symbol", None), existing.get("symbol"), "unknown_symbol")),
+                str(first_present(getattr(event, "magic_number", None), existing.get("magic_number"), payload.get("magic"), "")),
+                str(position_id),
+            ]
+        )
+    ticket = first_present(payload.get("ticket"), getattr(event, "ticket", None))
     if ticket:
         return f"{first_present(getattr(event, 'bot_id', None), existing.get('bot_id'), 'native')}_{ticket}"
     basis = "|".join(
@@ -1464,7 +1605,8 @@ def _trade_uid_from_event(event, payload: dict, existing: Optional[dict] = None)
             str(first_present(getattr(event, "bot_id", None), existing.get("bot_id"), "unknown_bot")),
             str(first_present(getattr(event, "symbol", None), existing.get("symbol"), "unknown_symbol")),
             str(first_present(getattr(event, "magic_number", None), existing.get("magic_number"), "")),
-            str(first_present(existing.get("opened_at"), getattr(event, "time", None), payload.get("time"), now_iso())),
+            str(first_present(payload.get("open_time"), existing.get("opened_at"), getattr(event, "time", None), payload.get("time"), now_iso())),
+            str(first_present(getattr(event, "side", None), existing.get("side"), payload.get("side"), "")),
         ]
     )
     return "trade_" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:24]
@@ -2248,7 +2390,8 @@ def _merge_profit(event_type: str, new_profit, existing_profit) -> Optional[floa
 
 def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload: dict) -> dict:
     existing = existing or {}
-    event_type = str(event.event_type or "").strip().lower()
+    event_type = str(first_present(payload.get("event_type"), event.event_type) or "").strip().lower()
+    realized_net = _payload_profit(payload) if any(payload.get(key) is not None for key in ("realized_net", "total_net", "profit_money", "profit", "commission", "swap")) else event.profit
     entry = first_present(event.entry, existing.get("entry"))
     sl = first_present(event.sl, existing.get("sl"))
     if event_type == "be_moved" and event.sl is None:
@@ -2260,10 +2403,10 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
     # Capture individual TP profits at the moment each TP fires (event.profit = this TP's slice)
     tp1_profit = existing.get("tp1_profit")
     tp2_profit = existing.get("tp2_profit")
-    if event_type == "tp1_closed" and event.profit is not None:
-        tp1_profit = event.profit
-    elif event_type == "tp2_closed" and event.profit is not None:
-        tp2_profit = event.profit
+    if event_type == "tp1_closed" and realized_net is not None:
+        tp1_profit = realized_net
+    elif event_type == "tp2_closed" and realized_net is not None:
+        tp2_profit = realized_net
     return {
         "trade_uid": _trade_uid_from_event(event, payload, existing),
         "bot_id": first_present(event.bot_id, existing.get("bot_id")),
@@ -2285,7 +2428,7 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
         "tp1_profit": tp1_profit,
         "tp2_profit": tp2_profit,
         "closed_percent": first_present(event.closed_percent, existing.get("closed_percent")),
-        "profit": _merge_profit(event_type, event.profit, existing.get("profit")),
+        "profit": _merge_profit(event_type, realized_net, existing.get("profit")),
         "balance": first_present(event.balance, existing.get("balance")),
         "equity": first_present(event.equity, existing.get("equity")),
         "status": event_type,
@@ -2299,7 +2442,18 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
 def get_trade_for_notification(event: NativeMT5Event) -> Optional[dict]:
     """Return active or just-closed trade row for enriching Telegram notifications."""
     event_type = str(event.event_type or "").strip().lower()
+    payload = _safe_payload(event)
+    trade_uid = first_present(payload.get("trade_uid"), getattr(event, "trade_uid", None))
     filters, params = [], []
+    if trade_uid:
+        with db() as conn:
+            table = "native_mt5_closed_trades" if event_type in NATIVE_REALIZED_EVENT_TYPES else "native_mt5_active_trades"
+            row = conn.execute(f"SELECT * FROM {table} WHERE trade_uid = ? ORDER BY updated_at DESC LIMIT 1", (trade_uid,)).fetchone()
+            if row:
+                return dict(row)
+            row = conn.execute("SELECT * FROM native_trade_journal WHERE trade_uid = ? ORDER BY updated_at DESC LIMIT 1", (trade_uid,)).fetchone()
+            if row:
+                return dict(row)
     if event.bot_id:
         filters.append("bot_id = ?")
         params.append(event.bot_id)
@@ -2324,6 +2478,14 @@ def get_trade_for_notification(event: NativeMT5Event) -> Optional[dict]:
                 params,
             ).fetchone()
     return dict(row) if row else None
+
+
+def get_native_trade_journal(trade_uid: str | None) -> Optional[dict]:
+    if not trade_uid:
+        return None
+    with db() as conn:
+        row = conn.execute("SELECT * FROM native_trade_journal WHERE trade_uid = ? ORDER BY updated_at DESC LIMIT 1", (trade_uid,)).fetchone()
+        return dict(row) if row else None
 
 
 def _safe_payload(model) -> dict:

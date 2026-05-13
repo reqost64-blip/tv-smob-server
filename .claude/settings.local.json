@@ -8,7 +8,12 @@
       "Bash(python -m py_compile server/account_store.py)",
       "Bash(python -m py_compile server/telegram_bot.py)",
       "Bash(pip install *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell([System.IO.Directory]::Exists\\(\"C:\\\\Users\\\\Administrator\\\\AppData\\\\Roaming\\\\MetaQuotes\"\\))",
+      "PowerShell([System.IO.Directory]::GetDirectories\\(\"C:\\\\Users\\\\Administrator\\\\AppData\\\\Roaming\\\\MetaQuotes\"\\))",
+      "PowerShell([System.IO.Directory]::GetDirectories\\(\"C:\\\\Users\\\\Administrator\\\\AppData\\\\Roaming\\\\MetaQuotes\\\\Terminal\"\\))",
+      "PowerShell([System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\Administrator\\\\AppData\\\\Roaming\\\\MetaQuotes\\\\Terminal\\\\D0E8209F77C8CF37AD8BF550E51FF075\\\\MQL5\\\\Experts\\\\SP500 PRO.mq5\"\\).Substring\\(0, 200\\))",
+      "PowerShell($content = [System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\Administrator\\\\AppData\\\\Roaming\\\\MetaQuotes\\\\Terminal\\\\D0E8209F77C8CF37AD8BF550E51FF075\\\\MQL5\\\\Experts\\\\SP500 PRO.mq5\"\\); $matches = [regex]::Matches\\($content, \"SendNativeEvent\"\\); \"Count: \" + $matches.Count; foreach\\($m in $matches | Select-Object -First 5\\) { $line = \\($content.Substring\\(0, $m.Index\\) -split \"`n\"\\).Count; \"Line $line : \" + $content.Substring\\($m.Index, 80\\) })"
     ]
   }
 }

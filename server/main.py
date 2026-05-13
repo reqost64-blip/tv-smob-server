@@ -50,6 +50,11 @@ from .telegram_bot import (
     should_notify_execution,
     validate_change,
 )
+from .native_trade_notifications import (
+    accounting_event_type,
+    format_clean_trade_message,
+    normalizeNativeTradeEvent,
+)
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -80,11 +85,21 @@ async def _dashboard_cors(request: Request, call_next):
 
 NATIVE_SCREENSHOT_EVENTS = {
     "opened",
+    "trade_opened",
     "tp1_closed",
+    "tp1_hit",
+    "tp1_taken",
+    "tp1_be",
     "tp2_closed",
+    "tp2_hit",
+    "tp2_taken",
     "tp3_closed",
+    "tp3_hit",
+    "tp3_taken",
     "be_moved",
     "position_closed",
+    "trade_closed",
+    "closed",
     "closed_by_signal",
 }
 MAX_NATIVE_SCREENSHOT_BYTES = 10 * 1024 * 1024
@@ -383,12 +398,29 @@ async def mt5_deal_report(report: DealReport):
 async def mt5_native_event(event: NativeMT5Event, request: Request):
     if not native_secret_matches(event.secret, request):
         return err("Invalid secret", status=403)
+    raw_payload = event.model_dump(mode="json", exclude={"secret"})
+    normalized = normalizeNativeTradeEvent(raw_payload)
     saved = acct.save_native_event(event)
     notified = False
     if saved:
-        payload, should_notify = native_event_payload(event)
-        if should_notify:
-            text = format_native_mt5_event_message(payload)
+        payload = dict(raw_payload)
+        payload["event_type"] = accounting_event_type(payload, normalized)
+        payload["original_event_type"] = normalized["rawEventType"]
+        payload["normalized_type"] = normalized["normalizedType"]
+        payload["trade_uid"] = normalized["tradeUid"]
+        journal = acct.get_native_trade_journal(normalized["tradeUid"]) or {}
+        for key, value in journal.items():
+            if value is not None and value != "":
+                payload.setdefault(key, value)
+        if normalized["telegramTemplate"] == "closed":
+            try:
+                daily_stats = acct.native_pnl_today()
+            except Exception:
+                daily_stats = None
+        else:
+            daily_stats = None
+        if normalized["shouldNotifyTelegram"]:
+            text = format_clean_trade_message(payload, normalized, daily_stats)
             if text:
                 try:
                     screenshot_path = direct_screenshot_from_payload(event, payload)
@@ -412,9 +444,11 @@ async def mt5_native_event(event: NativeMT5Event, request: Request):
                         "task": task,
                     }
                     notified = True
+                acct.mark_native_event_telegram_sent(normalized["eventId"], notified)
     return {
         "ok": True,
         "event_type": str(event.event_type or "").strip().lower(),
+        "normalized_type": normalized["normalizedType"],
         "duplicate": not saved,
         "notified": notified,
     }
@@ -537,16 +571,27 @@ async def mt5_native_screenshot(screenshot: NativeMT5Screenshot, request: Reques
     prune_native_screenshots()
     event = screenshot.model_dump(mode="json", exclude={"secret", "image_base64"})
     event["event_type"] = event_type
+    normalized = normalizeNativeTradeEvent(event)
     key = pending_key(screenshot.bot_id, screenshot.symbol)
     pending = pending_messages.pop(key, None)
     if pending and pending.get("task"):
         pending["task"].cancel()
-    caption = telegram_caption(pending["text"]) if pending else format_native_screenshot_caption(event)
+    caption = telegram_caption(pending["text"]) if pending else ""
     if not caption:
-        caption = " | ".join([str(screenshot.symbol or "n/a"), str(screenshot.side or "").upper() or "n/a", event_type])
+        if normalized["shouldNotifyTelegram"]:
+            journal = acct.get_native_trade_journal(normalized["tradeUid"]) or {}
+            payload = dict(event)
+            for k, v in journal.items():
+                if v is not None and v != "":
+                    payload.setdefault(k, v)
+            caption = format_clean_trade_message(payload, normalized)
+        else:
+            caption = ""
     caption = telegram_caption(caption)
     acct.save_native_screenshot_record(screenshot, str(file_path), caption)
     prune_native_screenshot_records()
+    if not caption or not normalized["shouldNotifyTelegram"]:
+        return {"ok": True, "event_type": event_type, "sent": False, "suppressed": True}
     sent = send_telegram_photo(file_path, caption)
     if not sent:
         return JSONResponse({"ok": False, "error": "Telegram sendPhoto failed"}, status_code=502)
