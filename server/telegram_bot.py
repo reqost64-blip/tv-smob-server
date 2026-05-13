@@ -26,6 +26,15 @@ from .settings_store import (
     list_pending_approvals,
     reject_pending_approval,
 )
+from .database import db
+
+try:
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram.ext import CallbackQueryHandler
+except Exception:
+    InlineKeyboardButton = None
+    InlineKeyboardMarkup = None
+    CallbackQueryHandler = None
 
 
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
@@ -67,6 +76,24 @@ OPEN_EXECUTION_STATUSES = {"opened", "dry_run_open"}
 TP_EXECUTION_STATUSES = {"tp1_closed", "tp2_closed", "tp3_closed"}
 CLOSE_EXECUTION_STATUSES = {"position_closed", "closed_by_signal", "dry_run_close"}
 ERROR_EXECUTION_STATUSES = {"open_failed", "close_failed", "rejected", "close_rejected"}
+MENU_DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
+MENU_BOTS = [
+    "NAS100_ORB_VWAP_RSI_OF",
+    "SP500_ORB_VWAP_RSI_OF",
+    "DJ30_ORB_VWAP_RSI_OF",
+    "BTCUSD_ORB_VWAP_RSI_OF",
+    "GER40_ORB_VWAP_RSI_OF",
+]
+MENU_ASSETS = ["NAS100", "SP500", "DJ30", "BTCUSD", "GER40"]
+MARKET_SYMBOLS = {
+    "NAS100": "^IXIC",
+    "SP500": "^GSPC",
+    "DJ30": "^DJI",
+    "BTCUSD": "BTC-USD",
+    "GER40": "^GDAXI",
+    "VIX": "^VIX",
+}
+user_state = {}
 
 KNOWN_SETTING_KEYS = {
     "trading_enabled",
@@ -760,6 +787,745 @@ def format_execution_report(report: Optional[dict]) -> str:
     )
 
 
+async def _ptb_callback_router(update, context):
+    query = getattr(update, "callback_query", None)
+    if query:
+        await query.answer()
+
+
+menu_callback_query_handler = CallbackQueryHandler(_ptb_callback_router) if CallbackQueryHandler else None
+
+
+def menu_timestamp() -> str:
+    return "🕐 " + datetime.now(BERLIN_TZ).strftime("%H:%M  %d.%m.%Y")
+
+
+def safe_float(value) -> Optional[float]:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def menu_money(value, currency: str = "$", decimals: int = 2, signed: bool = False) -> Optional[str]:
+    number = safe_float(value)
+    if number is None:
+        return None
+    sign = "+" if signed and number > 0 else "-" if signed and number < 0 else ""
+    return f"{sign}{currency}{abs(number):,.{decimals}f}"
+
+
+def menu_number(value, decimals: int = 0, signed: bool = False) -> Optional[str]:
+    number = safe_float(value)
+    if number is None:
+        return None
+    sign = "+" if signed and number > 0 else "-" if signed and number < 0 else ""
+    return f"{sign}{abs(number):,.{decimals}f}"
+
+
+def menu_pct(value, decimals: int = 0) -> Optional[str]:
+    number = safe_float(value)
+    if number is None:
+        return None
+    return f"{number:.{decimals}f}%"
+
+
+def menu_duration(start, end) -> Optional[str]:
+    opened = parse_datetime(start)
+    closed = parse_datetime(end)
+    if not opened or not closed:
+        return None
+    minutes = max(0, int((closed - opened).total_seconds() // 60))
+    if minutes >= 60:
+        hours, mins = divmod(minutes, 60)
+        return f"{hours}ч {mins}м" if mins else f"{hours}ч"
+    return f"{minutes}м"
+
+
+def menu_asset_from_trade(row: dict) -> str:
+    text = str(row.get("symbol") or row.get("bot_id") or "UNKNOWN").upper()
+    if "US500" in text or "SP500" in text:
+        return "SP500"
+    if "NAS100" in text:
+        return "NAS100"
+    if "DJ30" in text:
+        return "DJ30"
+    if "BTC" in text:
+        return "BTCUSD"
+    if "GER40" in text:
+        return "GER40"
+    return text.replace(".R", "")[:8]
+
+
+def menu_line(label: str, value: Optional[str], width: int = 14) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    return f"{label:<{width}} {value}"
+
+
+def menu_message(title: str, body: list[str], footer: bool = True) -> str:
+    lines = [title, MENU_DIVIDER, ""]
+    lines.extend(line for line in body if line is not None)
+    if footer:
+        lines.extend(["", menu_timestamp()])
+    return "\n".join(lines).strip()
+
+
+def inline_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
+    if InlineKeyboardButton and InlineKeyboardMarkup:
+        markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(text, callback_data=data) for text, data in row] for row in rows]
+        )
+        return markup.to_dict()
+    return {
+        "inline_keyboard": [
+            [{"text": text, "callback_data": data} for text, data in row]
+            for row in rows
+        ]
+    }
+
+
+def main_menu_keyboard() -> dict:
+    return inline_keyboard(
+        [
+            [("📊 Статус", "menu_status"), ("📋 Сделки", "menu_trades")],
+            [("📈 Статистика", "menu_stats"), (" Действия", "menu_actions")],
+            [("🌍 Рынок", "menu_market"), ("🏆 Рекорды", "menu_records")],
+            [("📉 Риск", "menu_risk"), ("🤖 Боты", "menu_bots")],
+        ]
+    )
+
+
+def menu_back_keyboard(refresh: str, back: Optional[str] = None) -> dict:
+    row = [("🔁 Обновить", refresh)]
+    if back:
+        row.append((" Назад", back))
+    row.append((" Меню", "menu_main"))
+    return inline_keyboard([row])
+
+
+def menu_main_text() -> str:
+    return "\n".join([" TRADING CONTROL", MENU_DIVIDER, "", "Система управления торговыми ботами", menu_timestamp()])
+
+
+def menu_send(chat_id: str, text: str, reply_markup: Optional[dict] = None, edit_message_id: Optional[int] = None) -> bool:
+    if not config.TELEGRAM_BOT_TOKEN or not chat_id:
+        return False
+    method = "editMessageText" if edit_message_id else "sendMessage"
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/{method}"
+    payload = {
+        "chat_id": chat_id,
+        "text": text[:3900],
+        "disable_web_page_preview": True,
+    }
+    if edit_message_id:
+        payload["message_id"] = edit_message_id
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+    data = urllib.parse.urlencode(payload).encode("utf-8")
+    try:
+        request = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(request, timeout=8):
+            return True
+    except Exception:
+        if edit_message_id:
+            payload.pop("message_id", None)
+            data = urllib.parse.urlencode(payload).encode("utf-8")
+            try:
+                request = urllib.request.Request(
+                    f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
+                    data=data,
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=8):
+                    return True
+            except Exception:
+                return False
+        return False
+
+
+def answer_callback_query(callback_query_id: str) -> None:
+    if not config.TELEGRAM_BOT_TOKEN or not callback_query_id:
+        return
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+    data = urllib.parse.urlencode({"callback_query_id": callback_query_id}).encode("utf-8")
+    try:
+        request = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(request, timeout=5):
+            return
+    except Exception:
+        return
+
+
+def handle_telegram_update(update: dict) -> bool:
+    try:
+        callback = update.get("callback_query") or {}
+        if callback:
+            answer_callback_query(str(callback.get("id") or ""))
+            message = callback.get("message") or {}
+            chat = message.get("chat") or {}
+            chat_id = str(chat.get("id")) if chat.get("id") is not None else None
+            if config.TELEGRAM_ADMIN_CHAT_ID and chat_id != config.TELEGRAM_ADMIN_CHAT_ID:
+                return True
+            text, keyboard = render_menu_callback(str(callback.get("data") or ""), chat_id or "")
+            menu_send(chat_id or config.TELEGRAM_ADMIN_CHAT_ID, text, keyboard, message.get("message_id"))
+            return True
+
+        message = update.get("message") or update.get("edited_message") or {}
+        chat = message.get("chat") or {}
+        chat_id = str(chat.get("id")) if chat.get("id") is not None else None
+        text = str(message.get("text") or "").strip()
+        if not chat_id or not text:
+            return False
+        if config.TELEGRAM_ADMIN_CHAT_ID and chat_id != config.TELEGRAM_ADMIN_CHAT_ID:
+            return True
+        if text.split()[0].lower() in ("/start", "/menu"):
+            user_state[chat_id] = {"screen": "main"}
+            menu_send(chat_id, menu_main_text(), main_menu_keyboard())
+            return True
+        return False
+    except Exception:
+        try:
+            chat_id = config.TELEGRAM_ADMIN_CHAT_ID
+            menu_send(chat_id, menu_message("🔴 ОШИБКА", ["Не удалось обработать запрос."], True), main_menu_keyboard())
+        except Exception:
+            pass
+        return True
+
+
+def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
+    try:
+        if data == "menu_main":
+            user_state[chat_id] = {"screen": "main"}
+            return menu_main_text(), main_menu_keyboard()
+        if data == "menu_status":
+            return render_menu_status()
+        if data == "menu_trades":
+            user_state[chat_id] = {"screen": "trades_period"}
+            return render_trades_period()
+        if data.startswith("trades_"):
+            period = data.replace("trades_", "", 1)
+            user_state[chat_id] = {"screen": "trades_result", "period": period}
+            return render_trades_result(period)
+        if data == "menu_stats":
+            user_state[chat_id] = {"screen": "stats_period"}
+            return render_stats_period()
+        if data.startswith("stats_period_"):
+            period = data.replace("stats_period_", "", 1)
+            user_state[chat_id] = {"screen": "stats_asset", "period": period}
+            return render_stats_asset(period)
+        if data.startswith("stats_asset_"):
+            asset = data.replace("stats_asset_", "", 1)
+            period = user_state.get(chat_id, {}).get("period", "day")
+            user_state[chat_id] = {"screen": "stats_result", "period": period, "asset": asset}
+            return render_stats_result(period, asset)
+        if data == "stats_refresh":
+            state = user_state.get(chat_id, {})
+            return render_stats_result(state.get("period", "day"), state.get("asset", "all"))
+        if data == "stats_back_asset":
+            period = user_state.get(chat_id, {}).get("period", "day")
+            return render_stats_asset(period)
+        if data == "menu_actions":
+            user_state[chat_id] = {"screen": "actions"}
+            return render_actions_menu()
+        if data in {"action_enable", "action_disable"}:
+            action = "enable" if data == "action_enable" else "disable"
+            user_state[chat_id] = {"screen": "action_select", "action": action}
+            return render_action_select(action)
+        if data in {"action_enable_all", "action_disable_all"}:
+            action = "enable_all" if data == "action_enable_all" else "disable_all"
+            user_state[chat_id] = {"screen": "action_confirm", "action": action, "asset": "Все"}
+            return render_action_confirm(action, "Все")
+        if data.startswith("action_bot_"):
+            asset = data.replace("action_bot_", "", 1)
+            action = user_state.get(chat_id, {}).get("action", "enable")
+            user_state[chat_id] = {"screen": "action_confirm", "action": action, "asset": asset}
+            return render_action_confirm(action, asset)
+        if data == "action_confirm":
+            state = user_state.get(chat_id, {})
+            return execute_action(state.get("action", "enable"), state.get("asset", "NAS100"))
+        if data == "action_report":
+            return render_daily_report_menu()
+        if data == "menu_market":
+            return render_market()
+        if data == "menu_records":
+            return render_records()
+        if data == "menu_risk":
+            return render_risk()
+        if data == "menu_bots":
+            return render_bots_status()
+        return menu_main_text(), main_menu_keyboard()
+    except Exception:
+        return menu_message("🔴 ОШИБКА", ["Данные временно недоступны."], True), main_menu_keyboard()
+
+
+def render_menu_status() -> tuple[str, dict]:
+    try:
+        account = acct.latest_account_snapshot() or {}
+        pnl = acct.pnl_today() or {}
+        controls = acct.list_native_bot_controls(include_defaults=True)
+        currency = "$"
+        trades = int(pnl.get("trades_count") or pnl.get("closed_trades_count") or 0)
+        wins = int(pnl.get("wins") or 0)
+        losses = int(pnl.get("losses") or 0)
+        winrate = round((wins / trades) * 100) if trades else 0
+        body = [
+            "💰 АККАУНТ",
+            menu_line("💰 Баланс:", menu_money(account.get("balance"), currency)),
+            menu_line("📊 Equity:", menu_money(account.get("equity"), currency)),
+            menu_line("📉 Margin:", menu_money(account.get("margin"), currency)),
+            menu_line("Свободно:", menu_money(account.get("free_margin"), currency)),
+            "",
+            "📅 СЕГОДНЯ",
+            menu_line("P&L:", menu_money(pnl.get("closed_pnl", pnl.get("net_pnl")), currency, signed=True)),
+            menu_line("Сделок:", f"{trades}  ({wins}W / {losses}L)"),
+            menu_line("Винрейт:", f"{winrate}%"),
+            "",
+            "🤖 БОТЫ",
+        ]
+        bot_parts = []
+        for control in controls:
+            if control.get("asset") in MENU_ASSETS:
+                bot_parts.append(f"{control.get('asset'):<7} {'🟢' if control_enabled(control) else '🔴'}")
+        for index in range(0, len(bot_parts), 2):
+            body.append("  ".join(bot_parts[index:index + 2]))
+        return menu_message("📊 СТАТУС АККАУНТА", body), menu_back_keyboard("menu_status")
+    except Exception:
+        return menu_message("🔴 ОШИБКА СТАТУСА", ["Не удалось получить данные аккаунта."], True), menu_back_keyboard("menu_status")
+
+
+def render_trades_period() -> tuple[str, dict]:
+    text = menu_message("📋 СДЕЛКИ  ВЫБЕРИ ПЕРИОД", [], True)
+    keyboard = inline_keyboard(
+        [
+            [("Сегодня", "trades_today"), ("Вчера", "trades_yesterday"), ("Неделя", "trades_week")],
+            [(" Меню", "menu_main")],
+        ]
+    )
+    return text, keyboard
+
+
+def period_to_store(period: str) -> str:
+    return {"today": "today", "yesterday": "yesterday", "week": "7d", "day": "today", "month": "30d"}.get(period, "today")
+
+
+def period_title(period: str) -> str:
+    return {"today": "СЕГОДНЯ", "yesterday": "ВЧЕРА", "week": "НЕДЕЛЯ", "day": "ДЕНЬ", "month": "МЕСЯЦ"}.get(period, period.upper())
+
+
+def menu_journal(period: str, selector: Optional[str] = None, limit: int = 500) -> list[dict]:
+    if period == "yesterday":
+        start = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        end = start + timedelta(days=1)
+        rows = acct.native_journal_all(limit=10000)
+        result = []
+        for row in rows:
+            parsed = parse_datetime(first_present(row.get("closed_at"), row.get("opened_at"), row.get("created_at")))
+            if not parsed:
+                continue
+            local = parsed.astimezone(BERLIN_TZ)
+            if start <= local < end and (not selector or selector == "all" or selector in menu_asset_from_trade(row)):
+                result.append(row)
+        return result[:limit]
+    selector_arg = None if selector in (None, "all", "Все") else selector
+    return acct.journal_entries(period_to_store(period), selector_arg, limit=limit)
+
+
+def render_trades_result(period: str) -> tuple[str, dict]:
+    try:
+        rows = [r for r in menu_journal(period, limit=500) if r.get("closed_at")]
+        rows = sorted(rows, key=lambda r: str(first_present(r.get("closed_at"), r.get("created_at"))), reverse=True)
+        total = sum(float_or_zero(r.get("profit")) for r in rows)
+        wins = sum(1 for r in rows if float_or_zero(r.get("profit")) > 0)
+        losses = sum(1 for r in rows if float_or_zero(r.get("profit")) < 0)
+        closed = wins + losses
+        winrate = round((wins / closed) * 100) if closed else 0
+        body = []
+        for row in rows[:10]:
+            pnl = menu_number(row.get("profit"), 0, signed=True)
+            risk = estimate_r_multiple(row)
+            duration = menu_duration(row.get("opened_at"), row.get("closed_at"))
+            parts = [menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4)]
+            if pnl:
+                parts.append(pnl.rjust(5))
+            if risk:
+                parts.append(risk.rjust(6))
+            if duration:
+                parts.append(duration)
+            body.append(" ".join(parts))
+        if not body:
+            body.append("🟡 Нет сделок за выбранный период")
+        body.extend(["", f"Итого:  {menu_number(total, 0, True) or '+0'}  |  {wins}W / {losses}L  |  {winrate}%"])
+        return menu_message(f"📋 СДЕЛКИ  {period_title(period)}", body), menu_back_keyboard(f"trades_{period}", "menu_trades")
+    except Exception:
+        return menu_message("🔴 ОШИБКА СДЕЛОК", ["Не удалось получить журнал сделок."], True), menu_back_keyboard(f"trades_{period}", "menu_trades")
+
+
+def estimate_r_multiple(row: dict) -> Optional[str]:
+    profit = safe_float(row.get("profit"))
+    entry = safe_float(row.get("entry"))
+    sl = safe_float(row.get("sl"))
+    if profit is None or entry is None or sl is None or entry == sl:
+        return None
+    lot = abs(safe_float(row.get("lot")) or 1.0)
+    risk = abs(entry - sl) * lot
+    if risk <= 0:
+        return None
+    return f"{profit / risk:.2f}R"
+
+
+def render_stats_period() -> tuple[str, dict]:
+    text = menu_message("📈 СТАТИСТИКА  ПЕРИОД", [], True)
+    keyboard = inline_keyboard(
+        [
+            [("День", "stats_period_day"), ("Неделя", "stats_period_week"), ("Месяц", "stats_period_month")],
+            [(" Меню", "menu_main")],
+        ]
+    )
+    return text, keyboard
+
+
+def render_stats_asset(period: str) -> tuple[str, dict]:
+    text = menu_message("📈 СТАТИСТИКА  АКТИВ", [], True)
+    keyboard = inline_keyboard(
+        [
+            [("Все", "stats_asset_all"), ("NAS100", "stats_asset_NAS100"), ("SP500", "stats_asset_SP500")],
+            [("DJ30", "stats_asset_DJ30"), ("BTCUSD", "stats_asset_BTCUSD"), ("GER40", "stats_asset_GER40")],
+            [(" Назад", "menu_stats")],
+        ]
+    )
+    return text, keyboard
+
+
+def render_stats_result(period: str, asset: str) -> tuple[str, dict]:
+    try:
+        store_period = {"day": "today", "week": "7d", "month": "30d"}.get(period, "today")
+        selector = None if asset == "all" else asset
+        summary = acct.performance_summary(store_period, selector)
+        stats = summary.get("totals") or {}
+        trades = int(stats.get("trades_count") or 0)
+        wins = int(stats.get("wins") or 0)
+        losses = int(stats.get("losses") or 0)
+        win_pct = round((wins / trades) * 100) if trades else 0
+        loss_pct = round((losses / trades) * 100) if trades else 0
+        avg = (float_or_zero(stats.get("closed_pnl")) / trades) if trades else 0
+        avg_r = average_r(menu_journal(store_period, selector))
+        avg_dur = average_duration(menu_journal(store_period, selector))
+        title_asset = "ВСЕ" if asset == "all" else asset
+        body = [
+            menu_line("🎯 Сделок:", str(trades)),
+            menu_line("Побед:", f"{wins}  ({win_pct}%)"),
+            menu_line("Убытков:", f"{losses}  ({loss_pct}%)"),
+            "",
+            menu_line("💰 P&L:", menu_number(stats.get("closed_pnl"), 0, True)),
+            menu_line("🏆 Лучшая:", menu_number(stats.get("best_trade"), 0, True)),
+            menu_line("📉 Худшая:", menu_number(stats.get("worst_trade"), 0, True)),
+            menu_line("Средняя:", menu_number(avg, 0, True)),
+            "",
+            "📊 МЕТРИКИ",
+            menu_line("Profit Factor:", fmt_pf(stats.get("profit_factor"))),
+            menu_line("Avg R:", f"{avg_r:.2f}R" if avg_r is not None else None),
+            menu_line("TP1 взят:", f"{round((int(stats.get('tp1_count') or 0) / trades) * 100)}%" if trades else None),
+            menu_line("TP2 взят:", f"{round((int(stats.get('tp2_count') or 0) / trades) * 100)}%" if trades else None),
+            menu_line("Avg время:", avg_dur),
+        ]
+        return menu_message(f"📈 {title_asset}  {period_title(period)}", body), menu_back_keyboard("stats_refresh", "stats_back_asset")
+    except Exception:
+        return menu_message("🔴 ОШИБКА СТАТИСТИКИ", ["Не удалось рассчитать статистику."], True), menu_back_keyboard("stats_refresh", "menu_stats")
+
+
+def average_r(rows: list[dict]) -> Optional[float]:
+    values = []
+    for row in rows:
+        r_text = estimate_r_multiple(row)
+        if r_text:
+            values.append(float_or_zero(r_text.replace("R", "")))
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def average_duration(rows: list[dict]) -> Optional[str]:
+    minutes = []
+    for row in rows:
+        opened = parse_datetime(row.get("opened_at"))
+        closed = parse_datetime(row.get("closed_at"))
+        if opened and closed:
+            minutes.append(max(0, int((closed - opened).total_seconds() // 60)))
+    if not minutes:
+        return None
+    avg = round(sum(minutes) / len(minutes))
+    if avg >= 60:
+        hours, mins = divmod(avg, 60)
+        return f"{hours}ч {mins}м"
+    return f"{avg}м"
+
+
+def render_actions_menu() -> tuple[str, dict]:
+    text = menu_message("🤖 УПРАВЛЕНИЕ БОТАМИ", [], True)
+    keyboard = inline_keyboard(
+        [
+            [(" Включить бота", "action_enable")],
+            [(" Остановить бота", "action_disable")],
+            [(" Стоп все боты", "action_disable_all")],
+            [(" Включить всех", "action_enable_all")],
+            [("📋 Отчёт сейчас", "action_report")],
+            [(" Меню", "menu_main")],
+        ]
+    )
+    return text, keyboard
+
+
+def render_action_select(action: str) -> tuple[str, dict]:
+    title = "🤖 ВКЛЮЧИТЬ  ВЫБЕРИ БОТА" if action == "enable" else "🤖 ОСТАНОВИТЬ  ВЫБЕРИ БОТА"
+    keyboard = inline_keyboard(
+        [
+            [("NAS100", "action_bot_NAS100"), ("SP500", "action_bot_SP500"), ("DJ30", "action_bot_DJ30")],
+            [("BTCUSD", "action_bot_BTCUSD"), ("GER40", "action_bot_GER40"), ("Все", "action_bot_Все")],
+            [(" Назад", "menu_actions")],
+        ]
+    )
+    return menu_message(title, [], True), keyboard
+
+
+def render_action_confirm(action: str, asset: str) -> tuple[str, dict]:
+    verb = "Включить" if action in {"enable", "enable_all"} else "Остановить"
+    target = "всех ботов" if asset == "Все" or action.endswith("_all") else f"бота: {asset}"
+    text = menu_message("🟡 ПОДТВЕРЖДЕНИЕ", [f"{verb} {target}?"], True)
+    keyboard = inline_keyboard([[(" Подтвердить", "action_confirm"), (" Отмена", "menu_actions")]])
+    return text, keyboard
+
+
+def execute_action(action: str, asset: str) -> tuple[str, dict]:
+    try:
+        enable = action in {"enable", "enable_all"}
+        if asset == "Все" or action.endswith("_all"):
+            controls = acct.set_all_native_bots_enabled(enable, "Telegram menu")
+            target = "ВСЕ БОТЫ"
+        else:
+            control = acct.set_native_bot_enabled(asset, enable, "Telegram menu")
+            controls = [control] if control else []
+            target = asset
+        status = "ВКЛЮЧЁН" if enable else "ОСТАНОВЛЕН"
+        detail = "Новые входы разрешены" if enable else "Новые входы запрещены"
+        body = [f"🤖 {target}  {status}", detail]
+        if not controls:
+            body = ["🔴 Бот не найден"]
+        return menu_message("🟢 ВЫПОЛНЕНО", body, True), inline_keyboard([[(" Меню", "menu_main")]])
+    except Exception:
+        return menu_message("🔴 ОШИБКА", ["Действие не выполнено."], True), inline_keyboard([[(" Меню", "menu_main")]])
+
+
+def render_daily_report_menu() -> tuple[str, dict]:
+    try:
+        rows = [r for r in menu_journal("today", limit=500) if r.get("closed_at")]
+        total = sum(float_or_zero(r.get("profit")) for r in rows)
+        wins = sum(1 for r in rows if float_or_zero(r.get("profit")) > 0)
+        losses = sum(1 for r in rows if float_or_zero(r.get("profit")) < 0)
+        trades = wins + losses
+        winrate = round((wins / trades) * 100) if trades else 0
+        by_asset = {}
+        for row in rows:
+            by_asset[menu_asset_from_trade(row)] = by_asset.get(menu_asset_from_trade(row), 0.0) + float_or_zero(row.get("profit"))
+        best = max(rows, key=lambda r: float_or_zero(r.get("profit")), default=None)
+        worst = min(rows, key=lambda r: float_or_zero(r.get("profit")), default=None)
+        body = [
+            f"📅 {datetime.now(BERLIN_TZ).strftime('%d.%m.%Y')}",
+            "",
+            menu_line("💰 P&L дня:", menu_number(total, 0, True)),
+            menu_line("📊 Сделок:", str(trades)),
+            menu_line("Побед:", f"{wins}  ({winrate}%)"),
+            menu_line("Убытков:", str(losses)),
+            "",
+            "По активам:",
+        ]
+        for asset in MENU_ASSETS:
+            if asset in by_asset:
+                body.append(f"{asset:<8} {menu_number(by_asset[asset], 0, True)}")
+        body.extend([
+            "",
+            f"🏆 Лучшая:   {menu_asset_from_trade(best) if best else ''} {menu_number(best.get('profit'), 0, True) if best else ''}".rstrip(),
+            f"📉 Худшая:   {menu_asset_from_trade(worst) if worst else ''} {menu_number(worst.get('profit'), 0, True) if worst else ''}".rstrip(),
+            menu_line("Avg R:", f"{average_r(rows):.2f}R" if average_r(rows) is not None else None),
+        ])
+        return menu_message("📅 ДНЕВНОЙ ОТЧЁТ", body), inline_keyboard([[(" Меню", "menu_main")]])
+    except Exception:
+        return menu_message("🔴 ОШИБКА ОТЧЁТА", ["Не удалось сформировать отчёт."], True), inline_keyboard([[(" Меню", "menu_main")]])
+
+
+def render_market() -> tuple[str, dict]:
+    body = []
+    try:
+        import yfinance as yf
+        for asset, ticker in MARKET_SYMBOLS.items():
+            try:
+                hist = yf.Ticker(ticker).history(period="2d", interval="1d", timeout=6)
+                if hist is None or hist.empty:
+                    body.append(f"{asset:<7} 🟡 Нет данных")
+                    continue
+                close = float(hist["Close"].iloc[-1])
+                prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else close
+                change = ((close - prev) / prev) * 100 if prev else 0.0
+                if asset == "VIX":
+                    color = "🟢" if close < 20 else "🟡" if close <= 30 else "🔴"
+                    level = "Низкий" if close < 20 else "Средний" if close <= 30 else "Высокий"
+                    body.append("")
+                    body.append(f"VIX:      {close:.1f}  {color} {level}")
+                else:
+                    color = "🟢" if change > 0.1 else "🔴" if change < -0.1 else "🟡"
+                    body.append(f"{asset:<7} {close:>9,.0f}  {color} {change:+.2f}%")
+            except Exception:
+                body.append(f"{asset:<7} 🟡 Нет данных")
+    except Exception:
+        body.append("🟡 Нет данных")
+    return menu_message("🌍 РЫНОК СЕЙЧАС", body), menu_back_keyboard("menu_market")
+
+
+def render_records() -> tuple[str, dict]:
+    try:
+        rows = [r for r in acct.native_journal_all(limit=10000) if r.get("closed_at")]
+        by_day = {}
+        for row in rows:
+            parsed = parse_datetime(row.get("closed_at"))
+            if not parsed:
+                continue
+            key = parsed.astimezone(BERLIN_TZ).strftime("%d.%m")
+            by_day[key] = by_day.get(key, 0.0) + float_or_zero(row.get("profit"))
+        best_day = max(by_day.items(), key=lambda i: i[1], default=None)
+        worst_day = min(by_day.items(), key=lambda i: i[1], default=None)
+        best_trade = max(rows, key=lambda r: float_or_zero(r.get("profit")), default=None)
+        worst_trade = min(rows, key=lambda r: float_or_zero(r.get("profit")), default=None)
+        streak = longest_win_streak(rows)
+        max_r_row, max_r = max_r_multiple(rows)
+        total = sum(float_or_zero(r.get("profit")) for r in rows)
+        wins = sum(1 for r in rows if float_or_zero(r.get("profit")) > 0)
+        losses = sum(1 for r in rows if float_or_zero(r.get("profit")) < 0)
+        trades = wins + losses
+        winrate = round((wins / trades) * 100) if trades else 0
+        body = [
+            menu_line("💰 Лучший день:", f"{menu_number(best_day[1], 0, True)}  📅 {best_day[0]}" if best_day else None),
+            menu_line("🎯 Лучшая сделка:", f"{menu_number(best_trade.get('profit'), 0, True)}  {menu_asset_from_trade(best_trade)}" if best_trade else None),
+            menu_line("📈 Лучшая серия:", f"{streak} побед подряд"),
+            menu_line("Макс R за сделку:", f"{max_r:.2f}R  {menu_asset_from_trade(max_r_row)}" if max_r_row else None),
+            "",
+            "📉 АНТИРЕКОРДЫ",
+            menu_line("Худший день:", f"{menu_number(worst_day[1], 0, False)}  📅 {worst_day[0]}" if worst_day else None),
+            menu_line("Худшая сделка:", f"{menu_number(worst_trade.get('profit'), 0, False)}  {menu_asset_from_trade(worst_trade)}" if worst_trade else None),
+            menu_line("Макс просадка:", f"{max_drawdown_pct(rows):.1f}%"),
+            "",
+            "📊 ВСЕГО",
+            menu_line("Сделок:", str(trades)),
+            menu_line("P&L:", menu_number(total, 0, True)),
+            menu_line("Винрейт:", f"{winrate}%"),
+        ]
+        return menu_message("🏆 РЕКОРДЫ", body), inline_keyboard([[(" Меню", "menu_main")]])
+    except Exception:
+        return menu_message("🔴 ОШИБКА РЕКОРДОВ", ["Не удалось получить рекорды."], True), inline_keyboard([[(" Меню", "menu_main")]])
+
+
+def longest_win_streak(rows: list[dict]) -> int:
+    best = current = 0
+    for row in sorted(rows, key=lambda r: str(first_present(r.get("closed_at"), r.get("created_at")))):
+        if float_or_zero(row.get("profit")) > 0:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 0
+    return best
+
+
+def max_r_multiple(rows: list[dict]) -> tuple[Optional[dict], float]:
+    best_row = None
+    best_value = 0.0
+    for row in rows:
+        r_text = estimate_r_multiple(row)
+        value = float_or_zero(r_text.replace("R", "")) if r_text else 0.0
+        if value > best_value:
+            best_row, best_value = row, value
+    return best_row, best_value
+
+
+def max_drawdown_pct(rows: list[dict]) -> float:
+    equity = peak = drawdown = 0.0
+    for row in sorted(rows, key=lambda r: str(first_present(r.get("closed_at"), r.get("created_at")))):
+        equity += float_or_zero(row.get("profit"))
+        peak = max(peak, equity)
+        drawdown = min(drawdown, equity - peak)
+    account = acct.latest_account_snapshot() or {}
+    balance = safe_float(account.get("balance")) or 1.0
+    return abs(drawdown) / balance * 100
+
+
+def render_risk() -> tuple[str, dict]:
+    try:
+        start = acct.first_native_account_snapshot_today() or {}
+        account = acct.latest_account_snapshot() or {}
+        pnl = acct.pnl_today() or {}
+        positions = acct.current_positions()
+        limit = 250.0
+        current_pnl = safe_float(pnl.get("total_pnl", pnl.get("net_pnl"))) or 0.0
+        used = max(0.0, -current_pnl)
+        used_pct = min(100, round((used / limit) * 100)) if limit else 0
+        remaining = max(0.0, limit - used)
+        status = "🟢 В НОРМЕ" if used_pct < 30 else "🟡 ВНИМАНИЕ" if used_pct <= 70 else "🔴 ЛИМИТ"
+        risks = [estimate_position_risk(p) for p in positions]
+        risks = [r for r in risks if r is not None]
+        total_risk = sum(risks)
+        max_risk = max(risks) if risks else None
+        body = [
+            menu_line("💰 Баланс начала дня:", menu_money(start.get("balance"), "$", 0)),
+            menu_line("📉 Текущий P&L:", menu_money(current_pnl, "$", 0, signed=True)),
+            "",
+            " ЛИМИТЫ",
+            menu_line("Дневной лимит убытка:", menu_money(limit, "$", 0)),
+            menu_line("Использовано:", f"{menu_money(used, '$', 0)}  ({used_pct}%)"),
+            menu_line("Осталось до лимита:", menu_money(remaining, "$", 0)),
+            "",
+            f"Статус: {status}",
+            "",
+            "📊 ОТКРЫТЫЕ ПОЗИЦИИ",
+            menu_line("Позиций:", str(len(positions))),
+            menu_line("Макс риск на позицию:", menu_money(max_risk, "$", 0)),
+            menu_line("Суммарный риск:", menu_money(total_risk, "$", 0)),
+        ]
+        return menu_message("📉 РИСК-МОНИТОР", body), menu_back_keyboard("menu_risk")
+    except Exception:
+        return menu_message("🔴 ОШИБКА РИСКА", ["Не удалось получить риск-данные."], True), menu_back_keyboard("menu_risk")
+
+
+def estimate_position_risk(position: dict) -> Optional[float]:
+    entry = safe_float(first_present(position.get("entry"), position.get("entry_price")))
+    sl = safe_float(position.get("sl"))
+    lot = safe_float(position.get("lot")) or 1.0
+    if entry is None or sl is None:
+        return None
+    return abs(entry - sl) * abs(lot)
+
+
+def render_bots_status() -> tuple[str, dict]:
+    try:
+        controls = acct.list_native_bot_controls(include_defaults=True)
+        heartbeat = acct.last_mt5_heartbeat()
+        server_online = "🟢 Online" if heartbeat else "🟡 Нет данных"
+        online = 0
+        body = []
+        for asset in MENU_ASSETS:
+            control = next((c for c in controls if c.get("asset") == asset), None)
+            if not control:
+                body.append(f"{asset:<7} 🟡 Нет данных")
+                continue
+            active = control_enabled(control)
+            if active:
+                online += 1
+            cfg = "OK" if control.get("settings_summary") or control.get("last_heartbeat_at") else "FAIL"
+            time_text = format_time(control.get("last_heartbeat_at")) if control.get("last_heartbeat_at") else ""
+            body.append(f"{asset:<7} {'🟢 Активен' if active else '🔴 Выключен'}   cfg:{cfg:<4} {time_text}".rstrip())
+        body.extend(["", f"Онлайн: {online}/5", f"Сервер: {server_online}", menu_line("Uptime:", format_heartbeat(heartbeat))])
+        return menu_message("🤖 СТАТУС БОТОВ", body), menu_back_keyboard("menu_bots")
+    except Exception:
+        return menu_message("🔴 ОШИБКА БОТОВ", ["Не удалось получить статусы ботов."], True), menu_back_keyboard("menu_bots")
+
+
 def handle_command(text: str, chat_id: Optional[str] = None) -> str:
     stripped = text.strip()
     if not stripped:
@@ -771,8 +1537,8 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
     parts = stripped.split()
     command = parts[0].lower()
 
-    if command == "/start":
-        return format_start()
+    if command in ("/start", "/menu"):
+        return menu_main_text()
     if command == "/status":
         return format_status()
     if command == "/last_trade":

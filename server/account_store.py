@@ -792,6 +792,37 @@ def native_closed_trades(period: str = "today", selector: Optional[str] = None, 
     return result
 
 
+def native_journal_all(limit: int = 10000) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM native_trade_journal
+            ORDER BY COALESCE(closed_at, opened_at, created_at) ASC, id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def first_native_account_snapshot_today() -> Optional[dict]:
+    today_start = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM native_account_snapshots
+            ORDER BY COALESCE(snapshot_at, created_at) ASC, id ASC
+            LIMIT 1000
+            """
+        ).fetchall()
+    for row in rows:
+        data = _native_account_from_row(row)
+        parsed = _parse_datetime(first_present(data.get("snapshot_at"), data.get("created_at")))
+        if parsed and parsed.astimezone(BERLIN_TZ) >= today_start:
+            return data
+    return None
+
+
 def last_journal_trade(selector: Optional[str] = None) -> Optional[dict]:
     rows = _journal_rows(None, selector, limit=1, newest=True)
     return rows[0] if rows else None

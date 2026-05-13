@@ -36,6 +36,7 @@ from . import queue as q
 from .symbol_mapper import load_symbols
 from .telegram_bot import (
     handle_command,
+    handle_telegram_update,
     format_daily_report,
     format_native_screenshot_caption,
     notify_close_signal,
@@ -419,6 +420,9 @@ async def telegram_webhook(request: Request):
         update = await request.json()
     except Exception:
         return err("Invalid JSON body")
+
+    if handle_telegram_update(update):
+        return {"ok": True, "handled": True}
 
     chat_id, text = parse_telegram_update(update)
     if not chat_id or not text:
