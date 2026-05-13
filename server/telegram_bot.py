@@ -71,6 +71,9 @@ NATIVE_MT5_TELEGRAM_EVENTS = {
     "error",
 }
 NATIVE_NO_DATA_MESSAGE = "Данных от native MT5 bot пока нет."
+BE_SUPPRESS_AFTER_TP1_SECONDS = 300
+recent_tp1_symbols: set[str] = set()
+_BE_SUPPRESS_AFTER_TP1_TIMES: dict[str, datetime] = {}
 
 OPEN_EXECUTION_STATUSES = {"opened", "dry_run_open"}
 TP_EXECUTION_STATUSES = {"tp1_closed", "tp2_closed", "tp3_closed"}
@@ -191,6 +194,35 @@ def should_notify_execution(status: str) -> bool:
     return str(status or "").strip().lower() in ALLOWED_TRADE_STATUSES
 
 
+def _notification_symbol(value) -> str:
+    return str(value or "").strip().upper()
+
+
+def _mark_tp1_be_suppressed(symbol) -> None:
+    normalized = _notification_symbol(symbol)
+    if normalized:
+        recent_tp1_symbols.add(normalized)
+        _BE_SUPPRESS_AFTER_TP1_TIMES[normalized] = datetime.now(timezone.utc)
+
+
+def _is_be_suppressed_after_tp1(symbol) -> bool:
+    normalized = _notification_symbol(symbol)
+    if not normalized:
+        return False
+    if normalized in recent_tp1_symbols:
+        recent_tp1_symbols.discard(normalized)
+        _BE_SUPPRESS_AFTER_TP1_TIMES.pop(normalized, None)
+        return True
+    marked_at = _BE_SUPPRESS_AFTER_TP1_TIMES.get(normalized)
+    if not marked_at:
+        return False
+    age = (datetime.now(timezone.utc) - marked_at).total_seconds()
+    if age <= BE_SUPPRESS_AFTER_TP1_SECONDS:
+        return True
+    _BE_SUPPRESS_AFTER_TP1_TIMES.pop(normalized, None)
+    return False
+
+
 def notify_event(event_type: str, signal_id: Optional[str] = None, details: Optional[str] = None) -> None:
     q.record_event(event_type, signal_id, {"details": details})
 
@@ -215,9 +247,14 @@ def notify_execution(status: str, report) -> None:
     q.record_event(status, report.signal_id, {"ticket": report.ticket, "message": report.message})
     if not should_notify_execution(status):
         return
+    symbol = (payload or {}).get("mt5_symbol") or (payload or {}).get("symbol")
+    if status == "be_moved" and _is_be_suppressed_after_tp1(symbol):
+        return
     notification = format_execution_notification(status, report, payload)
     if notification:
-        send_telegram_message(notification)
+        sent = send_telegram_message(notification)
+        if sent and status == "tp1_closed":
+            _mark_tp1_be_suppressed(symbol)
 
 
 def notify_native_event(event: NativeMT5Event) -> bool:
@@ -235,15 +272,22 @@ def notify_native_event(event: NativeMT5Event) -> bool:
     if event_type not in NATIVE_MT5_TELEGRAM_EVENTS:
         return False
     payload = event.model_dump(mode="json", exclude={"secret"})
+    if event_type == "be_moved" and _is_be_suppressed_after_tp1(event.symbol):
+        return False
     # Enrich with DB trade data so format function has accumulated profit, timestamps, etc.
     trade = acct.get_trade_for_notification(event)
     if trade:
+        if event_type == "be_moved" and trade.get("tp1_done"):
+            return False
         if event_type in {"position_closed", "closed_by_signal"}:
             # Use accumulated total profit (TP1+TP2+close), not just remaining lot
             if trade.get("profit") is not None:
-                payload["profit"] = trade["profit"]
+                payload["total_profit"] = trade["profit"]
             payload.setdefault("opened_at", trade.get("opened_at"))
             payload.setdefault("exit_price", trade.get("exit_price"))
+            payload.setdefault("entry", trade.get("entry"))
+            payload.setdefault("sl", trade.get("sl"))
+            payload.setdefault("lot", trade.get("lot"))
             payload["tp1_done"] = bool(trade.get("tp1_done"))
             payload["tp2_done"] = bool(trade.get("tp2_done"))
             payload["tp3_done"] = bool(trade.get("tp3_done"))
@@ -259,309 +303,227 @@ def notify_native_event(event: NativeMT5Event) -> bool:
             payload.setdefault("entry", trade.get("entry"))
             payload.setdefault("sl", trade.get("sl"))
             payload.setdefault("lot", trade.get("lot"))
+            if trade.get("tp1_profit") is not None:
+                payload["tp1_profit"] = trade["tp1_profit"]
+            if trade.get("tp2_profit") is not None:
+                payload["tp2_profit"] = trade["tp2_profit"]
     notification = format_native_mt5_event_message(payload)
-    return send_telegram_message(notification) if notification else False
+    sent = send_telegram_message(notification) if notification else False
+    if sent and event_type == "tp1_closed":
+        _mark_tp1_be_suppressed(event.symbol)
+    return sent
 
 
 def format_native_mt5_event_message(event: dict) -> str:
-    D = "━━━━━━━━━━━━━━━━━━"
     event = event or {}
     event_type = str(event.get("event_type") or "").strip().lower()
     symbol = event.get("symbol") or "n/a"
-    side_raw = event.get("side")
+    side = fmt_native_side(event.get("side"))
 
-    def _side(v) -> str:
-        s = str(v or "").strip().lower()
-        return "BUY" if s == "buy" else "SELL" if s == "sell" else str(v or "").upper()
-
-    def _price(v) -> Optional[str]:
-        if v is None or v == "":
+    def num(value) -> Optional[float]:
+        if value is None or value == "":
             return None
         try:
-            return f"{float(v):.2f}"
-        except (TypeError, ValueError):
-            return str(v)
-
-    def _money(v) -> Optional[str]:
-        if v is None or v == "":
-            return None
-        try:
-            n = float(v)
-        except (TypeError, ValueError):
-            return str(v)
-        if n > 0:
-            return f"+€{n:.2f}"
-        if n < 0:
-            return f"–€{abs(n):.2f}"
-        return "€0.00"
-
-    def _lot(v) -> Optional[str]:
-        if v is None or v == "":
-            return None
-        try:
-            return f"{float(v):.2f} lot"
-        except (TypeError, ValueError):
-            return str(v)
-
-    def _pts(entry, level) -> Optional[str]:
-        if entry is None or level is None:
-            return None
-        try:
-            diff = float(level) - float(entry)
-            sign = "+" if diff >= 0 else "–"
-            return f"({sign}{abs(diff):.2f} pts)"
+            return float(value)
         except (TypeError, ValueError):
             return None
 
-    def _r_str(profit_val, risk_val, r_mt5=None) -> Optional[str]:
-        if r_mt5 is not None:
-            try:
-                r = float(r_mt5)
-                sign = "+" if r >= 0 else ""
-                return f"{sign}{r:.2f}R"
-            except (TypeError, ValueError):
-                pass
-        if profit_val is None or risk_val is None:
+    def first_num(*keys) -> Optional[float]:
+        for key in keys:
+            value = num(event.get(key))
+            if value is not None:
+                return value
+        return None
+
+    def positive(value) -> bool:
+        return value is not None and value > 0
+
+    def price(value) -> Optional[str]:
+        value = num(value)
+        return f"{value:.2f}" if value is not None else None
+
+    def money(value, *, signed: bool = True, absolute: bool = False) -> Optional[str]:
+        value = num(value)
+        if value is None:
+            return None
+        if absolute:
+            value = abs(value)
+        if signed:
+            sign = "+" if value > 0 else "-" if value < 0 else ""
+            return f"{sign}€{abs(value):.2f}"
+        return f"€{value:.2f}"
+
+    def r_value(profit_value, risk_value) -> Optional[float]:
+        if profit_value is None or not positive(risk_value):
             return None
         try:
-            r = float(profit_val) / float(risk_val)
-            sign = "+" if r >= 0 else ""
-            return f"{sign}{r:.2f}R"
-        except (TypeError, ValueError, ZeroDivisionError):
+            return profit_value / risk_value
+        except ZeroDivisionError:
             return None
 
-    def _duration(opened_at, closed_at) -> Optional[str]:
-        if not opened_at or not closed_at:
+    def r_text(value) -> Optional[str]:
+        value = num(value)
+        if value is None:
             return None
-        try:
-            fmt = "%Y-%m-%dT%H:%M:%S" if "T" in str(opened_at) else "%Y-%m-%d %H:%M:%S"
-            o = datetime.strptime(str(opened_at)[:19], fmt)
-            c = datetime.strptime(str(closed_at)[:19], fmt)
-            mins = int((c - o).total_seconds() / 60)
-            if mins < 0:
-                mins = 0
-            if mins >= 60:
-                h, m = divmod(mins, 60)
-                return f"{h}ч {m}мин"
-            return f"{mins} мин"
-        except (ValueError, TypeError):
-            return None
+        sign = "+" if value > 0 else ""
+        return f"{sign}{value:.2f}R"
 
-    def _ts(time_str=None) -> str:
-        if time_str:
-            try:
-                m = re.search(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})", str(time_str))
-                if m:
-                    dt = datetime.strptime(m.group(1), "%Y-%m-%d")
-                    return f"🕐 {m.group(2)}  {dt.strftime('%d.%m.%Y')}"
-            except Exception:
-                pass
+    def pts(entry_value, level_value) -> Optional[str]:
+        entry_num = num(entry_value)
+        level_num = num(level_value)
+        if entry_num is None or level_num is None:
+            return None
+        return f"+{abs(level_num - entry_num):.1f} pts"
+
+    def line_with_price(label: str, value, entry_value=None) -> Optional[str]:
+        text = price(value)
+        if text is None:
+            return None
+        point_text = pts(entry_value, value) if entry_value is not None else None
+        prefix = f"{label}:".ljust(7)
+        return f"{prefix} {text}  ({point_text})" if point_text else f"{prefix} {text}"
+
+    def timestamp(time_str=None) -> str:
+        parsed = parse_datetime(time_str)
+        if parsed:
+            return "🕐 " + parsed.astimezone(BERLIN_TZ).strftime("%H:%M  %d.%m.%Y")
         return "🕐 " + datetime.now(BERLIN_TZ).strftime("%H:%M  %d.%m.%Y")
 
-    def _tp_expected(tp_price, entry_price, lot_size, tick_v, portion) -> Optional[str]:
-        if any(x is None for x in (tp_price, entry_price, lot_size, tick_v)):
+    def duration_minutes(opened_at, closed_at) -> Optional[int]:
+        opened = parse_datetime(opened_at)
+        closed = parse_datetime(closed_at) or datetime.now(timezone.utc)
+        if not opened:
             return None
-        try:
-            amount = abs(float(tp_price) - float(entry_price)) * float(lot_size) * portion * float(tick_v)
-            return f"+€{amount:.2f}"
-        except (TypeError, ValueError):
-            return None
+        return max(0, int((closed.astimezone(timezone.utc) - opened.astimezone(timezone.utc)).total_seconds() / 60))
 
-    side = _side(side_raw)
-    risk_val = event.get("risk") or event.get("initial_risk") or event.get("risk_amount")
-    tick_value = event.get("tick_value")
+    entry = first_present(event.get("entry"), event.get("entry_price"))
+    exit_price = first_present(event.get("exit_price"), event.get("current_price"), event.get("close_price"))
+    lot = num(event.get("lot"))
+    risk_money = first_num("risk_money", "risk", "initial_risk", "risk_amount")
+    profit_money = first_num("profit_money", "profit")
+    tp1_profit = first_num("tp1_profit")
+    total_profit_payload = first_num("total_profit", "accumulated_profit")
 
     if event_type == "opened":
-        entry = event.get("entry")
-        sl = event.get("sl")
-        lot = event.get("lot")
-        lines = ["🟢 СДЕЛКА ОТКРЫТА", D]
-        header_parts = [f"📊 {symbol}", side]
-        lot_str = _lot(lot)
-        if lot_str:
-            header_parts.append(lot_str)
-        lines.append("  |  ".join(header_parts))
-        p_entry = _price(entry)
-        if p_entry:
-            lines.append(f"Entry:  {p_entry}")
-        if sl is not None:
-            p_sl = _price(sl)
-            sl_pts = _pts(entry, sl)
-            lines.append(f"SL:     {p_sl}  {sl_pts}" if sl_pts else f"SL:     {p_sl}")
-        if risk_val is not None:
-            try:
-                lines.append(f"Risk:   ~€{float(risk_val):.2f}")
-            except (TypeError, ValueError):
-                pass
-        lines.append(D)
-        tp1_val = event.get("tp1")
-        tp2_val = event.get("tp2")
-        if tp1_val is not None:
-            tp1_exp = _tp_expected(tp1_val, entry, lot, tick_value, 0.75)
-            if tp1_exp:
-                lines.append(f"TP1 цель:  {tp1_exp}")
-        if tp2_val is not None:
-            tp2_exp = _tp_expected(tp2_val, entry, lot, tick_value, 0.25)
-            if tp2_exp:
-                lines.append(f"TP2 цель:  {tp2_exp}")
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
+        lines = ["🟢 СДЕЛКА ОТКРЫТА", ""]
+        header = [f"📊 {symbol}", side]
+        if lot is not None:
+            header.append(f"{lot:.2f} lot")
+        lines.extend(["  |  ".join(header), ""])
+        for item in (
+            line_with_price("Entry", entry),
+            line_with_price("SL", event.get("sl"), entry),
+            line_with_price("TP1", event.get("tp1"), entry),
+        ):
+            if item:
+                lines.append(item)
+        if positive(num(event.get("tp2"))):
+            lines.append(line_with_price("TP2", event.get("tp2"), entry))
+        if positive(num(event.get("tp3"))):
+            lines.append(line_with_price("TP3", event.get("tp3"), entry))
+        money_lines = []
+        if positive(risk_money):
+            money_lines.append(f"💰 Риск:       {money(risk_money, signed=False)}")
+        tp1_expected = first_num("tp1_expected")
+        if positive(tp1_expected):
+            money_lines.append(f"🎯 TP1 цель:  {money(tp1_expected)}")
+        tp2_expected = first_num("tp2_expected")
+        if positive(tp2_expected):
+            money_lines.append(f"🎯 TP2 цель:  {money(tp2_expected)}")
+        if money_lines:
+            lines.extend(["", *money_lines])
+        lines.extend(["", timestamp(event.get("time"))])
         return "\n".join(lines)
 
     if event_type == "tp1_closed":
-        tp_price = event.get("tp1") or event.get("exit_price") or event.get("current_price")
-        profit = event.get("profit")
-        profit_r = event.get("profit_r")
-        r = _r_str(profit, risk_val, profit_r)
-        lines = ["🎯 TP1 ВЗЯТ", D, f"📊 {symbol}  |  {side}"]
-        p_tp = _price(tp_price)
-        if p_tp:
-            lines.append(f"TP1:  {p_tp}  ✅")
-        lines.append("Закрыто: 75% позиции")
-        m_profit = _money(profit)
-        if m_profit:
-            lines.append(f"💰 Зафиксировано:  {m_profit}")
-        if r:
-            lines.append(f"📊 R:               {r}")
-        lines.append("🛡 SL → BE  ✅")
-        lines.append("Остаток в рынке: 25%")
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
+        profit_r = first_num("profit_r")
+        lines = ["🎯 TP1 ВЗЯТ", "", f"📊 {symbol}  |  {side}", ""]
+        tp_price = first_present(event.get("tp1"), event.get("exit_price"), event.get("current_price"))
+        if price(tp_price):
+            lines.append(f"TP1:  {price(tp_price)}")
+        lines.extend(["Закрыто: 75% позиции", ""])
+        if profit_money is not None:
+            lines.append(f"💰 Зафиксировано:  {money(profit_money)}")
+        if profit_r is not None:
+            lines.append(f"📊 R:               {r_text(profit_r)}")
+        lines.extend(["", "🛡 SL  BE", "Остаток в рынке: 25%", "", timestamp(event.get("time"))])
         return "\n".join(lines)
 
     if event_type == "tp2_closed":
-        tp_price = event.get("tp2") or event.get("exit_price") or event.get("current_price")
-        profit = event.get("profit")
-        accumulated = event.get("accumulated_profit")
-        cumulative_r = _r_str(accumulated, risk_val)
-        lines = ["🎯🎯 TP2 ВЗЯТ", D, f"📊 {symbol}  |  {side}"]
-        p_tp = _price(tp_price)
-        if p_tp:
-            lines.append(f"TP2:  {p_tp}  ✅")
-        m_profit = _money(profit)
-        if m_profit:
-            lines.append(f"💰 Эта часть:   {m_profit}")
-        m_accum = _money(accumulated)
-        if m_accum:
-            lines.append(f"💰 Суммарно:    {m_accum}")
-        if cumulative_r:
-            lines.append(f"📊 R суммарно:  {cumulative_r}")
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
-        return "\n".join(lines)
-
-    if event_type == "tp3_closed":
-        tp_price = event.get("tp3") or event.get("exit_price") or event.get("current_price")
-        profit = event.get("profit")
-        accumulated = event.get("accumulated_profit")
-        cumulative_r = _r_str(accumulated, risk_val)
-        lines = ["🎯🎯🎯 TP3 ВЗЯТ", D, f"📊 {symbol}  |  {side}"]
-        p_tp = _price(tp_price)
-        if p_tp:
-            lines.append(f"TP3:  {p_tp}  ✅")
-        m_profit = _money(profit)
-        if m_profit:
-            lines.append(f"💰 Эта часть:   {m_profit}")
-        m_accum = _money(accumulated)
-        if m_accum:
-            lines.append(f"💰 Суммарно:    {m_accum}")
-        if cumulative_r:
-            lines.append(f"📊 R суммарно:  {cumulative_r}")
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
+        total_so_far = total_profit_payload
+        if total_so_far is None and tp1_profit is not None and profit_money is not None:
+            total_so_far = tp1_profit + profit_money
+        cumulative_r = r_value(total_so_far, risk_money)
+        lines = ["🎯🎯 TP2 ВЗЯТ", "", f"📊 {symbol}  |  {side}", ""]
+        tp_price = first_present(event.get("tp2"), event.get("exit_price"), event.get("current_price"))
+        if price(tp_price):
+            lines.extend([f"TP2:  {price(tp_price)}", ""])
+        if profit_money is not None:
+            lines.append(f"💰 Эта часть:   {money(profit_money)}")
+        if total_so_far is not None:
+            lines.append(f"💰 Суммарно:    {money(total_so_far)}")
+        if cumulative_r is not None:
+            lines.append(f"📊 R суммарно:  {r_text(cumulative_r)}")
+        lines.extend(["", timestamp(event.get("time"))])
         return "\n".join(lines)
 
     if event_type == "be_moved":
-        entry = event.get("entry")
-        lines = ["🛡 БЕЗУБЫТОК АКТИВИРОВАН", D, f"📊 {symbol}  |  {side}"]
-        p_entry = _price(entry)
-        if p_entry:
-            lines.append(f"BE: {p_entry}")
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
+        lines = ["🛡 БЕЗУБЫТОК АКТИВИРОВАН", "", f"📊 {symbol}  |  {side}"]
+        if price(entry):
+            lines.append(f"BE: {price(entry)}")
+        lines.extend(["", timestamp(event.get("time"))])
         return "\n".join(lines)
 
-    if event_type in {"position_closed", "closed_by_signal"}:
-        profit = event.get("profit")
-        try:
-            profit_value = float(profit or 0)
-        except (TypeError, ValueError):
-            profit_value = 0.0
-        win = profit_value > 0
-        lot_str = _lot(event.get("lot"))
+    if event_type in {"closed", "position_closed", "closed_by_signal"}:
+        total_profit = total_profit_payload
+        if total_profit is None and tp1_profit is not None and profit_money is not None:
+            total_profit = tp1_profit + profit_money
+        if total_profit is None:
+            total_profit = profit_money or 0.0
+        win = total_profit > 0
         header_parts = [f"📊 {symbol}", side]
-        if lot_str:
-            header_parts.append(lot_str)
-        entry = event.get("entry")
-        exit_p = event.get("exit_price") or event.get("current_price")
-
+        if lot is not None:
+            header_parts.append(f"{lot:.2f} lot")
+        title = "СДЕЛКА ЗАКРЫТА  ПРОФИТ" if win else "СДЕЛКА ЗАКРЫТА  УБЫТОК"
+        lines = [title, "", "  |  ".join(header_parts), ""]
+        if price(entry):
+            lines.append(f"Entry:  {price(entry)}")
+        if price(exit_price):
+            lines.append(f"Exit:   {price(exit_price)}")
         if win:
-            lines = ["✅ СДЕЛКА ЗАКРЫТА — ПРОФИТ", D, "  |  ".join(header_parts)]
-            p_entry = _price(entry)
-            if p_entry:
-                lines.append(f"Entry:  {p_entry}")
-            p_exit = _price(exit_p)
-            if p_exit:
-                lines.append(f"Exit:   {p_exit}")
-            lines.append(D)
-            if event.get("tp1_done") and event.get("tp1_profit") is not None:
-                m = _money(event["tp1_profit"])
-                if m:
-                    lines.append(f"TP1:  {m}  ✅")
-            if event.get("tp2_done") and event.get("tp2_profit") is not None:
-                m = _money(event["tp2_profit"])
-                if m:
-                    lines.append(f"TP2:  {m}  ✅")
-            lines.append(D)
-            m_total = _money(profit)
-            if m_total:
-                lines.append(f"💰 Итого:   {m_total}")
-            r = _r_str(profit_value, risk_val)
-            if r:
-                lines.append(f"📊 R:        {r}")
-            dur = _duration(event.get("opened_at"), event.get("time"))
-            if dur:
-                lines.append(f"⏱ Время:    {dur}")
+            lines.append("")
+            if positive(tp1_profit):
+                lines.append(f"TP1:  {money(tp1_profit)}")
+            tp2_profit = first_num("tp2_profit")
+            if event.get("tp2_done") and positive(tp2_profit):
+                lines.append(f"TP2:  {money(tp2_profit)}")
+            elif event.get("tp2_done") and positive(profit_money):
+                lines.append(f"TP2:  {money(profit_money)}")
+            lines.extend(["", f"💰 Итого:   {money(total_profit)}"])
         else:
-            lines = ["❌ СДЕЛКА ЗАКРЫТА — УБЫТОК", D, "  |  ".join(header_parts)]
-            p_entry = _price(entry)
-            if p_entry:
-                lines.append(f"Entry:  {p_entry}")
-            p_exit = _price(exit_p)
-            if p_exit:
-                lines.append(f"Exit:   {p_exit}")
-            lines.append("SL сработал")
-            lines.append(D)
-            m_loss = _money(profit)
-            if m_loss:
-                lines.append(f"💰 Убыток:  {m_loss}")
-            r = _r_str(profit_value, risk_val)
-            if r:
-                lines.append(f"📊 R:        {r}")
-            dur = _duration(event.get("opened_at"), event.get("time"))
-            if dur:
-                lines.append(f"⏱ Время:    {dur}")
-
+            lines.extend(["SL сработал", "", f"💰 Убыток:  {money(total_profit, signed=False, absolute=True)}"])
+        total_r = r_value(total_profit, risk_money)
+        if total_r is not None:
+            lines.append(f"📊 R:        {r_text(total_r)}")
+        duration = duration_minutes(event.get("opened_at"), event.get("time"))
+        if duration is not None:
+            lines.append(f"Время:    {duration} мин")
         try:
             daily = acct.native_pnl_today()
-            d_pnl = _money(daily.get("closed_pnl"))
-            d_wins = daily.get("wins", 0)
-            d_losses = daily.get("losses", 0)
-            if d_pnl:
-                lines.append(f"📅 День: {d_pnl}  |  {d_wins}W / {d_losses}L")
+            day_pnl = money(daily.get("closed_pnl"))
+            if day_pnl:
+                lines.extend(["", f"📅 День: {day_pnl}  |  {daily.get('wins', 0)}W / {daily.get('losses', 0)}L"])
         except Exception:
             pass
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
+        lines.extend(["", timestamp(event.get("time"))])
         return "\n".join(lines)
 
     if event_type in {"open_failed", "close_failed", "rejected", "close_rejected", "error"}:
         reason = event.get("message") or event.get("reason")
-        lines = ["⚠️ ВХОД НЕ ВЫПОЛНЕН", D, f"📊 {symbol}  |  {side}"]
+        lines = ["⚠️ ВХОД НЕ ВЫПОЛНЕН"]
         if reason:
             lines.append(f"Причина: {reason}")
-        lines.append(D)
-        lines.append(_ts(event.get("time")))
+        lines.extend(["", timestamp(event.get("time"))])
         return "\n".join(lines)
 
     return ""
@@ -581,73 +543,40 @@ def format_native_screenshot_caption(event: dict) -> str:
     symbol = event.get("symbol") or "n/a"
     side = fmt_native_side(event.get("side"))
 
-    def _money_caption(v) -> Optional[str]:
+    def _num(v) -> Optional[float]:
         if v is None or v == "":
             return None
         try:
-            n = float(v)
+            return float(v)
         except (TypeError, ValueError):
-            return str(v)
-        if n > 0:
-            return f"+{n:.2f} €"
-        if n < 0:
-            return f"–{abs(n):.2f} €"
-        return "0.00 €"
-
-    def _r_caption(profit_val, risk_val) -> Optional[str]:
-        if profit_val is None or risk_val is None:
-            return None
-        try:
-            r = float(profit_val) / float(risk_val)
-            return f"{r:.2f}R"
-        except (TypeError, ValueError, ZeroDivisionError):
             return None
 
-    if event_type == "opened":
-        entry = event.get("entry")
-        parts = [symbol, side]
-        if entry is not None:
-            parts.append(f"Entry {fmt_native_price(entry)}")
-        return " | ".join(parts)
+    def _money(v) -> str:
+        number = _num(v) or 0.0
+        sign = "+" if number > 0 else "-" if number < 0 else ""
+        return f"{sign}€{abs(number):.2f}"
 
-    if event_type == "tp1_closed":
-        profit = event.get("profit")
-        parts = [symbol, side, "TP1 ✅"]
-        pnl = _money_caption(profit)
-        if pnl:
-            parts.append(pnl)
-        return " | ".join(parts)
+    def _r_text(v) -> str:
+        number = _num(v) or 0.0
+        sign = "+" if number > 0 else ""
+        return f"{sign}{number:.2f}R"
 
-    if event_type == "tp2_closed":
-        profit = event.get("profit")
-        parts = [symbol, side, "TP2 ✅"]
-        pnl = _money_caption(profit)
-        if pnl:
-            parts.append(pnl)
-        return " | ".join(parts)
+    profit = None
+    if event_type in {"closed", "position_closed", "closed_by_signal"}:
+        profit = _num(event.get("total_profit"))
+    if profit is None:
+        profit = _num(event.get("profit_money"))
+    if profit is None:
+        profit = _num(event.get("profit"))
 
-    if event_type == "tp3_closed":
-        profit = event.get("profit")
-        parts = [symbol, side, "TP3 ✅"]
-        pnl = _money_caption(profit)
-        if pnl:
-            parts.append(pnl)
-        return " | ".join(parts)
+    r_value = _num(event.get("profit_r"))
+    if r_value is None:
+        risk = _num(first_present(event.get("risk_money"), event.get("risk"), event.get("initial_risk"), event.get("risk_amount")))
+        if profit is not None and risk and risk > 0:
+            r_value = profit / risk
 
-    if event_type == "be_moved":
-        return " | ".join([symbol, side, "SL → BE"])
-
-    if event_type in {"position_closed", "closed_by_signal"}:
-        profit = event.get("profit")
-        risk_val = event.get("risk") or event.get("initial_risk") or event.get("risk_amount")
-        pnl = _money_caption(profit)
-        parts = [symbol, side]
-        if pnl:
-            parts.append(pnl)
-        r = _r_caption(profit, risk_val)
-        if r:
-            parts.append(r)
-        return " | ".join(parts)
+    if profit is not None or r_value is not None:
+        return " | ".join([symbol, side, _money(profit), _r_text(r_value)])
 
     return str(event.get("caption") or "").strip()[:1024]
 
@@ -824,23 +753,16 @@ def menu_money(value, currency: str = "$", decimals: int = 2, signed: bool = Fal
     number = safe_float(value)
     if number is None:
         return None
-    sign = "+" if signed and number > 0 else "-" if signed and number < 0 else ""
+    sign = "+" if signed and number >= 0 else "-" if signed and number < 0 else ""
     return f"{sign}{currency}{abs(number):,.{decimals}f}"
 
 
-def menu_number(value, decimals: int = 0, signed: bool = False) -> Optional[str]:
+def menu_number(value, decimals: int = 2, signed: bool = False) -> Optional[str]:
     number = safe_float(value)
     if number is None:
         return None
-    sign = "+" if signed and number > 0 else "-" if signed and number < 0 else ""
+    sign = "+" if signed and number >= 0 else "-" if signed and number < 0 else ""
     return f"{sign}{abs(number):,.{decimals}f}"
-
-
-def menu_pct(value, decimals: int = 0) -> Optional[str]:
-    number = safe_float(value)
-    if number is None:
-        return None
-    return f"{number:.{decimals}f}%"
 
 
 def menu_duration(start, end) -> Optional[str]:
@@ -848,10 +770,10 @@ def menu_duration(start, end) -> Optional[str]:
     closed = parse_datetime(end)
     if not opened or not closed:
         return None
-    minutes = max(0, int((closed - opened).total_seconds() // 60))
+    minutes = max(0, int((closed.astimezone(timezone.utc) - opened.astimezone(timezone.utc)).total_seconds() // 60))
     if minutes >= 60:
         hours, mins = divmod(minutes, 60)
-        return f"{hours}ч {mins}м" if mins else f"{hours}ч"
+        return f"{hours}ч {mins}м" if mins else f"{hours}ч 0м"
     return f"{minutes}м"
 
 
@@ -870,18 +792,12 @@ def menu_asset_from_trade(row: dict) -> str:
     return text.replace(".R", "")[:8]
 
 
-def menu_line(label: str, value: Optional[str], width: int = 14) -> Optional[str]:
-    if value is None or value == "":
-        return None
-    return f"{label:<{width}} {value}"
-
-
 def menu_message(title: str, body: list[str], footer: bool = True) -> str:
-    lines = [title, MENU_DIVIDER, ""]
+    lines = [title, ""]
     lines.extend(line for line in body if line is not None)
     if footer:
         lines.extend(["", menu_timestamp()])
-    return "\n".join(lines).strip()
+    return "\n".join(lines).rstrip()
 
 
 def inline_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
@@ -918,7 +834,7 @@ def menu_back_keyboard(refresh: str, back: Optional[str] = None) -> dict:
 
 
 def menu_main_text() -> str:
-    return "\n".join([" TRADING CONTROL", MENU_DIVIDER, "", "Система управления торговыми ботами", menu_timestamp()])
+    return "\n".join([" TRADING CONTROL", "", "Система управления торговыми ботами", menu_timestamp()])
 
 
 def menu_send(chat_id: str, text: str, reply_markup: Optional[dict] = None, edit_message_id: Optional[int] = None) -> bool:
@@ -1014,29 +930,35 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
         if data == "menu_status":
             return render_menu_status()
         if data == "menu_trades":
-            user_state[chat_id] = {"screen": "trades_period"}
+            user_state.setdefault(chat_id, {})["screen"] = "trades_period"
             return render_trades_period()
         if data.startswith("trades_"):
             period = data.replace("trades_", "", 1)
-            user_state[chat_id] = {"screen": "trades_result", "period": period}
+            state = user_state.setdefault(chat_id, {})
+            state["screen"] = "trades_result"
+            state["trades_period"] = period
             return render_trades_result(period)
         if data == "menu_stats":
-            user_state[chat_id] = {"screen": "stats_period"}
+            user_state.setdefault(chat_id, {})["screen"] = "stats_period"
             return render_stats_period()
-        if data.startswith("stats_period_"):
-            period = data.replace("stats_period_", "", 1)
-            user_state[chat_id] = {"screen": "stats_asset", "period": period}
+        if data in {"stats_day", "stats_week", "stats_month"}:
+            period = data.replace("stats_", "", 1)
+            state = user_state.setdefault(chat_id, {})
+            state["screen"] = "stats_asset"
+            state["stats_period"] = period
             return render_stats_asset(period)
         if data.startswith("stats_asset_"):
             asset = data.replace("stats_asset_", "", 1)
-            period = user_state.get(chat_id, {}).get("period", "day")
-            user_state[chat_id] = {"screen": "stats_result", "period": period, "asset": asset}
+            period = user_state.get(chat_id, {}).get("stats_period", "day")
+            state = user_state.setdefault(chat_id, {})
+            state["screen"] = "stats_result"
+            state["stats_asset"] = asset
             return render_stats_result(period, asset)
         if data == "stats_refresh":
             state = user_state.get(chat_id, {})
-            return render_stats_result(state.get("period", "day"), state.get("asset", "all"))
+            return render_stats_result(state.get("stats_period", "day"), state.get("stats_asset", "ALL"))
         if data == "stats_back_asset":
-            period = user_state.get(chat_id, {}).get("period", "day")
+            period = user_state.get(chat_id, {}).get("stats_period", "day")
             return render_stats_asset(period)
         if data == "menu_actions":
             user_state[chat_id] = {"screen": "actions"}
@@ -1047,18 +969,20 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
             return render_action_select(action)
         if data in {"action_enable_all", "action_disable_all"}:
             action = "enable_all" if data == "action_enable_all" else "disable_all"
-            user_state[chat_id] = {"screen": "action_confirm", "action": action, "asset": "Все"}
-            return render_action_confirm(action, "Все")
-        if data.startswith("action_bot_"):
-            asset = data.replace("action_bot_", "", 1)
+            user_state[chat_id] = {"screen": "action_confirm", "action": action, "asset": "ALL"}
+            return render_action_confirm(action, "ALL")
+        if data.startswith("act_bot_"):
+            asset = data.replace("act_bot_", "", 1)
             action = user_state.get(chat_id, {}).get("action", "enable")
             user_state[chat_id] = {"screen": "action_confirm", "action": action, "asset": asset}
             return render_action_confirm(action, asset)
-        if data == "action_confirm":
+        if data == "act_confirm":
             state = user_state.get(chat_id, {})
             return execute_action(state.get("action", "enable"), state.get("asset", "NAS100"))
         if data == "action_report":
-            return render_daily_report_menu()
+            text, keyboard = render_daily_report_menu()
+            send_telegram_message(text)
+            return text, keyboard
         if data == "menu_market":
             return render_market()
         if data == "menu_records":
@@ -1077,29 +1001,28 @@ def render_menu_status() -> tuple[str, dict]:
         account = acct.latest_account_snapshot() or {}
         pnl = acct.pnl_today() or {}
         controls = acct.list_native_bot_controls(include_defaults=True)
-        currency = "$"
         trades = int(pnl.get("trades_count") or pnl.get("closed_trades_count") or 0)
         wins = int(pnl.get("wins") or 0)
         losses = int(pnl.get("losses") or 0)
         winrate = round((wins / trades) * 100) if trades else 0
         body = [
-            "💰 АККАУНТ",
-            menu_line("💰 Баланс:", menu_money(account.get("balance"), currency)),
-            menu_line("📊 Equity:", menu_money(account.get("equity"), currency)),
-            menu_line("📉 Margin:", menu_money(account.get("margin"), currency)),
-            menu_line("Свободно:", menu_money(account.get("free_margin"), currency)),
+            f"💰 Баланс:    {menu_money(account.get('balance'), '$') or '$0.00'}",
+            f"📊 Equity:    {menu_money(account.get('equity'), '$') or '$0.00'}",
+            f"📉 Margin:    {menu_money(account.get('margin'), '$') or '$0.00'}",
+            f" Свободно:  {menu_money(account.get('free_margin'), '$') or '$0.00'}",
             "",
             "📅 СЕГОДНЯ",
-            menu_line("P&L:", menu_money(pnl.get("closed_pnl", pnl.get("net_pnl")), currency, signed=True)),
-            menu_line("Сделок:", f"{trades}  ({wins}W / {losses}L)"),
-            menu_line("Винрейт:", f"{winrate}%"),
+            f"P&L:      {menu_money(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), pnl.get('total_pnl')), '$', signed=True) or '+$0.00'}",
+            f"Сделок:    {trades}  ({wins}W / {losses}L)",
+            f"Винрейт:   {winrate}%",
             "",
             "🤖 БОТЫ",
         ]
+        by_asset = {control.get("asset"): control for control in controls}
         bot_parts = []
-        for control in controls:
-            if control.get("asset") in MENU_ASSETS:
-                bot_parts.append(f"{control.get('asset'):<7} {'🟢' if control_enabled(control) else '🔴'}")
+        for asset in MENU_ASSETS:
+            control = by_asset.get(asset) or {}
+            bot_parts.append(f"{asset:<6} {'🟢' if control_enabled(control) else '🔴'}")
         for index in range(0, len(bot_parts), 2):
             body.append("  ".join(bot_parts[index:index + 2]))
         return menu_message("📊 СТАТУС АККАУНТА", body), menu_back_keyboard("menu_status")
@@ -1108,7 +1031,7 @@ def render_menu_status() -> tuple[str, dict]:
 
 
 def render_trades_period() -> tuple[str, dict]:
-    text = menu_message("📋 СДЕЛКИ  ВЫБЕРИ ПЕРИОД", [], True)
+    text = menu_message("📋 СДЕЛКИ  ПЕРИОД", [], False)
     keyboard = inline_keyboard(
         [
             [("Сегодня", "trades_today"), ("Вчера", "trades_yesterday"), ("Неделя", "trades_week")],
@@ -1155,10 +1078,12 @@ def render_trades_result(period: str) -> tuple[str, dict]:
         winrate = round((wins / closed) * 100) if closed else 0
         body = []
         for row in rows[:10]:
-            pnl = menu_number(row.get("profit"), 0, signed=True)
+            profit = float_or_zero(row.get("profit"))
+            icon = "🟢" if profit > 0 else "🔴" if profit < 0 else "🟡"
+            pnl = menu_number(profit, 2, signed=True)
             risk = estimate_r_multiple(row)
             duration = menu_duration(row.get("opened_at"), row.get("closed_at"))
-            parts = [menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4)]
+            parts = [icon, menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4)]
             if pnl:
                 parts.append(pnl.rjust(5))
             if risk:
@@ -1167,8 +1092,8 @@ def render_trades_result(period: str) -> tuple[str, dict]:
                 parts.append(duration)
             body.append(" ".join(parts))
         if not body:
-            body.append("🟡 Нет сделок за выбранный период")
-        body.extend(["", f"Итого:  {menu_number(total, 0, True) or '+0'}  |  {wins}W / {losses}L  |  {winrate}%"])
+            body.append("Сделок пока нет")
+        body.extend(["", f"Итого: {menu_number(total, 2, True) or '+0.00'}  |  {wins}W / {losses}L  |  {winrate}%"])
         return menu_message(f"📋 СДЕЛКИ  {period_title(period)}", body), menu_back_keyboard(f"trades_{period}", "menu_trades")
     except Exception:
         return menu_message("🔴 ОШИБКА СДЕЛОК", ["Не удалось получить журнал сделок."], True), menu_back_keyboard(f"trades_{period}", "menu_trades")
@@ -1188,10 +1113,10 @@ def estimate_r_multiple(row: dict) -> Optional[str]:
 
 
 def render_stats_period() -> tuple[str, dict]:
-    text = menu_message("📈 СТАТИСТИКА  ПЕРИОД", [], True)
+    text = menu_message("📈 СТАТИСТИКА  ПЕРИОД", [], False)
     keyboard = inline_keyboard(
         [
-            [("День", "stats_period_day"), ("Неделя", "stats_period_week"), ("Месяц", "stats_period_month")],
+            [("День", "stats_day"), ("Неделя", "stats_week"), ("Месяц", "stats_month")],
             [(" Меню", "menu_main")],
         ]
     )
@@ -1199,10 +1124,11 @@ def render_stats_period() -> tuple[str, dict]:
 
 
 def render_stats_asset(period: str) -> tuple[str, dict]:
-    text = menu_message("📈 СТАТИСТИКА  АКТИВ", [], True)
+    text = menu_message("📈 СТАТИСТИКА  АКТИВ", [], False)
     keyboard = inline_keyboard(
         [
-            [("Все", "stats_asset_all"), ("NAS100", "stats_asset_NAS100"), ("SP500", "stats_asset_SP500")],
+            [("Все", "stats_asset_ALL")],
+            [("NAS100", "stats_asset_NAS100"), ("SP500", "stats_asset_SP500")],
             [("DJ30", "stats_asset_DJ30"), ("BTCUSD", "stats_asset_BTCUSD"), ("GER40", "stats_asset_GER40")],
             [(" Назад", "menu_stats")],
         ]
@@ -1213,7 +1139,7 @@ def render_stats_asset(period: str) -> tuple[str, dict]:
 def render_stats_result(period: str, asset: str) -> tuple[str, dict]:
     try:
         store_period = {"day": "today", "week": "7d", "month": "30d"}.get(period, "today")
-        selector = None if asset == "all" else asset
+        selector = None if str(asset).upper() == "ALL" else asset
         summary = acct.performance_summary(store_period, selector)
         stats = summary.get("totals") or {}
         trades = int(stats.get("trades_count") or 0)
@@ -1223,25 +1149,26 @@ def render_stats_result(period: str, asset: str) -> tuple[str, dict]:
         loss_pct = round((losses / trades) * 100) if trades else 0
         avg = (float_or_zero(stats.get("closed_pnl")) / trades) if trades else 0
         avg_r = average_r(menu_journal(store_period, selector))
-        avg_dur = average_duration(menu_journal(store_period, selector))
-        title_asset = "ВСЕ" if asset == "all" else asset
+        title_asset = "ВСЕ" if str(asset).upper() == "ALL" else asset
         body = [
-            menu_line("🎯 Сделок:", str(trades)),
-            menu_line("Побед:", f"{wins}  ({win_pct}%)"),
-            menu_line("Убытков:", f"{losses}  ({loss_pct}%)"),
+            f"🎯 Сделок:         {trades}",
+            f" Побед:           {wins} ({win_pct}%)",
+            f" Убытков:         {losses} ({loss_pct}%)",
             "",
-            menu_line("💰 P&L:", menu_number(stats.get("closed_pnl"), 0, True)),
-            menu_line("🏆 Лучшая:", menu_number(stats.get("best_trade"), 0, True)),
-            menu_line("📉 Худшая:", menu_number(stats.get("worst_trade"), 0, True)),
-            menu_line("Средняя:", menu_number(avg, 0, True)),
+            f"💰 P&L:        {menu_number(stats.get('closed_pnl'), 2, True) or '+0.00'}",
+            f"🏆 Лучшая:     {menu_number(stats.get('best_trade'), 2, True) or '+0.00'}",
+            f"📉 Худшая:      {menu_number(stats.get('worst_trade'), 2, True) or '0.00'}",
+            f" Средняя:    {menu_number(avg, 2, True) or '+0.00'}",
             "",
             "📊 МЕТРИКИ",
-            menu_line("Profit Factor:", fmt_pf(stats.get("profit_factor"))),
-            menu_line("Avg R:", f"{avg_r:.2f}R" if avg_r is not None else None),
-            menu_line("TP1 взят:", f"{round((int(stats.get('tp1_count') or 0) / trades) * 100)}%" if trades else None),
-            menu_line("TP2 взят:", f"{round((int(stats.get('tp2_count') or 0) / trades) * 100)}%" if trades else None),
-            menu_line("Avg время:", avg_dur),
         ]
+        pf = 0.0 if float_or_zero(stats.get("gross_loss")) >= 0 else abs(float_or_zero(stats.get("gross_profit")) / float_or_zero(stats.get("gross_loss")))
+        body.append(f"Profit Factor:   {pf:.2f}")
+        if avg_r is not None:
+            body.append(f"Avg R:           {avg_r:.2f}R")
+        if trades:
+            body.append(f"TP1 взят:        {round((int(stats.get('tp1_count') or 0) / trades) * 100)}%")
+            body.append(f"TP2 взят:        {round((int(stats.get('tp2_count') or 0) / trades) * 100)}%")
         return menu_message(f"📈 {title_asset}  {period_title(period)}", body), menu_back_keyboard("stats_refresh", "stats_back_asset")
     except Exception:
         return menu_message("🔴 ОШИБКА СТАТИСТИКИ", ["Не удалось рассчитать статистику."], True), menu_back_keyboard("stats_refresh", "menu_stats")
@@ -1273,13 +1200,13 @@ def average_duration(rows: list[dict]) -> Optional[str]:
 
 
 def render_actions_menu() -> tuple[str, dict]:
-    text = menu_message("🤖 УПРАВЛЕНИЕ БОТАМИ", [], True)
+    text = menu_message(" УПРАВЛЕНИЕ", [], False)
     keyboard = inline_keyboard(
         [
             [(" Включить бота", "action_enable")],
             [(" Остановить бота", "action_disable")],
-            [(" Стоп все боты", "action_disable_all")],
             [(" Включить всех", "action_enable_all")],
+            [(" Стоп все боты", "action_disable_all")],
             [("📋 Отчёт сейчас", "action_report")],
             [(" Меню", "menu_main")],
         ]
@@ -1288,43 +1215,43 @@ def render_actions_menu() -> tuple[str, dict]:
 
 
 def render_action_select(action: str) -> tuple[str, dict]:
-    title = "🤖 ВКЛЮЧИТЬ  ВЫБЕРИ БОТА" if action == "enable" else "🤖 ОСТАНОВИТЬ  ВЫБЕРИ БОТА"
+    title = "🤖 ВЫБЕРИ БОТА"
     keyboard = inline_keyboard(
         [
-            [("NAS100", "action_bot_NAS100"), ("SP500", "action_bot_SP500"), ("DJ30", "action_bot_DJ30")],
-            [("BTCUSD", "action_bot_BTCUSD"), ("GER40", "action_bot_GER40"), ("Все", "action_bot_Все")],
+            [("NAS100", "act_bot_NAS100"), ("SP500", "act_bot_SP500")],
+            [("DJ30", "act_bot_DJ30"), ("BTCUSD", "act_bot_BTCUSD")],
+            [("GER40", "act_bot_GER40")],
             [(" Назад", "menu_actions")],
         ]
     )
-    return menu_message(title, [], True), keyboard
+    return menu_message(title, [], False), keyboard
 
 
 def render_action_confirm(action: str, asset: str) -> tuple[str, dict]:
     verb = "Включить" if action in {"enable", "enable_all"} else "Остановить"
-    target = "всех ботов" if asset == "Все" or action.endswith("_all") else f"бота: {asset}"
-    text = menu_message("🟡 ПОДТВЕРЖДЕНИЕ", [f"{verb} {target}?"], True)
-    keyboard = inline_keyboard([[(" Подтвердить", "action_confirm"), (" Отмена", "menu_actions")]])
+    target = "всех ботов" if asset == "ALL" or action.endswith("_all") else f"бота: {asset}"
+    text = menu_message(" ПОДТВЕРЖДЕНИЕ", [f"{verb} {target}?"], False)
+    keyboard = inline_keyboard([[(" Подтвердить", "act_confirm"), (" Отмена", "menu_actions")]])
     return text, keyboard
 
 
 def execute_action(action: str, asset: str) -> tuple[str, dict]:
     try:
         enable = action in {"enable", "enable_all"}
-        if asset == "Все" or action.endswith("_all"):
+        if asset == "ALL" or action.endswith("_all"):
             controls = acct.set_all_native_bots_enabled(enable, "Telegram menu")
             target = "ВСЕ БОТЫ"
         else:
             control = acct.set_native_bot_enabled(asset, enable, "Telegram menu")
             controls = [control] if control else []
             target = asset
-        status = "ВКЛЮЧЁН" if enable else "ОСТАНОВЛЕН"
-        detail = "Новые входы разрешены" if enable else "Новые входы запрещены"
-        body = [f"🤖 {target}  {status}", detail]
+        status = "ВКЛЮЧЁН" if enable else "ВЫКЛЮЧЕН"
+        body = [f"🤖 {target}  {status}"]
         if not controls:
             body = ["🔴 Бот не найден"]
-        return menu_message("🟢 ВЫПОЛНЕНО", body, True), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message(" ВЫПОЛНЕНО", body, False), inline_keyboard([[(" Меню", "menu_main")]])
     except Exception:
-        return menu_message("🔴 ОШИБКА", ["Действие не выполнено."], True), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("🔴 ОШИБКА", ["Действие не выполнено."], False), inline_keyboard([[(" Меню", "menu_main")]])
 
 
 def render_daily_report_menu() -> tuple[str, dict]:
@@ -1343,25 +1270,24 @@ def render_daily_report_menu() -> tuple[str, dict]:
         body = [
             f"📅 {datetime.now(BERLIN_TZ).strftime('%d.%m.%Y')}",
             "",
-            menu_line("💰 P&L дня:", menu_number(total, 0, True)),
-            menu_line("📊 Сделок:", str(trades)),
-            menu_line("Побед:", f"{wins}  ({winrate}%)"),
-            menu_line("Убытков:", str(losses)),
+            f"💰 P&L дня:    {menu_number(total, 2, True) or '+0.00'}",
+            f"📊 Сделок:      {trades}",
+            f" Побед:        {wins} ({winrate}%)",
+            f" Убытков:      {losses}",
             "",
             "По активам:",
         ]
         for asset in MENU_ASSETS:
             if asset in by_asset:
-                body.append(f"{asset:<8} {menu_number(by_asset[asset], 0, True)}")
+                body.append(f"{asset:<8} {menu_number(by_asset[asset], 2, True)}")
         body.extend([
             "",
-            f"🏆 Лучшая:   {menu_asset_from_trade(best) if best else ''} {menu_number(best.get('profit'), 0, True) if best else ''}".rstrip(),
-            f"📉 Худшая:   {menu_asset_from_trade(worst) if worst else ''} {menu_number(worst.get('profit'), 0, True) if worst else ''}".rstrip(),
-            menu_line("Avg R:", f"{average_r(rows):.2f}R" if average_r(rows) is not None else None),
+            f"🏆 Лучшая:   {menu_asset_from_trade(best) if best else ''} {menu_number(best.get('profit'), 2, True) if best else ''}".rstrip(),
+            f"📉 Худшая:   {menu_asset_from_trade(worst) if worst else ''} {menu_number(worst.get('profit'), 2, True) if worst else ''}".rstrip(),
         ])
-        return menu_message("📅 ДНЕВНОЙ ОТЧЁТ", body), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("📅 ДНЕВНОЙ ОТЧЁТ", body, False), inline_keyboard([[(" Меню", "menu_main")]])
     except Exception:
-        return menu_message("🔴 ОШИБКА ОТЧЁТА", ["Не удалось сформировать отчёт."], True), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("🔴 ОШИБКА ОТЧЁТА", ["Не удалось сформировать отчёт."], False), inline_keyboard([[(" Меню", "menu_main")]])
 
 
 def render_market() -> tuple[str, dict]:
@@ -1370,7 +1296,7 @@ def render_market() -> tuple[str, dict]:
         import yfinance as yf
         for asset, ticker in MARKET_SYMBOLS.items():
             try:
-                hist = yf.Ticker(ticker).history(period="2d", interval="1d", timeout=6)
+                hist = yf.Ticker(ticker).history(period="5d", interval="1d", timeout=6)
                 if hist is None or hist.empty:
                     body.append(f"{asset:<7} 🟡 Нет данных")
                     continue
@@ -1381,10 +1307,10 @@ def render_market() -> tuple[str, dict]:
                     color = "🟢" if close < 20 else "🟡" if close <= 30 else "🔴"
                     level = "Низкий" if close < 20 else "Средний" if close <= 30 else "Высокий"
                     body.append("")
-                    body.append(f"VIX:      {close:.1f}  {color} {level}")
+                    body.append(f"VIX:  {close:.2f}  {color} {level}")
                 else:
                     color = "🟢" if change > 0.1 else "🔴" if change < -0.1 else "🟡"
-                    body.append(f"{asset:<7} {close:>9,.0f}  {color} {change:+.2f}%")
+                    body.append(f"{asset:<7} {close:>10,.2f}  {color} {change:+.2f}%")
             except Exception:
                 body.append(f"{asset:<7} 🟡 Нет данных")
     except Exception:
@@ -1414,20 +1340,19 @@ def render_records() -> tuple[str, dict]:
         trades = wins + losses
         winrate = round((wins / trades) * 100) if trades else 0
         body = [
-            menu_line("💰 Лучший день:", f"{menu_number(best_day[1], 0, True)}  📅 {best_day[0]}" if best_day else None),
-            menu_line("🎯 Лучшая сделка:", f"{menu_number(best_trade.get('profit'), 0, True)}  {menu_asset_from_trade(best_trade)}" if best_trade else None),
-            menu_line("📈 Лучшая серия:", f"{streak} побед подряд"),
-            menu_line("Макс R за сделку:", f"{max_r:.2f}R  {menu_asset_from_trade(max_r_row)}" if max_r_row else None),
+            f"💰 Лучший день:      {menu_number(best_day[1], 2, True) if best_day else '+0.00'}  📅 {best_day[0] if best_day else '--.--'}",
+            f"🎯 Лучшая сделка:    {menu_number(best_trade.get('profit'), 2, True) if best_trade else '+0.00'}  {menu_asset_from_trade(best_trade) if best_trade else ''}".rstrip(),
+            f"📈 Лучшая серия:      {streak} побед подряд",
+            f" Макс R:            {max_r:.2f}R  {menu_asset_from_trade(max_r_row) if max_r_row else ''}".rstrip(),
             "",
             "📉 АНТИРЕКОРДЫ",
-            menu_line("Худший день:", f"{menu_number(worst_day[1], 0, False)}  📅 {worst_day[0]}" if worst_day else None),
-            menu_line("Худшая сделка:", f"{menu_number(worst_trade.get('profit'), 0, False)}  {menu_asset_from_trade(worst_trade)}" if worst_trade else None),
-            menu_line("Макс просадка:", f"{max_drawdown_pct(rows):.1f}%"),
+            f"Худший день:        {menu_number(worst_day[1], 2, False) if worst_day else '0.00'}  📅 {worst_day[0] if worst_day else '--.--'}",
+            f"Худшая сделка:      {menu_number(worst_trade.get('profit'), 2, False) if worst_trade else '0.00'}  {menu_asset_from_trade(worst_trade) if worst_trade else ''}".rstrip(),
             "",
             "📊 ВСЕГО",
-            menu_line("Сделок:", str(trades)),
-            menu_line("P&L:", menu_number(total, 0, True)),
-            menu_line("Винрейт:", f"{winrate}%"),
+            f"Сделок:    {trades}",
+            f"P&L:      {menu_number(total, 2, True) or '+0.00'}",
+            f"Винрейт:   {winrate}%",
         ]
         return menu_message("🏆 РЕКОРДЫ", body), inline_keyboard([[(" Меню", "menu_main")]])
     except Exception:
@@ -1474,30 +1399,31 @@ def render_risk() -> tuple[str, dict]:
         pnl = acct.pnl_today() or {}
         positions = acct.current_positions()
         limit = 250.0
-        current_pnl = safe_float(pnl.get("total_pnl", pnl.get("net_pnl"))) or 0.0
+        current_pnl = safe_float(first_present(pnl.get("closed_pnl"), pnl.get("total_pnl"), pnl.get("net_pnl"))) or 0.0
         used = max(0.0, -current_pnl)
         used_pct = min(100, round((used / limit) * 100)) if limit else 0
         remaining = max(0.0, limit - used)
-        status = "🟢 В НОРМЕ" if used_pct < 30 else "🟡 ВНИМАНИЕ" if used_pct <= 70 else "🔴 ЛИМИТ"
-        risks = [estimate_position_risk(p) for p in positions]
-        risks = [r for r in risks if r is not None]
-        total_risk = sum(risks)
-        max_risk = max(risks) if risks else None
+        if used >= limit:
+            status = "🔴 ЛИМИТ ДОСТИГНУТ"
+        elif used_pct > 70:
+            status = "🔴 ЛИМИТ БЛИЗКО"
+        elif used_pct >= 30:
+            status = "🟡 ВНИМАНИЕ"
+        else:
+            status = "🟢 В НОРМЕ"
         body = [
-            menu_line("💰 Баланс начала дня:", menu_money(start.get("balance"), "$", 0)),
-            menu_line("📉 Текущий P&L:", menu_money(current_pnl, "$", 0, signed=True)),
+            f"💰 Начало дня:   {menu_money(first_present(start.get('balance'), account.get('balance')), '$') or '$0.00'}",
+            f"📊 P&L сегодня:  {menu_money(current_pnl, '$', signed=True) or '+$0.00'}",
             "",
-            " ЛИМИТЫ",
-            menu_line("Дневной лимит убытка:", menu_money(limit, "$", 0)),
-            menu_line("Использовано:", f"{menu_money(used, '$', 0)}  ({used_pct}%)"),
-            menu_line("Осталось до лимита:", menu_money(remaining, "$", 0)),
+            "🛡 ЛИМИТЫ",
+            f"Дневной лимит:    {menu_money(limit, '$')}",
+            f"Использовано:      {menu_money(used, '$')} ({used_pct}%)",
+            f"Осталось:          {menu_money(remaining, '$')}",
             "",
             f"Статус: {status}",
             "",
-            "📊 ОТКРЫТЫЕ ПОЗИЦИИ",
-            menu_line("Позиций:", str(len(positions))),
-            menu_line("Макс риск на позицию:", menu_money(max_risk, "$", 0)),
-            menu_line("Суммарный риск:", menu_money(total_risk, "$", 0)),
+            "📊 ПОЗИЦИИ",
+            f"Открытых: {len(positions)}",
         ]
         return menu_message("📉 РИСК-МОНИТОР", body), menu_back_keyboard("menu_risk")
     except Exception:
@@ -1516,8 +1442,6 @@ def estimate_position_risk(position: dict) -> Optional[float]:
 def render_bots_status() -> tuple[str, dict]:
     try:
         controls = acct.list_native_bot_controls(include_defaults=True)
-        heartbeat = acct.last_mt5_heartbeat()
-        server_online = "🟢 Online" if heartbeat else "🟡 Нет данных"
         online = 0
         body = []
         for asset in MENU_ASSETS:
@@ -1528,10 +1452,10 @@ def render_bots_status() -> tuple[str, dict]:
             active = control_enabled(control)
             if active:
                 online += 1
-            cfg = "OK" if control.get("settings_summary") or control.get("last_heartbeat_at") else "FAIL"
-            time_text = format_time(control.get("last_heartbeat_at")) if control.get("last_heartbeat_at") else ""
-            body.append(f"{asset:<7} {'🟢 Активен' if active else '🔴 Выключен'}   cfg:{cfg:<4} {time_text}".rstrip())
-        body.extend(["", f"Онлайн: {online}/5", f"Сервер: {server_online}", menu_line("Uptime:", format_heartbeat(heartbeat))])
+            time_text = format_time(first_present(control.get("last_heartbeat_at"), control.get("updated_at"))) if first_present(control.get("last_heartbeat_at"), control.get("updated_at")) else ""
+            status_text = "🟢 Активен" if active else "🔴 Выключен"
+            body.append(f"{asset:<7} {status_text:<12} {time_text}".rstrip())
+        body.extend(["", f"Онлайн:  {online}/5"])
         return menu_message("🤖 СТАТУС БОТОВ", body), menu_back_keyboard("menu_bots")
     except Exception:
         return menu_message("🔴 ОШИБКА БОТОВ", ["Не удалось получить статусы ботов."], True), menu_back_keyboard("menu_bots")
