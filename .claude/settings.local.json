@@ -5,7 +5,10 @@
       "Bash(Select-Object -ExpandProperty Name)",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Projects\\\\tv-smob-server\" | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name)",
       "Bash(python -m py_compile server/main.py)",
-      "Bash(python -m py_compile server/account_store.py)"
+      "Bash(python -m py_compile server/account_store.py)",
+      "Bash(python -m py_compile server/telegram_bot.py)",
+      "Bash(pip install *)",
+      "Bash(python *)"
     ]
   }
 }

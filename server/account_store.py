@@ -437,6 +437,7 @@ def pnl_today() -> dict:
 
 def native_pnl_today() -> dict:
     close_profits = []
+    tp_pnl = 0.0  # accumulated partial-close profits from TP events
     tp_events = 0
     execution_errors = 0
     with db() as conn:
@@ -458,6 +459,7 @@ def native_pnl_today() -> dict:
                 close_profits.append(_payload_profit(payload))
             elif event_type in NATIVE_TP_EVENT_TYPES:
                 tp_events += 1
+                tp_pnl += _payload_profit(payload)  # TP partial closes are realized P&L
             elif event_type in NATIVE_ERROR_EVENT_TYPES:
                 execution_errors += 1
 
@@ -478,7 +480,7 @@ def native_pnl_today() -> dict:
                 floating_pnl = None
 
     realized_available = bool(close_profits) or tp_events == 0
-    closed_pnl = round(sum(close_profits), 2) if realized_available else None
+    closed_pnl = round(sum(close_profits) + tp_pnl, 2) if realized_available else None
     total_pnl = None if closed_pnl is None else round(closed_pnl + (floating_pnl or 0.0), 2)
     return {
         "trades_count": closed_count,
@@ -1649,6 +1651,18 @@ def _max_time(current, value):
     return current
 
 
+def _merge_profit(event_type: str, new_profit, existing_profit) -> Optional[float]:
+    """Accumulate profit for TP partial closes and final closes instead of overwriting."""
+    if event_type in NATIVE_TP_EVENT_TYPES or event_type in NATIVE_REALIZED_EVENT_TYPES:
+        if new_profit is None:
+            return existing_profit
+        try:
+            return float(existing_profit or 0) + float(new_profit)
+        except (TypeError, ValueError):
+            return new_profit
+    return first_present(new_profit, existing_profit)
+
+
 def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload: dict) -> dict:
     existing = existing or {}
     event_type = str(event.event_type or "").strip().lower()
@@ -1679,7 +1693,7 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
         "tp3_done": tp3_done,
         "be_done": be_done,
         "closed_percent": first_present(event.closed_percent, existing.get("closed_percent")),
-        "profit": first_present(event.profit, existing.get("profit")),
+        "profit": _merge_profit(event_type, event.profit, existing.get("profit")),
         "balance": first_present(event.balance, existing.get("balance")),
         "equity": first_present(event.equity, existing.get("equity")),
         "status": event_type,
@@ -1688,6 +1702,36 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
         "message": first_present(event.message, existing.get("message")),
         "payload": payload,
     }
+
+
+def get_trade_for_notification(event: NativeMT5Event) -> Optional[dict]:
+    """Return active or just-closed trade row for enriching Telegram notifications."""
+    event_type = str(event.event_type or "").strip().lower()
+    filters, params = [], []
+    if event.bot_id:
+        filters.append("bot_id = ?")
+        params.append(event.bot_id)
+    if event.symbol:
+        filters.append("symbol = ?")
+        params.append(event.symbol)
+    if event.magic_number is not None:
+        filters.append("magic_number = ?")
+        params.append(event.magic_number)
+    if not filters:
+        return None
+    where = " AND ".join(filters)
+    with db() as conn:
+        if event_type in NATIVE_REALIZED_EVENT_TYPES:
+            row = conn.execute(
+                f"SELECT * FROM native_mt5_closed_trades WHERE {where} ORDER BY COALESCE(closed_at, created_at) DESC LIMIT 1",
+                params,
+            ).fetchone()
+        else:
+            row = conn.execute(
+                f"SELECT * FROM native_mt5_active_trades WHERE {where} ORDER BY updated_at DESC LIMIT 1",
+                params,
+            ).fetchone()
+    return dict(row) if row else None
 
 
 def _safe_payload(model) -> dict:
