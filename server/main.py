@@ -538,10 +538,39 @@ async def dashboard_positions():
 @app.get("/api/dashboard/trades")
 async def dashboard_trades(period: str = "today", bot_id: str | None = None, limit: int = 50):
     try:
-        trades = acct.native_closed_trades(period=period, selector=bot_id, limit=min(limit, 500))
+        trades = acct.get_all_trades(period=period, bot_id=bot_id, limit=min(limit, 500))
     except Exception:
         trades = []
     return {"ok": True, "period": period, "trades": trades}
+
+
+@app.post("/api/mt5/native-backtest")
+async def mt5_native_backtest(body: dict, request: Request):
+    if not native_secret_matches(str(body.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    bot_id = str(body.get("bot_id") or "").strip()
+    trades = body.get("trades") or []
+    if not bot_id:
+        return err("bot_id is required")
+    if not isinstance(trades, list):
+        return err("trades must be a list")
+    try:
+        saved = acct.save_backtest_trades(bot_id, trades)
+    except Exception as exc:
+        logger.exception("Failed to save native backtest trades")
+        return err(f"Failed to save backtest trades: {exc}", status=500)
+    return {"ok": True, "bot_id": bot_id, "received": len(trades), "saved": saved}
+
+
+@app.get("/api/dashboard/backtest")
+async def dashboard_backtest(bot_id: str | None = None, limit: int = 500):
+    try:
+        trades = acct.backtest_trades(bot_id=bot_id, limit=min(limit, 1000))
+        summary = acct.backtest_summary(bot_id=bot_id)
+    except Exception:
+        trades = []
+        summary = {"total_trades": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl": 0, "best": None, "worst": None}
+    return {"ok": True, "bot_id": bot_id, "summary": summary, "trades": trades}
 
 
 @app.get("/api/dashboard/pnl")

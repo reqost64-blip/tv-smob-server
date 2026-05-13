@@ -325,6 +325,30 @@ def init_db() -> None:
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS backtest_trades (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_id         TEXT,
+                symbol         TEXT,
+                side           TEXT,
+                lots           REAL,
+                entry_price    REAL,
+                sl_price       REAL,
+                tp1_price      REAL,
+                tp2_price      REAL,
+                open_time      TEXT,
+                close_time     TEXT,
+                exit_price     REAL,
+                profit_money   REAL,
+                status         TEXT,
+                source         TEXT DEFAULT 'backtest',
+                created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_trades_unique
+            ON backtest_trades (bot_id, symbol, open_time)
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS native_screenshots (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 trade_uid     TEXT,

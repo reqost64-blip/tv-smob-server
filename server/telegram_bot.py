@@ -438,34 +438,55 @@ def format_native_mt5_event_message(event: dict) -> str:
     total_profit_payload = first_num("total_profit", "accumulated_profit")
 
     if event_type == "opened":
+        def tp_points(value):
+            target = num(value)
+            base = num(entry)
+            if target is None or base is None:
+                return None
+            return f"{abs(target - base):.1f}"
+
+        def opened_tp_block(label: str, target, expected, detail: str) -> list[str]:
+            target_price = price(target)
+            if not target_price:
+                return []
+            expected_value = money(expected) if positive(expected) else ""
+            first_line = f"{label}: {target_price}"
+            if expected_value:
+                first_line += f"    {expected_value}"
+            points = tp_points(target)
+            details = [detail]
+            if points:
+                details.append(f"{points} pts")
+            return [first_line, f"     ({', '.join(details)})", ""]
+
+        tp1_expected = first_num("tp1_expected")
+        tp2_expected = first_num("tp2_expected")
+        tp3_expected = first_num("tp3_expected")
+        max_profit = sum(value for value in (tp1_expected, tp2_expected, tp3_expected) if positive(value))
         lines = ["🟢 СДЕЛКА ОТКРЫТА", ""]
         header = [f"📊 {symbol}", side]
-        if lot is not None:
-            header.append(f"{lot:.2f} lot")
+        opened_lot = first_num("lot", "lots")
+        if opened_lot is not None:
+            header.append(f"{opened_lot:.2f} lot")
         lines.extend(["  |  ".join(header), ""])
-        for item in (
-            line_with_price("Entry", entry),
-            line_with_price("SL", event.get("sl"), entry),
-            line_with_price("TP1", event.get("tp1"), entry),
-        ):
-            if item:
-                lines.append(item)
+        if price(entry):
+            lines.append(f"Entry:  {price(entry)}")
+        if price(event.get("sl")):
+            lines.append(f"SL:     {price(event.get('sl'))}")
+        lines.extend(["", "", "🎯 ТЕЙКИ И РАСЧЁТ", ""])
+        lines.extend(opened_tp_block("TP1", event.get("tp1"), tp1_expected, "75% позиции"))
         if positive(num(event.get("tp2"))):
-            lines.append(line_with_price("TP2", event.get("tp2"), entry))
+            lines.extend(opened_tp_block("TP2", event.get("tp2"), tp2_expected, "25% позиции"))
         if positive(num(event.get("tp3"))):
-            lines.append(line_with_price("TP3", event.get("tp3"), entry))
+            lines.extend(opened_tp_block("TP3", event.get("tp3"), tp3_expected, "остаток"))
         money_lines = []
         if positive(risk_money):
-            money_lines.append(f"💰 Риск:       {money(risk_money, signed=False)}")
-        tp1_expected = first_num("tp1_expected")
-        if positive(tp1_expected):
-            money_lines.append(f"🎯 TP1 цель:  {money(tp1_expected)}")
-        tp2_expected = first_num("tp2_expected")
-        if positive(tp2_expected):
-            money_lines.append(f"🎯 TP2 цель:  {money(tp2_expected)}")
+            money_lines.append(f"💰 Риск:          {money(risk_money, signed=False)}")
+        if positive(max_profit):
+            money_lines.extend([f"🏆 Макс прибыль:  {money(max_profit)}", "   (если все TP)"])
         if money_lines:
             lines.extend(["", *money_lines])
-        lines.extend(["", timestamp(event.get("time"))])
+        lines.extend(["", "", timestamp(event.get("time"))])
         return "\n".join(lines)
 
     if event_type == "tp1_closed":
@@ -915,6 +936,17 @@ def menu_duration(start, end) -> Optional[str]:
     return f"{minutes}м"
 
 
+def format_minutes(value) -> Optional[str]:
+    minutes_value = safe_float(value)
+    if minutes_value is None:
+        return None
+    minutes = max(0, int(minutes_value))
+    if minutes >= 60:
+        hours, mins = divmod(minutes, 60)
+        return f"{hours}ч {mins}м" if mins else f"{hours}ч 0м"
+    return f"{minutes}м"
+
+
 def menu_asset_from_trade(row: dict) -> str:
     text = str(row.get("symbol") or row.get("bot_id") or "UNKNOWN").upper()
     if "US500" in text or "SP500" in text:
@@ -1042,6 +1074,14 @@ def handle_telegram_update(update: dict) -> bool:
             user_state[chat_id] = {"screen": "main"}
             menu_send(chat_id, menu_main_text(), main_menu_keyboard())
             return True
+        if text.split()[0].lower() == "/backtest":
+            if len(text.split()) > 1:
+                asset = text.split()[1].upper()
+                text_out, keyboard = render_backtest_result(asset)
+            else:
+                text_out, keyboard = render_backtest_selector()
+            menu_send(chat_id, text_out, keyboard)
+            return True
         if text in MENU_BUTTON_CALLBACKS:
             callback_data = MENU_BUTTON_CALLBACKS[text]
             text_out, keyboard = render_menu_callback(callback_data, chat_id)
@@ -1073,6 +1113,13 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
             state["screen"] = "trades_result"
             state["trades_period"] = period
             return render_trades_result(period)
+        if data == "backtest_menu":
+            user_state.setdefault(chat_id, {})["screen"] = "backtest_select"
+            return render_backtest_selector()
+        if data.startswith("backtest_"):
+            asset = data.replace("backtest_", "", 1)
+            user_state.setdefault(chat_id, {})["screen"] = "backtest_result"
+            return render_backtest_result(asset)
         if data == "menu_stats":
             user_state.setdefault(chat_id, {})["screen"] = "stats_period"
             return render_stats_period()
@@ -1203,8 +1250,7 @@ def menu_journal(period: str, selector: Optional[str] = None, limit: int = 500) 
 
 def render_trades_result(period: str) -> tuple[str, dict]:
     try:
-        rows = [r for r in menu_journal(period, limit=500) if r.get("closed_at")]
-        rows = sorted(rows, key=lambda r: str(first_present(r.get("closed_at"), r.get("created_at"))), reverse=True)
+        rows = acct.get_all_trades(period=period, limit=500)
         total = sum(float_or_zero(r.get("profit")) for r in rows)
         wins = sum(1 for r in rows if float_or_zero(r.get("profit")) > 0)
         losses = sum(1 for r in rows if float_or_zero(r.get("profit")) < 0)
@@ -1215,8 +1261,9 @@ def render_trades_result(period: str) -> tuple[str, dict]:
             profit = float_or_zero(row.get("profit"))
             icon = "🟢" if profit > 0 else "🔴" if profit < 0 else "🟡"
             pnl = menu_number(profit, 2, signed=True)
-            risk = estimate_r_multiple(row)
-            duration = menu_duration(row.get("opened_at"), row.get("closed_at"))
+            risk_value = safe_float(row.get("r_multiple"))
+            risk = f"{risk_value:.2f}R" if risk_value is not None else estimate_r_multiple(row)
+            duration = format_minutes(row.get("duration_minutes")) if row.get("duration_minutes") is not None else menu_duration(row.get("opened_at"), row.get("closed_at"))
             parts = [icon, menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4)]
             if pnl:
                 parts.append(pnl.rjust(5))
@@ -1227,10 +1274,57 @@ def render_trades_result(period: str) -> tuple[str, dict]:
             body.append(" ".join(parts))
         if not body:
             body.append("Сделок пока нет")
-        body.extend(["", f"Итого: {menu_number(total, 2, True) or '+0.00'}  |  {wins}W / {losses}L  |  {winrate}%"])
+        body.extend(["", f"Итого: {menu_number(total, 2, True) or '+0.00'}  |  {wins}W / {losses}L  |  {winrate}%", "", "📊 Показаны реальные сделки. Для бэктеста: /backtest"])
         return menu_message(f"📋 СДЕЛКИ  {period_title(period)}", body), menu_back_keyboard(f"trades_{period}", "menu_trades")
     except Exception:
         return menu_message("🔴 ОШИБКА СДЕЛОК", ["Не удалось получить журнал сделок."], True), menu_back_keyboard(f"trades_{period}", "menu_trades")
+
+
+def render_backtest_selector() -> tuple[str, dict]:
+    text = menu_message("📊 БЭКТЕСТ  БОТ", [], False)
+    keyboard = inline_keyboard(
+        [
+            [("Все", "backtest_ALL")],
+            [("NAS100", "backtest_NAS100"), ("SP500", "backtest_SP500")],
+            [("DJ30", "backtest_DJ30"), ("BTCUSD", "backtest_BTCUSD")],
+            [("GER40", "backtest_GER40")],
+        ]
+    )
+    return text, keyboard
+
+
+def format_backtest_result(asset: str = "ALL") -> str:
+    selector = None if str(asset or "ALL").upper() == "ALL" else asset
+    summary = acct.backtest_summary(selector)
+    rows = acct.backtest_trades(bot_id=selector, limit=10)
+    title_asset = str(asset or "ALL").upper()
+    body = [
+        f"Сделок:      {summary.get('total_trades', 0)}",
+        f"Винрейт:     {summary.get('win_rate', 0)}%",
+        f"P&L:         {menu_number(summary.get('total_pnl'), 2, True) or '+0.00'}",
+    ]
+    best = summary.get("best")
+    worst = summary.get("worst")
+    if best:
+        body.append(f"Лучшая:      {menu_asset_from_trade(best)} {menu_number(best.get('profit_money'), 2, True) or '+0.00'}")
+    if worst:
+        body.append(f"Худшая:      {menu_asset_from_trade(worst)} {menu_number(worst.get('profit_money'), 2, True) or '+0.00'}")
+    body.extend(["", "Последние сделки:"])
+    if not rows:
+        body.append("Сделок пока нет")
+    for row in rows:
+        profit = float_or_zero(row.get("profit_money"))
+        icon = "🟢" if profit > 0 else "🔴" if profit < 0 else "🟡"
+        duration = menu_duration(row.get("open_time"), row.get("close_time"))
+        parts = [icon, menu_asset_from_trade(row).ljust(7), fmt_side(row.get("side")).ljust(4), (menu_number(profit, 2, True) or "+0.00").rjust(5)]
+        if duration:
+            parts.append(duration)
+        body.append(" ".join(parts))
+    return menu_message(f"📊 БЭКТЕСТ  {title_asset}", body)
+
+
+def render_backtest_result(asset: str = "ALL") -> tuple[str, dict]:
+    return format_backtest_result(asset), menu_back_keyboard(f"backtest_{asset}", "backtest_menu")
 
 
 def estimate_r_multiple(row: dict) -> Optional[str]:
@@ -1620,6 +1714,8 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return format_positions()
     if command == "/trades":
         return format_trades_today()
+    if command == "/backtest":
+        return format_backtest_result(parts[1].upper() if len(parts) > 1 else "ALL")
     if command == "/pnl_today":
         return format_pnl_today()
     if command == "/history_today":
