@@ -29,12 +29,17 @@ from .settings_store import (
 from .database import db
 
 try:
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    from telegram.ext import CallbackQueryHandler
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+    from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 except Exception:
     InlineKeyboardButton = None
     InlineKeyboardMarkup = None
+    KeyboardButton = None
+    ReplyKeyboardMarkup = None
     CallbackQueryHandler = None
+    CommandHandler = None
+    MessageHandler = None
+    filters = None
 
 
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
@@ -95,6 +100,34 @@ MARKET_SYMBOLS = {
     "BTCUSD": "BTC-USD",
     "GER40": "^GDAXI",
     "VIX": "^VIX",
+}
+MAIN_KEYBOARD_ROWS = [
+    ["📊 Статус", "📋 Сделки"],
+    ["📈 Статистика", " Действия"],
+    ["🌍 Рынок", "🏆 Рекорды"],
+    ["📉 Риск", "🤖 Боты"],
+]
+if ReplyKeyboardMarkup and KeyboardButton:
+    MAIN_KEYBOARD = ReplyKeyboardMarkup(
+        [[KeyboardButton(text) for text in row] for row in MAIN_KEYBOARD_ROWS],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+else:
+    MAIN_KEYBOARD = {
+        "keyboard": [[{"text": text} for text in row] for row in MAIN_KEYBOARD_ROWS],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
+MENU_BUTTON_CALLBACKS = {
+    "📊 Статус": "menu_status",
+    "📋 Сделки": "menu_trades",
+    "📈 Статистика": "menu_stats",
+    " Действия": "menu_actions",
+    "🌍 Рынок": "menu_market",
+    "🏆 Рекорды": "menu_records",
+    "📉 Риск": "menu_risk",
+    "🤖 Боты": "menu_bots",
 }
 user_state = {}
 
@@ -727,13 +760,118 @@ def format_execution_report(report: Optional[dict]) -> str:
     )
 
 
+def ptb_reply_markup(markup):
+    if not isinstance(markup, dict):
+        return markup
+    if InlineKeyboardMarkup and InlineKeyboardButton and "inline_keyboard" in markup:
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(btn.get("text", ""), callback_data=btn.get("callback_data")) for btn in row]
+                for row in markup.get("inline_keyboard", [])
+            ]
+        )
+    if ReplyKeyboardMarkup and KeyboardButton and "keyboard" in markup:
+        return ReplyKeyboardMarkup(
+            [[KeyboardButton(btn.get("text", "")) for btn in row] for row in markup.get("keyboard", [])],
+            resize_keyboard=bool(markup.get("resize_keyboard", True)),
+            is_persistent=bool(markup.get("is_persistent", True)),
+        )
+    return markup
+
+
 async def _ptb_callback_router(update, context):
     query = getattr(update, "callback_query", None)
     if query:
         await query.answer()
+        chat_id = str(query.message.chat_id) if getattr(query, "message", None) else ""
+        text, keyboard = render_menu_callback(str(query.data or ""), chat_id)
+        await query.edit_message_text(text, reply_markup=ptb_reply_markup(keyboard))
 
 
 menu_callback_query_handler = CallbackQueryHandler(_ptb_callback_router) if CallbackQueryHandler else None
+
+
+async def start(update, context):
+    if getattr(update, "message", None):
+        await update.message.reply_text(menu_main_text(), reply_markup=ptb_reply_markup(MAIN_KEYBOARD))
+
+
+async def _reply_menu_section(update, callback_data: str) -> None:
+    if not getattr(update, "message", None):
+        return
+    chat_id = str(update.message.chat_id)
+    text, keyboard = render_menu_callback(callback_data, chat_id)
+    await update.message.reply_text(text, reply_markup=ptb_reply_markup(keyboard))
+
+
+async def show_status(update, context):
+    await _reply_menu_section(update, "menu_status")
+
+
+async def show_trades_menu(update, context):
+    await _reply_menu_section(update, "menu_trades")
+
+
+async def show_stats_menu(update, context):
+    await _reply_menu_section(update, "menu_stats")
+
+
+async def show_actions_menu(update, context):
+    await _reply_menu_section(update, "menu_actions")
+
+
+async def show_market(update, context):
+    await _reply_menu_section(update, "menu_market")
+
+
+async def show_records(update, context):
+    await _reply_menu_section(update, "menu_records")
+
+
+async def show_risk(update, context):
+    await _reply_menu_section(update, "menu_risk")
+
+
+async def show_bots(update, context):
+    await _reply_menu_section(update, "menu_bots")
+
+
+async def handle_menu_button(update, context):
+    text = update.message.text
+    if text == "📊 Статус":
+        await show_status(update, context)
+    elif text == "📋 Сделки":
+        await show_trades_menu(update, context)
+    elif text == "📈 Статистика":
+        await show_stats_menu(update, context)
+    elif text == " Действия":
+        await show_actions_menu(update, context)
+    elif text == "🌍 Рынок":
+        await show_market(update, context)
+    elif text == "🏆 Рекорды":
+        await show_records(update, context)
+    elif text == "📉 Риск":
+        await show_risk(update, context)
+    elif text == "🤖 Боты":
+        await show_bots(update, context)
+
+
+MENU_BUTTON_PATTERN = r"^(📊 Статус|📋 Сделки|📈 Статистика| Действия|🌍 Рынок|🏆 Рекорды|📉 Риск|🤖 Боты)$"
+menu_message_handler = (
+    MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
+    if MessageHandler and filters
+    else None
+)
+start_command_handler = CommandHandler(["start", "menu"], start) if CommandHandler else None
+
+
+def register_menu_handlers(app) -> None:
+    if menu_message_handler:
+        app.add_handler(menu_message_handler, group=-1)
+    if start_command_handler:
+        app.add_handler(start_command_handler, group=-1)
+    if menu_callback_query_handler:
+        app.add_handler(menu_callback_query_handler)
 
 
 def menu_timestamp() -> str:
@@ -815,21 +953,13 @@ def inline_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
 
 
 def main_menu_keyboard() -> dict:
-    return inline_keyboard(
-        [
-            [("📊 Статус", "menu_status"), ("📋 Сделки", "menu_trades")],
-            [("📈 Статистика", "menu_stats"), (" Действия", "menu_actions")],
-            [("🌍 Рынок", "menu_market"), ("🏆 Рекорды", "menu_records")],
-            [("📉 Риск", "menu_risk"), ("🤖 Боты", "menu_bots")],
-        ]
-    )
+    return dashboard_keyboard()
 
 
 def menu_back_keyboard(refresh: str, back: Optional[str] = None) -> dict:
     row = [("🔁 Обновить", refresh)]
     if back:
         row.append((" Назад", back))
-    row.append((" Меню", "menu_main"))
     return inline_keyboard([row])
 
 
@@ -911,6 +1041,11 @@ def handle_telegram_update(update: dict) -> bool:
         if text.split()[0].lower() in ("/start", "/menu"):
             user_state[chat_id] = {"screen": "main"}
             menu_send(chat_id, menu_main_text(), main_menu_keyboard())
+            return True
+        if text in MENU_BUTTON_CALLBACKS:
+            callback_data = MENU_BUTTON_CALLBACKS[text]
+            text_out, keyboard = render_menu_callback(callback_data, chat_id)
+            menu_send(chat_id, text_out, keyboard)
             return True
         return False
     except Exception:
@@ -1035,7 +1170,6 @@ def render_trades_period() -> tuple[str, dict]:
     keyboard = inline_keyboard(
         [
             [("Сегодня", "trades_today"), ("Вчера", "trades_yesterday"), ("Неделя", "trades_week")],
-            [(" Меню", "menu_main")],
         ]
     )
     return text, keyboard
@@ -1117,7 +1251,6 @@ def render_stats_period() -> tuple[str, dict]:
     keyboard = inline_keyboard(
         [
             [("День", "stats_day"), ("Неделя", "stats_week"), ("Месяц", "stats_month")],
-            [(" Меню", "menu_main")],
         ]
     )
     return text, keyboard
@@ -1208,7 +1341,6 @@ def render_actions_menu() -> tuple[str, dict]:
             [(" Включить всех", "action_enable_all")],
             [(" Стоп все боты", "action_disable_all")],
             [("📋 Отчёт сейчас", "action_report")],
-            [(" Меню", "menu_main")],
         ]
     )
     return text, keyboard
@@ -1249,9 +1381,9 @@ def execute_action(action: str, asset: str) -> tuple[str, dict]:
         body = [f"🤖 {target}  {status}"]
         if not controls:
             body = ["🔴 Бот не найден"]
-        return menu_message(" ВЫПОЛНЕНО", body, False), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message(" ВЫПОЛНЕНО", body, False), inline_keyboard([])
     except Exception:
-        return menu_message("🔴 ОШИБКА", ["Действие не выполнено."], False), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("🔴 ОШИБКА", ["Действие не выполнено."], False), inline_keyboard([])
 
 
 def render_daily_report_menu() -> tuple[str, dict]:
@@ -1285,9 +1417,9 @@ def render_daily_report_menu() -> tuple[str, dict]:
             f"🏆 Лучшая:   {menu_asset_from_trade(best) if best else ''} {menu_number(best.get('profit'), 2, True) if best else ''}".rstrip(),
             f"📉 Худшая:   {menu_asset_from_trade(worst) if worst else ''} {menu_number(worst.get('profit'), 2, True) if worst else ''}".rstrip(),
         ])
-        return menu_message("📅 ДНЕВНОЙ ОТЧЁТ", body, False), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("📅 ДНЕВНОЙ ОТЧЁТ", body, False), inline_keyboard([])
     except Exception:
-        return menu_message("🔴 ОШИБКА ОТЧЁТА", ["Не удалось сформировать отчёт."], False), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("🔴 ОШИБКА ОТЧЁТА", ["Не удалось сформировать отчёт."], False), inline_keyboard([])
 
 
 def render_market() -> tuple[str, dict]:
@@ -1354,9 +1486,9 @@ def render_records() -> tuple[str, dict]:
             f"P&L:      {menu_number(total, 2, True) or '+0.00'}",
             f"Винрейт:   {winrate}%",
         ]
-        return menu_message("🏆 РЕКОРДЫ", body), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("🏆 РЕКОРДЫ", body), menu_back_keyboard("menu_records")
     except Exception:
-        return menu_message("🔴 ОШИБКА РЕКОРДОВ", ["Не удалось получить рекорды."], True), inline_keyboard([[(" Меню", "menu_main")]])
+        return menu_message("🔴 ОШИБКА РЕКОРДОВ", ["Не удалось получить рекорды."], True), menu_back_keyboard("menu_records")
 
 
 def longest_win_streak(rows: list[dict]) -> int:
@@ -1577,16 +1709,9 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
 
 
 def dashboard_keyboard() -> dict:
-    return {
-        "keyboard": [
-            [{"text": "Включить бота"}, {"text": "Остановить бота"}],
-            [{"text": "📊 Статистика"}, {"text": "📒 Журнал"}],
-            [{"text": "📸 Последний скрин"}, {"text": "Настройки"}],
-            [{"text": "Статус"}, {"text": "Сделки"}],
-        ],
-        "resize_keyboard": True,
-        "is_persistent": True,
-    }
+    if isinstance(MAIN_KEYBOARD, dict):
+        return MAIN_KEYBOARD
+    return MAIN_KEYBOARD.to_dict()
 def normalize_dashboard_button(text: str) -> str:
     mapping = {
         "Core Status": "/status",
