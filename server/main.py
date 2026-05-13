@@ -3,6 +3,7 @@ import base64
 import binascii
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -38,11 +39,11 @@ from .telegram_bot import (
     handle_command,
     handle_telegram_update,
     format_daily_report,
+    format_native_mt5_event_message,
     format_native_screenshot_caption,
     notify_close_signal,
     notify_event,
     notify_execution,
-    notify_native_event,
     parse_telegram_update,
     send_telegram_photo,
     send_telegram_message,
@@ -92,6 +93,7 @@ SCREENSHOTS_TO_KEEP = 100
 SCREENSHOTS_TO_KEEP_PER_BOT = 20
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 _daily_report_task: asyncio.Task | None = None
+pending_messages: dict[str, dict] = {}
 
 
 SYMBOL_ALIASES = {
@@ -104,6 +106,109 @@ SYMBOL_ALIASES = {
     "GER40": "GER40",
     "GER40FT": "GER40",
 }
+
+
+def pending_key(bot_id: str | None, symbol: str | None) -> str:
+    return f"{bot_id or ''}_{symbol or ''}".upper()
+
+
+def telegram_caption(text: str) -> str:
+    text = str(text or "")
+    if len(text) > 900:
+        return text[:897].rstrip() + "..."
+    return text
+
+
+async def send_with_screenshot_timeout(bot_id: str | None, symbol: str | None, timeout: int = 8) -> None:
+    key = pending_key(bot_id, symbol)
+    await asyncio.sleep(timeout)
+    pending = pending_messages.get(key)
+    if not pending:
+        return
+    if pending.get("task") is not asyncio.current_task():
+        return
+    msg = pending_messages.pop(key, None)
+    if msg:
+        send_telegram_message(msg["text"])
+
+
+def native_event_payload(event: NativeMT5Event) -> tuple[dict, bool]:
+    event_type = str(event.event_type or "").strip().lower()
+    payload = event.model_dump(mode="json", exclude={"secret"})
+    if event_type == "be_moved":
+        trade = acct.get_trade_for_notification(event)
+        if trade and trade.get("tp1_done"):
+            return payload, False
+    else:
+        trade = acct.get_trade_for_notification(event)
+    if trade:
+        if event_type in {"position_closed", "closed_by_signal"}:
+            if trade.get("profit") is not None:
+                payload["total_profit"] = trade["profit"]
+            payload.setdefault("opened_at", trade.get("opened_at"))
+            payload.setdefault("exit_price", trade.get("exit_price"))
+            payload.setdefault("entry", trade.get("entry"))
+            payload.setdefault("sl", trade.get("sl"))
+            payload.setdefault("lot", trade.get("lot"))
+            payload["tp1_done"] = bool(trade.get("tp1_done"))
+            payload["tp2_done"] = bool(trade.get("tp2_done"))
+            payload["tp3_done"] = bool(trade.get("tp3_done"))
+            payload["be_done"] = bool(trade.get("be_done"))
+            if trade.get("tp1_profit") is not None:
+                payload["tp1_profit"] = trade["tp1_profit"]
+            if trade.get("tp2_profit") is not None:
+                payload["tp2_profit"] = trade["tp2_profit"]
+        elif event_type in {"tp1_closed", "tp2_closed", "tp3_closed"}:
+            payload["accumulated_profit"] = trade.get("profit")
+            payload.setdefault("entry", trade.get("entry"))
+            payload.setdefault("sl", trade.get("sl"))
+            payload.setdefault("lot", trade.get("lot"))
+            if trade.get("tp1_profit") is not None:
+                payload["tp1_profit"] = trade["tp1_profit"]
+            if trade.get("tp2_profit") is not None:
+                payload["tp2_profit"] = trade["tp2_profit"]
+    return payload, True
+
+
+def direct_screenshot_from_payload(event: NativeMT5Event, payload: dict) -> Path | str | None:
+    screenshot = payload.get("screenshot")
+    if not screenshot:
+        return None
+    if isinstance(screenshot, dict):
+        file_path = screenshot.get("file_path") or screenshot.get("path")
+        image_base64 = screenshot.get("image_base64") or screenshot.get("base64") or screenshot.get("data")
+    else:
+        text = str(screenshot)
+        file_path = text if Path(text).exists() else None
+        image_base64 = None if file_path else text
+    if file_path:
+        return str(file_path)
+    if not image_base64:
+        return None
+    image_bytes = decode_native_screenshot(str(image_base64))
+    pseudo = NativeMT5Screenshot(
+        secret=event.secret,
+        source=event.source,
+        bot_id=event.bot_id,
+        symbol=event.symbol,
+        magic_number=event.magic_number,
+        event_type=event.event_type,
+        image_base64=str(image_base64),
+        time=event.time,
+        side=event.side,
+        lot=event.lot,
+        entry=event.entry,
+        sl=event.sl,
+        tp1=event.tp1,
+        tp2=event.tp2,
+        tp3=event.tp3,
+        profit=event.profit,
+        balance=event.balance,
+        equity=event.equity,
+        ticket=event.ticket,
+        trade_uid=event.trade_uid,
+    )
+    return save_native_screenshot_file(pseudo, str(event.event_type or "").strip().lower(), image_bytes)
 
 
 def err(msg: str, status: int = 400) -> JSONResponse:
@@ -279,7 +384,34 @@ async def mt5_native_event(event: NativeMT5Event, request: Request):
     if not native_secret_matches(event.secret, request):
         return err("Invalid secret", status=403)
     saved = acct.save_native_event(event)
-    notified = notify_native_event(event) if saved else False
+    notified = False
+    if saved:
+        payload, should_notify = native_event_payload(event)
+        if should_notify:
+            text = format_native_mt5_event_message(payload)
+            if text:
+                try:
+                    screenshot_path = direct_screenshot_from_payload(event, payload)
+                except ValueError:
+                    screenshot_path = None
+                if screenshot_path:
+                    notified = send_telegram_photo(screenshot_path, telegram_caption(text))
+                else:
+                    key = pending_key(event.bot_id, event.symbol)
+                    old = pending_messages.pop(key, None)
+                    if old and old.get("task"):
+                        old["task"].cancel()
+                    task = asyncio.create_task(send_with_screenshot_timeout(event.bot_id, event.symbol))
+                    pending_messages[key] = {
+                        "text": text,
+                        "event_type": str(event.event_type or "").strip().lower(),
+                        "symbol": event.symbol,
+                        "bot_id": event.bot_id,
+                        "timestamp": time.time(),
+                        "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
+                        "task": task,
+                    }
+                    notified = True
     return {
         "ok": True,
         "event_type": str(event.event_type or "").strip().lower(),
@@ -405,7 +537,14 @@ async def mt5_native_screenshot(screenshot: NativeMT5Screenshot, request: Reques
     prune_native_screenshots()
     event = screenshot.model_dump(mode="json", exclude={"secret", "image_base64"})
     event["event_type"] = event_type
-    caption = format_native_screenshot_caption(event)
+    key = pending_key(screenshot.bot_id, screenshot.symbol)
+    pending = pending_messages.pop(key, None)
+    if pending and pending.get("task"):
+        pending["task"].cancel()
+    caption = telegram_caption(pending["text"]) if pending else format_native_screenshot_caption(event)
+    if not caption:
+        caption = " | ".join([str(screenshot.symbol or "n/a"), str(screenshot.side or "").upper() or "n/a", event_type])
+    caption = telegram_caption(caption)
     acct.save_native_screenshot_record(screenshot, str(file_path), caption)
     prune_native_screenshot_records()
     sent = send_telegram_photo(file_path, caption)

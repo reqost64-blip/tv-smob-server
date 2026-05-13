@@ -340,11 +340,9 @@ def notify_native_event(event: NativeMT5Event) -> bool:
                 payload["tp1_profit"] = trade["tp1_profit"]
             if trade.get("tp2_profit") is not None:
                 payload["tp2_profit"] = trade["tp2_profit"]
-    notification = format_native_mt5_event_message(payload)
-    sent = send_telegram_message(notification) if notification else False
-    if sent and event_type == "tp1_closed":
-        _mark_tp1_be_suppressed(event.symbol)
-    return sent
+    # Native event delivery is coordinated in main.py so the screenshot endpoint
+    # can merge the formatted text into a single photo caption.
+    return False
 
 
 def format_native_mt5_event_message(event: dict) -> str:
@@ -615,15 +613,31 @@ def format_native_screenshot_caption(event: dict) -> str:
         sign = "+" if number > 0 else ""
         return f"{sign}{number:.2f}R"
 
+    if event_type == "opened":
+        risk = _num(first_present(event.get("risk_money"), event.get("risk"), event.get("initial_risk"), event.get("risk_amount")))
+        if risk and risk > 0:
+            return " | ".join([symbol, side, f"Risk: -{_money(risk).lstrip('+')}"])
+        return " | ".join([symbol, side, "opened"])
+
+    if event_type == "tp1_closed":
+        profit = _num(first_present(event.get("profit_money"), event.get("profit")))
+        profit_r = _num(event.get("profit_r"))
+        parts = [symbol, side]
+        if profit is not None:
+            parts.append(f"TP1 {_money(profit)}")
+        if profit_r is not None:
+            parts.append(_r_text(profit_r))
+        return " | ".join(parts)
+
     profit = None
     if event_type in {"closed", "position_closed", "closed_by_signal"}:
-        profit = _num(event.get("total_profit"))
+        profit = _num(first_present(event.get("total_profit"), event.get("accumulated_profit")))
     if profit is None:
         profit = _num(event.get("profit_money"))
     if profit is None:
         profit = _num(event.get("profit"))
 
-    r_value = _num(event.get("profit_r"))
+    r_value = _num(first_present(event.get("r_total"), event.get("profit_r")))
     if r_value is None:
         risk = _num(first_present(event.get("risk_money"), event.get("risk"), event.get("initial_risk"), event.get("risk_amount")))
         if profit is not None and risk and risk > 0:
