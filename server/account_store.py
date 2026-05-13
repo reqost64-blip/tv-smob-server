@@ -954,9 +954,9 @@ def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, forc
         INSERT INTO native_mt5_active_trades
             (trade_key, trade_uid, bot_id, symbol, magic_number, side, lot, entry, exit_price,
              current_price, sl, tp1, tp2, tp3, tp1_done, tp2_done, tp3_done,
-             be_done, closed_percent, profit, balance, equity, status,
+             be_done, tp1_profit, tp2_profit, closed_percent, profit, balance, equity, status,
              last_event_type, opened_at, updated_at, message, payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 datetime('now'), ?, ?)
         ON CONFLICT(trade_key) DO UPDATE SET
             trade_uid = excluded.trade_uid,
@@ -976,6 +976,8 @@ def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, forc
             tp2_done = excluded.tp2_done,
             tp3_done = excluded.tp3_done,
             be_done = excluded.be_done,
+            tp1_profit = COALESCE(excluded.tp1_profit, tp1_profit),
+            tp2_profit = COALESCE(excluded.tp2_profit, tp2_profit),
             closed_percent = excluded.closed_percent,
             profit = excluded.profit,
             balance = excluded.balance,
@@ -1006,6 +1008,8 @@ def _upsert_native_active_trade(conn, event: NativeMT5Event, payload: dict, forc
             int(bool(merged.get("tp2_done"))),
             int(bool(merged.get("tp3_done"))),
             int(bool(merged.get("be_done"))),
+            merged.get("tp1_profit"),
+            merged.get("tp2_profit"),
             merged.get("closed_percent"),
             merged.get("profit"),
             merged.get("balance"),
@@ -1034,9 +1038,9 @@ def _close_native_active_trade(conn, event: NativeMT5Event, payload: dict) -> No
         INSERT INTO native_mt5_closed_trades
             (trade_key, trade_uid, bot_id, symbol, magic_number, side, lot, entry, exit_price,
              sl, tp1, tp2, tp3, tp1_done, tp2_done, tp3_done, be_done,
-             closed_percent, profit, balance, equity, status, opened_at,
+             tp1_profit, tp2_profit, closed_percent, profit, balance, equity, status, opened_at,
              closed_at, message, payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(trade_key) DO UPDATE SET
             trade_uid = excluded.trade_uid,
             bot_id = excluded.bot_id,
@@ -1054,6 +1058,8 @@ def _close_native_active_trade(conn, event: NativeMT5Event, payload: dict) -> No
             tp2_done = excluded.tp2_done,
             tp3_done = excluded.tp3_done,
             be_done = excluded.be_done,
+            tp1_profit = COALESCE(excluded.tp1_profit, tp1_profit),
+            tp2_profit = COALESCE(excluded.tp2_profit, tp2_profit),
             closed_percent = excluded.closed_percent,
             profit = excluded.profit,
             balance = excluded.balance,
@@ -1082,6 +1088,8 @@ def _close_native_active_trade(conn, event: NativeMT5Event, payload: dict) -> No
             int(bool(merged.get("tp2_done"))),
             int(bool(merged.get("tp3_done"))),
             int(bool(merged.get("be_done"))),
+            merged.get("tp1_profit"),
+            merged.get("tp2_profit"),
             merged.get("closed_percent"),
             merged.get("profit"),
             merged.get("balance"),
@@ -1705,6 +1713,13 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
     tp2_done = bool(existing.get("tp2_done")) or event_type in {"tp2_closed", "tp3_closed"}
     tp3_done = bool(existing.get("tp3_done")) or event_type == "tp3_closed"
     be_done = bool(existing.get("be_done")) or event_type == "be_moved"
+    # Capture individual TP profits at the moment each TP fires (event.profit = this TP's slice)
+    tp1_profit = existing.get("tp1_profit")
+    tp2_profit = existing.get("tp2_profit")
+    if event_type == "tp1_closed" and event.profit is not None:
+        tp1_profit = event.profit
+    elif event_type == "tp2_closed" and event.profit is not None:
+        tp2_profit = event.profit
     return {
         "trade_uid": _trade_uid_from_event(event, payload, existing),
         "bot_id": first_present(event.bot_id, existing.get("bot_id")),
@@ -1723,6 +1738,8 @@ def _merge_native_trade(existing: Optional[dict], event: NativeMT5Event, payload
         "tp2_done": tp2_done,
         "tp3_done": tp3_done,
         "be_done": be_done,
+        "tp1_profit": tp1_profit,
+        "tp2_profit": tp2_profit,
         "closed_percent": first_present(event.closed_percent, existing.get("closed_percent")),
         "profit": _merge_profit(event_type, event.profit, existing.get("profit")),
         "balance": first_present(event.balance, existing.get("balance")),

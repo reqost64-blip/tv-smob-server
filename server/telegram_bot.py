@@ -248,6 +248,10 @@ def notify_native_event(event: NativeMT5Event) -> bool:
             payload["tp2_done"] = bool(trade.get("tp2_done"))
             payload["tp3_done"] = bool(trade.get("tp3_done"))
             payload["be_done"] = bool(trade.get("be_done"))
+            if trade.get("tp1_profit") is not None:
+                payload["tp1_profit"] = trade["tp1_profit"]
+            if trade.get("tp2_profit") is not None:
+                payload["tp2_profit"] = trade["tp2_profit"]
         elif event_type in {"tp1_closed", "tp2_closed", "tp3_closed"}:
             # Keep event.profit as this TP's individual profit
             # Add accumulated running total from the now-updated active trade
@@ -286,10 +290,10 @@ def format_native_mt5_event_message(event: dict) -> str:
         except (TypeError, ValueError):
             return str(v)
         if n > 0:
-            return f"+{n:.2f} €"
+            return f"+€{n:.2f}"
         if n < 0:
-            return f"–{abs(n):.2f} €"
-        return "0.00 €"
+            return f"–€{abs(n):.2f}"
+        return "€0.00"
 
     def _lot(v) -> Optional[str]:
         if v is None or v == "":
@@ -309,29 +313,22 @@ def format_native_mt5_event_message(event: dict) -> str:
         except (TypeError, ValueError):
             return None
 
-    def _risk(v) -> Optional[str]:
-        if v is None or v == "":
-            return None
-        try:
-            return f"~€{float(v):.2f}"
-        except (TypeError, ValueError):
-            return str(v)
-
-    def _r(profit_val, risk_val) -> Optional[str]:
+    def _r_str(profit_val, risk_val, r_mt5=None) -> Optional[str]:
+        if r_mt5 is not None:
+            try:
+                r = float(r_mt5)
+                sign = "+" if r >= 0 else ""
+                return f"{sign}{r:.2f}R"
+            except (TypeError, ValueError):
+                pass
         if profit_val is None or risk_val is None:
             return None
         try:
             r = float(profit_val) / float(risk_val)
             sign = "+" if r >= 0 else ""
-            return f"({sign}{r:.2f}R)"
+            return f"{sign}{r:.2f}R"
         except (TypeError, ValueError, ZeroDivisionError):
             return None
-
-    def _hhmm(v) -> Optional[str]:
-        if not v:
-            return None
-        m = re.search(r"(\d{2}):(\d{2})", str(v))
-        return f"{m.group(1)}:{m.group(2)}" if m else None
 
     def _duration(opened_at, closed_at) -> Optional[str]:
         if not opened_at or not closed_at:
@@ -350,139 +347,138 @@ def format_native_mt5_event_message(event: dict) -> str:
         except (ValueError, TypeError):
             return None
 
-    def _remaining(closed_pct) -> Optional[str]:
-        if closed_pct is None:
+    def _ts(time_str=None) -> str:
+        if time_str:
+            try:
+                m = re.search(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})", str(time_str))
+                if m:
+                    dt = datetime.strptime(m.group(1), "%Y-%m-%d")
+                    return f"🕐 {m.group(2)}  {dt.strftime('%d.%m.%Y')}"
+            except Exception:
+                pass
+        return "🕐 " + datetime.now(BERLIN_TZ).strftime("%H:%M  %d.%m.%Y")
+
+    def _tp_expected(tp_price, entry_price, lot_size, tick_v, portion) -> Optional[str]:
+        if any(x is None for x in (tp_price, entry_price, lot_size, tick_v)):
             return None
         try:
-            pct = float(closed_pct)
-            if 0 < pct <= 1:
-                pct *= 100
-            rem = round(100 - pct)
-            return f"{rem}% позиции в рынке"
+            amount = abs(float(tp_price) - float(entry_price)) * float(lot_size) * portion * float(tick_v)
+            return f"+€{amount:.2f}"
         except (TypeError, ValueError):
             return None
 
     side = _side(side_raw)
     risk_val = event.get("risk") or event.get("initial_risk") or event.get("risk_amount")
+    tick_value = event.get("tick_value")
 
     if event_type == "opened":
         entry = event.get("entry")
         sl = event.get("sl")
-        lines = [
-            "🟢 СДЕЛКА ОТКРЫТА",
-            D,
-            f"📊 {symbol}  |  {side}",
-        ]
-        if entry is not None:
-            lines.append(f"Entry:    {_price(entry)}")
+        lot = event.get("lot")
+        lines = ["🟢 СДЕЛКА ОТКРЫТА", D]
+        header_parts = [f"📊 {symbol}", side]
+        lot_str = _lot(lot)
+        if lot_str:
+            header_parts.append(lot_str)
+        lines.append("  |  ".join(header_parts))
+        p_entry = _price(entry)
+        if p_entry:
+            lines.append(f"Entry:  {p_entry}")
         if sl is not None:
+            p_sl = _price(sl)
             sl_pts = _pts(entry, sl)
-            lines.append(f"SL:       {_price(sl)}  {sl_pts}" if sl_pts else f"SL:       {_price(sl)}")
+            lines.append(f"SL:     {p_sl}  {sl_pts}" if sl_pts else f"SL:     {p_sl}")
+        if risk_val is not None:
+            try:
+                lines.append(f"Risk:   ~€{float(risk_val):.2f}")
+            except (TypeError, ValueError):
+                pass
         lines.append(D)
-        for tp_key in ("tp1", "tp2", "tp3"):
-            tp_val = event.get(tp_key)
-            if tp_val is not None:
-                tp_pts = _pts(entry, tp_val)
-                label = tp_key.upper()
-                lines.append(f"{label}:     {_price(tp_val)}   {tp_pts}" if tp_pts else f"{label}:     {_price(tp_val)}")
-        r_line = _risk(risk_val)
-        if r_line:
-            lines.append(f"Risk:    {r_line}")
+        tp1_val = event.get("tp1")
+        tp2_val = event.get("tp2")
+        if tp1_val is not None:
+            tp1_exp = _tp_expected(tp1_val, entry, lot, tick_value, 0.75)
+            if tp1_exp:
+                lines.append(f"TP1 цель:  {tp1_exp}")
+        if tp2_val is not None:
+            tp2_exp = _tp_expected(tp2_val, entry, lot, tick_value, 0.25)
+            if tp2_exp:
+                lines.append(f"TP2 цель:  {tp2_exp}")
         lines.append(D)
-        time_str = _hhmm(event.get("time"))
-        lines.append(f"🕐 {time_str}  |  Native MT5" if time_str else "🕐 Native MT5")
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     if event_type == "tp1_closed":
         tp_price = event.get("tp1") or event.get("exit_price") or event.get("current_price")
         profit = event.get("profit")
-        accumulated = event.get("accumulated_profit")
-        r_str = _r(profit, risk_val)
-        lines = [
-            "🎯 TP1 ВЗЯТ",
-            D,
-            f"📊 {symbol}  |  {side}",
-        ]
-        if tp_price is not None:
-            lines.append(f"TP1:     {_price(tp_price)}  ✅")
-        profit_line = _money(profit)
-        if profit_line:
-            lines.append(f"Profit:  {profit_line}  {r_str}" if r_str else f"Profit:  {profit_line}")
-        lines.append("SL → BE ✅  (позиция защищена)")
-        rem = _remaining(event.get("closed_percent"))
-        if rem:
-            lines.append(f"Остаток: {rem}")
+        profit_r = event.get("profit_r")
+        r = _r_str(profit, risk_val, profit_r)
+        lines = ["🎯 TP1 ВЗЯТ", D, f"📊 {symbol}  |  {side}"]
+        p_tp = _price(tp_price)
+        if p_tp:
+            lines.append(f"TP1:  {p_tp}  ✅")
+        lines.append("Закрыто: 75% позиции")
+        m_profit = _money(profit)
+        if m_profit:
+            lines.append(f"💰 Зафиксировано:  {m_profit}")
+        if r:
+            lines.append(f"📊 R:               {r}")
+        lines.append("🛡 SL → BE  ✅")
+        lines.append("Остаток в рынке: 25%")
         lines.append(D)
-        time_str = _hhmm(event.get("time"))
-        if time_str:
-            lines.append(f"🕐 {time_str}")
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     if event_type == "tp2_closed":
         tp_price = event.get("tp2") or event.get("exit_price") or event.get("current_price")
         profit = event.get("profit")
         accumulated = event.get("accumulated_profit")
-        r_str = _r(profit, risk_val)
-        r_accum = _r(accumulated, risk_val)
-        lines = [
-            "🎯🎯 TP2 ВЗЯТ",
-            D,
-            f"📊 {symbol}  |  {side}",
-        ]
-        if tp_price is not None:
-            lines.append(f"TP2:     {_price(tp_price)}  ✅")
-        profit_line = _money(profit)
-        if profit_line:
-            lines.append(f"Profit:  {profit_line}  {r_str}" if r_str else f"Profit:  {profit_line}")
-        if accumulated is not None:
-            accum_line = _money(accumulated)
-            if accum_line:
-                lines.append(f"Суммарно: {accum_line}  {r_accum}" if r_accum else f"Суммарно: {accum_line}")
+        cumulative_r = _r_str(accumulated, risk_val)
+        lines = ["🎯🎯 TP2 ВЗЯТ", D, f"📊 {symbol}  |  {side}"]
+        p_tp = _price(tp_price)
+        if p_tp:
+            lines.append(f"TP2:  {p_tp}  ✅")
+        m_profit = _money(profit)
+        if m_profit:
+            lines.append(f"💰 Эта часть:   {m_profit}")
+        m_accum = _money(accumulated)
+        if m_accum:
+            lines.append(f"💰 Суммарно:    {m_accum}")
+        if cumulative_r:
+            lines.append(f"📊 R суммарно:  {cumulative_r}")
         lines.append(D)
-        time_str = _hhmm(event.get("time"))
-        if time_str:
-            lines.append(f"🕐 {time_str}")
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     if event_type == "tp3_closed":
         tp_price = event.get("tp3") or event.get("exit_price") or event.get("current_price")
         profit = event.get("profit")
         accumulated = event.get("accumulated_profit")
-        r_str = _r(profit, risk_val)
-        r_accum = _r(accumulated, risk_val)
-        lines = [
-            "🎯🎯🎯 TP3 ВЗЯТ",
-            D,
-            f"📊 {symbol}  |  {side}",
-        ]
-        if tp_price is not None:
-            lines.append(f"TP3:     {_price(tp_price)}  ✅")
-        profit_line = _money(profit)
-        if profit_line:
-            lines.append(f"Profit:  {profit_line}  {r_str}" if r_str else f"Profit:  {profit_line}")
-        if accumulated is not None:
-            accum_line = _money(accumulated)
-            if accum_line:
-                lines.append(f"Суммарно: {accum_line}  {r_accum}" if r_accum else f"Суммарно: {accum_line}")
+        cumulative_r = _r_str(accumulated, risk_val)
+        lines = ["🎯🎯🎯 TP3 ВЗЯТ", D, f"📊 {symbol}  |  {side}"]
+        p_tp = _price(tp_price)
+        if p_tp:
+            lines.append(f"TP3:  {p_tp}  ✅")
+        m_profit = _money(profit)
+        if m_profit:
+            lines.append(f"💰 Эта часть:   {m_profit}")
+        m_accum = _money(accumulated)
+        if m_accum:
+            lines.append(f"💰 Суммарно:    {m_accum}")
+        if cumulative_r:
+            lines.append(f"📊 R суммарно:  {cumulative_r}")
         lines.append(D)
-        time_str = _hhmm(event.get("time"))
-        if time_str:
-            lines.append(f"🕐 {time_str}")
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     if event_type == "be_moved":
         entry = event.get("entry")
-        lines = [
-            "🛡 БЕЗУБЫТОК АКТИВИРОВАН",
-            D,
-            f"📊 {symbol}  |  {side}",
-        ]
-        if entry is not None:
-            lines.append(f"BE: {_price(entry)}")
+        lines = ["🛡 БЕЗУБЫТОК АКТИВИРОВАН", D, f"📊 {symbol}  |  {side}"]
+        p_entry = _price(entry)
+        if p_entry:
+            lines.append(f"BE: {p_entry}")
         lines.append(D)
-        time_str = _hhmm(event.get("time"))
-        if time_str:
-            lines.append(f"🕐 {time_str}")
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     if event_type in {"position_closed", "closed_by_signal"}:
@@ -492,65 +488,80 @@ def format_native_mt5_event_message(event: dict) -> str:
         except (TypeError, ValueError):
             profit_value = 0.0
         win = profit_value > 0
-        header = "✅ СДЕЛКА ЗАКРЫТА  —  ПРОФИТ" if win else "❌ СДЕЛКА ЗАКРЫТА  —  УБЫТОК"
         lot_str = _lot(event.get("lot"))
-        header2_parts = [f"📊 {symbol}", side]
+        header_parts = [f"📊 {symbol}", side]
         if lot_str:
-            header2_parts.append(lot_str)
-        lines = [header, D, "  |  ".join(header2_parts)]
+            header_parts.append(lot_str)
         entry = event.get("entry")
         exit_p = event.get("exit_price") or event.get("current_price")
-        if entry is not None:
-            lines.append(f"Entry:    {_price(entry)}")
-        if exit_p is not None:
-            lines.append(f"Exit:     {_price(exit_p)}")
-        lines.append(D)
-        pnl_line = _money(profit)
-        if pnl_line:
-            lines.append(f"P&L:     {pnl_line}")
-        r_str = _r(profit_value, risk_val)
-        if r_str:
-            lines.append(f"R:       {r_str.strip('()')}")
-        dur = _duration(event.get("opened_at"), event.get("time"))
-        if dur:
-            lines.append(f"Время:   {dur}")
-        tp_flags = []
-        if event.get("tp1_done"):
-            tp_flags.append("TP1 ✅")
-        if event.get("tp2_done"):
-            tp_flags.append("TP2 ✅")
-        if event.get("tp3_done"):
-            tp_flags.append("TP3 ✅")
-        if tp_flags:
-            lines.append("  ".join(tp_flags))
-        elif not win:
+
+        if win:
+            lines = ["✅ СДЕЛКА ЗАКРЫТА — ПРОФИТ", D, "  |  ".join(header_parts)]
+            p_entry = _price(entry)
+            if p_entry:
+                lines.append(f"Entry:  {p_entry}")
+            p_exit = _price(exit_p)
+            if p_exit:
+                lines.append(f"Exit:   {p_exit}")
+            lines.append(D)
+            if event.get("tp1_done") and event.get("tp1_profit") is not None:
+                m = _money(event["tp1_profit"])
+                if m:
+                    lines.append(f"TP1:  {m}  ✅")
+            if event.get("tp2_done") and event.get("tp2_profit") is not None:
+                m = _money(event["tp2_profit"])
+                if m:
+                    lines.append(f"TP2:  {m}  ✅")
+            lines.append(D)
+            m_total = _money(profit)
+            if m_total:
+                lines.append(f"💰 Итого:   {m_total}")
+            r = _r_str(profit_value, risk_val)
+            if r:
+                lines.append(f"📊 R:        {r}")
+            dur = _duration(event.get("opened_at"), event.get("time"))
+            if dur:
+                lines.append(f"⏱ Время:    {dur}")
+        else:
+            lines = ["❌ СДЕЛКА ЗАКРЫТА — УБЫТОК", D, "  |  ".join(header_parts)]
+            p_entry = _price(entry)
+            if p_entry:
+                lines.append(f"Entry:  {p_entry}")
+            p_exit = _price(exit_p)
+            if p_exit:
+                lines.append(f"Exit:   {p_exit}")
             lines.append("SL сработал")
-        lines.append(D)
+            lines.append(D)
+            m_loss = _money(profit)
+            if m_loss:
+                lines.append(f"💰 Убыток:  {m_loss}")
+            r = _r_str(profit_value, risk_val)
+            if r:
+                lines.append(f"📊 R:        {r}")
+            dur = _duration(event.get("opened_at"), event.get("time"))
+            if dur:
+                lines.append(f"⏱ Время:    {dur}")
+
         try:
             daily = acct.native_pnl_today()
             d_pnl = _money(daily.get("closed_pnl"))
             d_wins = daily.get("wins", 0)
             d_losses = daily.get("losses", 0)
             if d_pnl:
-                trend = "📈" if profit_value > 0 else "📉"
-                lines.append(f"{trend} Итог дня:  {d_pnl}  |  {d_wins}W / {d_losses}L")
+                lines.append(f"📅 День: {d_pnl}  |  {d_wins}W / {d_losses}L")
         except Exception:
             pass
+        lines.append(D)
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     if event_type in {"open_failed", "close_failed", "rejected", "close_rejected", "error"}:
         reason = event.get("message") or event.get("reason")
-        lines = [
-            "⚠️ ВХОД НЕ ВЫПОЛНЕН",
-            D,
-            f"📊 {symbol}  |  {side}",
-        ]
+        lines = ["⚠️ ВХОД НЕ ВЫПОЛНЕН", D, f"📊 {symbol}  |  {side}"]
         if reason:
             lines.append(f"Причина: {reason}")
         lines.append(D)
-        time_str = _hhmm(event.get("time"))
-        if time_str:
-            lines.append(f"🕐 {time_str}")
+        lines.append(_ts(event.get("time")))
         return "\n".join(lines)
 
     return ""

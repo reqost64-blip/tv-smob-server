@@ -386,6 +386,22 @@ def init_db() -> None:
         )
         _ensure_columns(
             conn,
+            "native_mt5_active_trades",
+            {
+                "tp1_profit": "REAL",
+                "tp2_profit": "REAL",
+            },
+        )
+        _ensure_columns(
+            conn,
+            "native_mt5_closed_trades",
+            {
+                "tp1_profit": "REAL",
+                "tp2_profit": "REAL",
+            },
+        )
+        _ensure_columns(
+            conn,
             "native_bot_controls",
             {
                 "status": "TEXT",
