@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Projects\\\\tv-smob-server\" -Directory)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Projects\\\\tv-smob-server\" | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name)",
+      "Bash(python -m py_compile server/main.py)",
+      "Bash(python -m py_compile server/account_store.py)"
+    ]
+  }
+}

@@ -54,6 +54,26 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Native MT5 Notification Server", version="1.1.0")
 
+
+# ── Dashboard CORS (Access-Control-Allow-Origin: * for /api/dashboard/* only) ─
+
+@app.middleware("http")
+async def _dashboard_cors(request: Request, call_next):
+    if request.method == "OPTIONS" and request.url.path.startswith("/api/dashboard/"):
+        return JSONResponse(
+            {},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        )
+    response = await call_next(request)
+    if request.url.path.startswith("/api/dashboard/"):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
+
+
 NATIVE_SCREENSHOT_EVENTS = {
     "opened",
     "tp1_closed",
@@ -452,6 +472,130 @@ async def api_trades_today():
 @app.get("/api/pnl/today")
 async def api_pnl_today():
     return {"ok": True, "pnl": acct.pnl_today()}
+
+
+# ── 10. Dashboard — public, no auth, CORS * ────────────────────────────────────
+
+@app.get("/api/dashboard/status")
+async def dashboard_status():
+    try:
+        heartbeat = acct.last_mt5_heartbeat()
+        bots = acct.list_native_bot_controls(include_defaults=True)
+        return {
+            "ok": True,
+            "system_mode": config.SYSTEM_MODE,
+            "trading_enabled": bool(get_setting("trading_enabled", config.TRADING_ENABLED)),
+            "last_heartbeat_at": heartbeat,
+            "bots_total": len(bots),
+            "bots_online": sum(1 for b in bots if b.get("online_status") == "online"),
+            "bots_enabled": sum(1 for b in bots if bool(b.get("enabled", 1))),
+        }
+    except Exception:
+        return {
+            "ok": True,
+            "system_mode": config.SYSTEM_MODE,
+            "trading_enabled": None,
+            "last_heartbeat_at": None,
+            "bots_total": 0,
+            "bots_online": 0,
+            "bots_enabled": 0,
+        }
+
+
+@app.get("/api/dashboard/account")
+async def dashboard_account():
+    try:
+        account = acct.latest_account_snapshot()
+    except Exception:
+        account = None
+    return {"ok": True, "account": account}
+
+
+@app.get("/api/dashboard/positions")
+async def dashboard_positions():
+    try:
+        positions = acct.current_positions()
+    except Exception:
+        positions = []
+    return {"ok": True, "positions": positions}
+
+
+@app.get("/api/dashboard/trades")
+async def dashboard_trades(period: str = "today", bot_id: str | None = None, limit: int = 50):
+    try:
+        trades = acct.native_closed_trades(period=period, selector=bot_id, limit=min(limit, 500))
+    except Exception:
+        trades = []
+    return {"ok": True, "period": period, "trades": trades}
+
+
+@app.get("/api/dashboard/pnl")
+async def dashboard_pnl(period: str = "today"):
+    try:
+        if period in ("today", "day", "1d"):
+            pnl = acct.native_pnl_today()
+        else:
+            trades = acct.native_closed_trades(period=period, limit=10000)
+            profits = [float(t.get("profit") or 0) for t in trades]
+            wins = [p for p in profits if p > 0]
+            losses_list = [p for p in profits if p < 0]
+            closed_pnl = round(sum(profits), 2)
+            pnl = {
+                "trades_count": len(trades),
+                "wins": len(wins),
+                "losses": len(losses_list),
+                "closed_pnl": closed_pnl,
+                "net_pnl": closed_pnl,
+                "best_trade": round(max(profits), 2) if profits else None,
+                "worst_trade": round(min(profits), 2) if profits else None,
+            }
+    except Exception:
+        pnl = {}
+    return {"ok": True, "period": period, "pnl": pnl}
+
+
+@app.get("/api/dashboard/bots")
+async def dashboard_bots():
+    try:
+        bots = acct.list_native_bot_controls(include_defaults=True)
+        result = [
+            {
+                "bot_id": b.get("bot_id"),
+                "asset": b.get("asset"),
+                "symbol": b.get("symbol"),
+                "enabled": bool(b.get("enabled", 1)),
+                "status": "ENABLED" if bool(b.get("enabled", 1)) else "DISABLED",
+                "online_status": b.get("online_status"),
+                "last_heartbeat_at": b.get("last_heartbeat_at"),
+                "last_event_at": b.get("last_event_at"),
+                "last_event_type": b.get("last_event_type"),
+                "has_position": bool(b.get("has_position")),
+                "active_position": b.get("active_position"),
+                "reason": b.get("paused_reason") or "",
+            }
+            for b in bots
+        ]
+    except Exception:
+        result = []
+    return {"ok": True, "bots": result}
+
+
+@app.get("/api/dashboard/journal")
+async def dashboard_journal(period: str = "today", bot_id: str | None = None, limit: int = 50):
+    try:
+        entries = acct.journal_entries(period=period, selector=bot_id, limit=min(limit, 500))
+    except Exception:
+        entries = []
+    return {"ok": True, "period": period, "journal": entries}
+
+
+@app.get("/api/dashboard/performance")
+async def dashboard_performance(period: str = "today", bot_id: str | None = None):
+    try:
+        summary = acct.performance_summary(period=period, selector=bot_id)
+    except Exception:
+        summary = {"period": period, "items": [], "totals": {}}
+    return {"ok": True, "performance": summary}
 
 
 async def daily_report_loop() -> None:

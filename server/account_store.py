@@ -765,6 +765,31 @@ def journal_entries(period: str = "today", selector: Optional[str] = None, limit
     return _journal_rows(_period_start(period), selector, limit=limit)
 
 
+def native_closed_trades(period: str = "today", selector: Optional[str] = None, limit: int = 50) -> list[dict]:
+    start = _period_start(period)
+    fetch_limit = min(limit * 10, 5000)
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM native_mt5_closed_trades
+            ORDER BY COALESCE(closed_at, created_at) DESC, created_at DESC
+            LIMIT ?
+            """,
+            (fetch_limit,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        data = dict(row)
+        if not _row_in_period(data, start):
+            continue
+        if selector and not _selector_matches(data, selector):
+            continue
+        result.append(data)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def last_journal_trade(selector: Optional[str] = None) -> Optional[dict]:
     rows = _journal_rows(None, selector, limit=1, newest=True)
     return rows[0] if rows else None
