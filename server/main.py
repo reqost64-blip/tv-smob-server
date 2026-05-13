@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from . import config
 from . import account_store as acct
@@ -53,6 +53,8 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Native MT5 Notification Server", version="1.1.0")
+
+DASHBOARD_FILE = Path(__file__).parent.parent / "dashboard" / "index.html"
 
 
 # ── Dashboard CORS (Access-Control-Allow-Origin: * for /api/dashboard/* only) ─
@@ -126,6 +128,15 @@ async def shutdown() -> None:
 @app.get("/api/health")
 async def health():
     return {"ok": True, "status": "running", "system_mode": config.SYSTEM_MODE}
+
+
+# ── Dashboard static page ──────────────────────────────────────────────────────
+
+@app.get("/dashboard")
+async def serve_dashboard():
+    if not DASHBOARD_FILE.exists():
+        return JSONResponse({"error": "Dashboard not found"}, status_code=404)
+    return FileResponse(DASHBOARD_FILE, media_type="text/html")
 
 
 # ── 2. Webhook ─────────────────────────────────────────────────────────────────
