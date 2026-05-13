@@ -436,8 +436,13 @@ def init_db() -> None:
             conn,
             "native_trade_journal",
             {
+                "ticket": "INTEGER",
                 "source": "TEXT DEFAULT 'bot'",
                 "is_backtest": "INTEGER NOT NULL DEFAULT 0",
+                "exit_price": "REAL",
+                "commission": "REAL",
+                "swap": "REAL",
+                "comment": "TEXT",
             },
         )
         _ensure_columns(
@@ -483,6 +488,10 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_journal_bot
             ON native_trade_journal (bot_id, symbol, magic_number)
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_native_journal_ticket
+            ON native_trade_journal (ticket)
         """)
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_trade_events_time

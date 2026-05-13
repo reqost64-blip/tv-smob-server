@@ -1644,6 +1644,13 @@ def _trade_duration_minutes(open_time, close_time) -> Optional[int]:
     return max(0, int((closed.astimezone(timezone.utc) - opened.astimezone(timezone.utc)).total_seconds() // 60))
 
 
+def _format_minute_time(value) -> Optional[str]:
+    parsed = _parse_datetime(value)
+    if not parsed:
+        return value
+    return parsed.astimezone(BERLIN_TZ).strftime("%Y-%m-%d %H:%M")
+
+
 def _estimate_r_multiple_value(profit, entry, sl, lot) -> Optional[float]:
     profit_value = float_or_zero(profit)
     entry_value = float_or_zero(entry)
@@ -1661,17 +1668,31 @@ def _normalize_trade_row(row: dict) -> dict:
     profit = first_present(row.get("total_profit"), row.get("profit"), row.get("profit_money"))
     close_time = first_present(row.get("close_time"), row.get("closed_at"))
     open_time = first_present(row.get("open_time"), row.get("opened_at"))
+    exit_price = first_present(row.get("exit_price"), row.get("close_price"))
     status = str(row.get("status") or "").strip().lower()
-    if not status:
-        if not close_time:
-            status = "open"
-        elif float_or_zero(profit) > 0:
-            status = "win"
-        elif float_or_zero(profit) < 0:
-            status = "loss"
-        else:
-            status = "breakeven"
+    is_open = status == "open" or not close_time or exit_price is None
+    if is_open:
+        status = "open"
+        profit_value = None
+        r_multiple = None
+    else:
+        if not status or status == "closed":
+            if float_or_zero(profit) > 0:
+                status = "win"
+            elif float_or_zero(profit) < 0:
+                status = "loss"
+            else:
+                status = "breakeven"
+        profit_value = float_or_zero(profit)
+        r_multiple = _estimate_r_multiple_value(
+            profit,
+            first_present(row.get("entry_price"), row.get("entry")),
+            first_present(row.get("sl_price"), row.get("sl")),
+            first_present(row.get("lots"), row.get("lot")),
+        )
     return {
+        "id": row.get("id"),
+        "ticket": row.get("ticket"),
         "symbol": row.get("symbol"),
         "side": row.get("side"),
         "lots": first_present(row.get("lots"), row.get("lot")),
@@ -1680,10 +1701,10 @@ def _normalize_trade_row(row: dict) -> dict:
         "entry": first_present(row.get("entry"), row.get("entry_price")),
         "sl_price": first_present(row.get("sl_price"), row.get("sl")),
         "sl": first_present(row.get("sl"), row.get("sl_price")),
-        "exit_price": first_present(row.get("exit_price"), row.get("close_price")),
-        "total_profit": float_or_zero(profit),
-        "profit": float_or_zero(profit),
-        "r_multiple": _estimate_r_multiple_value(profit, first_present(row.get("entry_price"), row.get("entry")), first_present(row.get("sl_price"), row.get("sl")), first_present(row.get("lots"), row.get("lot"))),
+        "exit_price": exit_price,
+        "total_profit": profit_value,
+        "profit": profit_value,
+        "r_multiple": r_multiple,
         "status": status,
         "open_time": open_time,
         "opened_at": open_time,
@@ -1770,13 +1791,23 @@ def _normalize_filtered_journal_trade(row: dict) -> dict:
 def _normalize_filtered_backtest_trade(row: dict) -> dict:
     profit = row.get("profit_money")
     status = str(row.get("status") or "").strip().lower()
-    if not status:
+    is_open = status == "open" or not row.get("close_time") or row.get("exit_price") is None
+    if is_open:
+        status = "open"
+        profit_value = None
+        r_multiple = None
+    elif not status:
         if float_or_zero(profit) > 0:
             status = "win"
         elif float_or_zero(profit) < 0:
             status = "loss"
         else:
             status = "breakeven"
+        profit_value = float_or_zero(profit)
+        r_multiple = first_present(row.get("r_multiple"), _estimate_r_multiple_value(profit, row.get("entry_price"), row.get("sl_price"), row.get("lots")))
+    else:
+        profit_value = float_or_zero(profit)
+        r_multiple = first_present(row.get("r_multiple"), _estimate_r_multiple_value(profit, row.get("entry_price"), row.get("sl_price"), row.get("lots")))
     return {
         "id": row.get("id"),
         "symbol": row.get("symbol"),
@@ -1784,13 +1815,13 @@ def _normalize_filtered_backtest_trade(row: dict) -> dict:
         "lots": row.get("lots"),
         "entry_price": row.get("entry_price"),
         "exit_price": row.get("exit_price"),
-        "profit_money": float_or_zero(profit),
-        "profit": float_or_zero(profit),
-        "r_multiple": first_present(row.get("r_multiple"), _estimate_r_multiple_value(profit, row.get("entry_price"), row.get("sl_price"), row.get("lots"))),
+        "profit_money": profit_value,
+        "profit": profit_value,
+        "r_multiple": r_multiple,
         "status": status,
-        "open_time": row.get("open_time"),
+        "open_time": _format_minute_time(row.get("open_time")),
         "opened_at": row.get("open_time"),
-        "close_time": row.get("close_time"),
+        "close_time": _format_minute_time(row.get("close_time")),
         "closed_at": row.get("close_time"),
         "duration_minutes": _trade_duration_minutes(row.get("open_time"), row.get("close_time")),
         "tp1_hit": bool(row.get("tp1_hit")),
@@ -1852,8 +1883,13 @@ def get_trades_filtered(source: str = "all", period: str = "today", asset: str =
 def get_stats_filtered(source: str = "bot", period: str = "week", asset: str = "ALL") -> dict:
     normalized_period = {"day": "today", "month": "30d"}.get(str(period or "").strip().lower(), period)
     rows = get_trades_filtered(source=source, period=normalized_period, asset=asset, limit=10000, offset=0)
-    closed_rows = [row for row in rows if row.get("close_time") or row.get("closed_at") or str(row.get("status") or "").lower() != "open"]
-    profits = [float_or_zero(row.get("profit_money")) for row in closed_rows]
+    closed_statuses = {"win", "loss", "be", "breakeven", "closed", "position_closed", "closed_by_signal"}
+    closed_rows = [
+        row for row in rows
+        if str(row.get("status") or "").strip().lower() in closed_statuses
+        and str(row.get("status") or "").strip().lower() != "open"
+    ]
+    profits = [float_or_zero(row.get("profit_money")) for row in closed_rows if row.get("profit_money") is not None]
     r_values = [float_or_zero(row.get("r_multiple")) for row in closed_rows if row.get("r_multiple") is not None]
     wins = [p for p in profits if p > 0]
     losses = [p for p in profits if p < 0]
@@ -1884,7 +1920,129 @@ def get_stats_filtered(source: str = "bot", period: str = "week", asset: str = "
     }
 
 
+def save_history_deals(bot_id: str, deals: list[dict]) -> int:
+    saved = 0
+    with db() as conn:
+        for deal in deals or []:
+            if not isinstance(deal, dict):
+                continue
+            resolved_bot = first_present(bot_id, deal.get("bot_id"))
+            ticket = deal.get("ticket")
+            symbol = deal.get("symbol")
+            open_time = first_present(deal.get("open_time"), deal.get("opened_at"))
+            close_time = first_present(deal.get("close_time"), deal.get("closed_at"))
+            if not symbol or not open_time:
+                continue
+            trade_uid = str(first_present(
+                deal.get("trade_uid"),
+                f"history_{ticket}" if ticket is not None and ticket != "" else None,
+                "history_" + hashlib.sha1("|".join([
+                    str(resolved_bot or ""),
+                    str(symbol or ""),
+                    str(open_time or ""),
+                    str(deal.get("side") or ""),
+                ]).encode("utf-8")).hexdigest()[:24],
+            ))
+            total_profit = first_present(deal.get("total_profit"), deal.get("net_profit"), deal.get("profit"))
+            status = str(deal.get("status") or "").strip().lower()
+            if not status:
+                if not close_time or deal.get("exit_price") is None:
+                    status = "open"
+                elif float_or_zero(total_profit) > 0:
+                    status = "win"
+                elif float_or_zero(total_profit) < 0:
+                    status = "loss"
+                else:
+                    status = "breakeven"
+            params = (
+                trade_uid,
+                ticket,
+                resolved_bot,
+                symbol,
+                first_present(deal.get("magic_number"), deal.get("magic")),
+                deal.get("side"),
+                first_present(deal.get("lots"), deal.get("lot")),
+                first_present(deal.get("entry_price"), deal.get("entry")),
+                deal.get("exit_price"),
+                open_time,
+                close_time,
+                status,
+                deal.get("close_reason"),
+                total_profit,
+                deal.get("commission"),
+                deal.get("swap"),
+                deal.get("comment"),
+                deal.get("source") or "bot",
+            )
+            if ticket is not None and ticket != "":
+                cur = conn.execute(
+                    """
+                    INSERT INTO native_trade_journal
+                        (trade_uid, ticket, bot_id, symbol, magic_number, side, lot, entry, exit_price,
+                         opened_at, closed_at, status, close_reason, profit, commission, swap, comment, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(ticket) DO UPDATE SET
+                        bot_id = excluded.bot_id,
+                        symbol = excluded.symbol,
+                        magic_number = excluded.magic_number,
+                        side = excluded.side,
+                        lot = excluded.lot,
+                        entry = excluded.entry,
+                        exit_price = excluded.exit_price,
+                        opened_at = excluded.opened_at,
+                        closed_at = excluded.closed_at,
+                        status = excluded.status,
+                        close_reason = excluded.close_reason,
+                        profit = excluded.profit,
+                        commission = excluded.commission,
+                        swap = excluded.swap,
+                        comment = excluded.comment,
+                        source = excluded.source,
+                        updated_at = datetime('now')
+                    """,
+                    params,
+                )
+                saved += 1 if cur.rowcount else 0
+                continue
+
+            existing = conn.execute(
+                """
+                SELECT id FROM native_trade_journal
+                WHERE COALESCE(bot_id, '') = COALESCE(?, '')
+                  AND symbol = ?
+                  AND opened_at = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (resolved_bot, symbol, open_time),
+            ).fetchone()
+            if existing:
+                cur = conn.execute(
+                    """
+                    UPDATE native_trade_journal
+                    SET exit_price = ?, closed_at = ?, status = ?, close_reason = ?,
+                        profit = ?, commission = ?, swap = ?, comment = ?, source = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (deal.get("exit_price"), close_time, status, deal.get("close_reason"), total_profit,
+                     deal.get("commission"), deal.get("swap"), deal.get("comment"), deal.get("source") or "bot", existing["id"]),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO native_trade_journal
+                        (trade_uid, ticket, bot_id, symbol, magic_number, side, lot, entry, exit_price,
+                         opened_at, closed_at, status, close_reason, profit, commission, swap, comment, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    params,
+                )
+            saved += 1 if cur.rowcount else 0
+    return saved
+
+
 def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
+    print(f"native-backtest received bot_id={bot_id} trades={len(trades_list or [])}")
     saved = 0
     with db() as conn:
         for trade in trades_list or []:
@@ -1901,7 +2059,22 @@ def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
                     (bot_id, symbol, side, lots, entry_price, sl_price, tp1_price, tp2_price, tp3_price,
                      open_time, close_time, exit_price, profit_money, r_multiple, status, tp1_hit, tp2_hit, source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(bot_id, symbol, open_time) DO NOTHING
+                ON CONFLICT(bot_id, symbol, open_time) DO UPDATE SET
+                    side = excluded.side,
+                    lots = excluded.lots,
+                    entry_price = excluded.entry_price,
+                    sl_price = excluded.sl_price,
+                    tp1_price = excluded.tp1_price,
+                    tp2_price = excluded.tp2_price,
+                    tp3_price = excluded.tp3_price,
+                    close_time = excluded.close_time,
+                    exit_price = excluded.exit_price,
+                    profit_money = excluded.profit_money,
+                    r_multiple = excluded.r_multiple,
+                    status = excluded.status,
+                    tp1_hit = excluded.tp1_hit,
+                    tp2_hit = excluded.tp2_hit,
+                    source = excluded.source
                 """,
                 (
                     resolved_bot,
@@ -1926,6 +2099,7 @@ def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
             )
             if cur.rowcount:
                 saved += 1
+    print(f"native-backtest saved bot_id={bot_id} saved={saved}")
     return saved
 
 
@@ -1950,21 +2124,28 @@ def backtest_trades(bot_id: Optional[str] = None, limit: int = 500) -> list[dict
 
 
 def backtest_summary(bot_id: Optional[str] = None) -> dict:
-    rows = backtest_trades(bot_id=bot_id, limit=10000)
-    profits = [float_or_zero(row.get("profit_money")) for row in rows]
+    rows = [_normalize_filtered_backtest_trade(row) for row in backtest_trades(bot_id=bot_id, limit=10000)]
+    closed_rows = [row for row in rows if str(row.get("status") or "").lower() != "open"]
+    profits = [float_or_zero(row.get("profit_money")) for row in closed_rows if row.get("profit_money") is not None]
+    r_values = [float_or_zero(row.get("r_multiple")) for row in closed_rows if row.get("r_multiple") is not None]
     wins = [p for p in profits if p > 0]
     losses = [p for p in profits if p < 0]
-    total = len(rows)
-    best_row = max(rows, key=lambda r: float_or_zero(r.get("profit_money")), default=None)
-    worst_row = min(rows, key=lambda r: float_or_zero(r.get("profit_money")), default=None)
+    total = len(closed_rows)
+    gross_profit = sum(wins)
+    gross_loss = sum(losses)
     return {
+        "total": total,
         "total_trades": total,
         "wins": len(wins),
         "losses": len(losses),
         "win_rate": round((len(wins) / total) * 100, 1) if total else 0,
         "total_pnl": round(sum(profits), 2),
-        "best": best_row,
-        "worst": worst_row,
+        "best_trade": round(max(profits), 2) if profits else None,
+        "worst_trade": round(min(profits), 2) if profits else None,
+        "profit_factor": round(gross_profit / abs(gross_loss), 2) if gross_loss < 0 else 0,
+        "avg_r": round(sum(r_values) / len(r_values), 2) if r_values else None,
+        "tp1_hit_rate": round((sum(1 for row in closed_rows if row.get("tp1_hit")) / total) * 100, 1) if total else 0,
+        "tp2_hit_rate": round((sum(1 for row in closed_rows if row.get("tp2_hit")) / total) * 100, 1) if total else 0,
     }
 
 

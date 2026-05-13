@@ -697,11 +697,33 @@ async def mt5_native_backtest(body: dict, request: Request):
     if not isinstance(trades, list):
         return err("trades must be a list")
     try:
+        logger.info("native-backtest received bot_id=%s trades=%s", bot_id, len(trades))
         saved = acct.save_backtest_trades(bot_id, trades)
+        logger.info("native-backtest saved bot_id=%s saved=%s", bot_id, saved)
     except Exception as exc:
         logger.exception("Failed to save native backtest trades")
         return err(f"Failed to save backtest trades: {exc}", status=500)
     return {"ok": True, "status": "ok", "bot_id": bot_id, "received": len(trades), "saved": saved}
+
+
+@app.post("/api/mt5/native-history")
+async def mt5_native_history(body: dict, request: Request):
+    if not native_secret_matches(str(body.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    bot_id = str(body.get("bot_id") or "").strip()
+    deals = body.get("deals") or []
+    if not bot_id:
+        return err("bot_id is required")
+    if not isinstance(deals, list):
+        return err("deals must be a list")
+    try:
+        logger.info("native-history received bot_id=%s deals=%s", bot_id, len(deals))
+        saved = acct.save_history_deals(bot_id, deals)
+        logger.info("native-history saved bot_id=%s saved=%s", bot_id, saved)
+    except Exception as exc:
+        logger.exception("Failed to save native history deals")
+        return err(f"Failed to save history deals: {exc}", status=500)
+    return {"ok": True, "status": "ok", "bot_id": bot_id, "received": len(deals), "saved": saved}
 
 
 @app.get("/api/dashboard/backtest")
@@ -709,17 +731,23 @@ async def dashboard_backtest(bot_id: str | None = None, asset: str | None = None
     try:
         selector = bot_id or asset
         trades = acct.get_trades_filtered(source="backtest", period="all", asset=selector or "ALL", limit=min(limit, 1000), offset=0)
-        stats = acct.get_stats_filtered(source="backtest", period="all", asset=selector or "ALL")
-        summary = {
-            "total": stats.get("total_trades", 0),
-            "wins": stats.get("wins", 0),
-            "losses": stats.get("losses", 0),
-            "win_rate": stats.get("win_rate", 0),
-            "total_pnl": stats.get("total_pnl", 0),
-        }
+        summary = acct.backtest_summary(bot_id=selector)
     except Exception:
+        logger.exception("Failed to load dashboard backtest")
         trades = []
-        summary = {"total": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl": 0}
+        summary = {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0,
+            "total_pnl": 0,
+            "best_trade": None,
+            "worst_trade": None,
+            "profit_factor": 0,
+            "avg_r": None,
+            "tp1_hit_rate": 0,
+            "tp2_hit_rate": 0,
+        }
     return {"ok": True, "bot_id": bot_id, "asset": asset, "summary": summary, "trades": trades}
 
 
