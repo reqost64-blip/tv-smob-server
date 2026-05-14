@@ -257,7 +257,15 @@ async def health():
 async def serve_dashboard():
     if not DASHBOARD_FILE.exists():
         return JSONResponse({"error": "Dashboard not found"}, status_code=404)
-    return FileResponse(DASHBOARD_FILE, media_type="text/html")
+    return FileResponse(
+        DASHBOARD_FILE,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 # ── 2. Webhook ─────────────────────────────────────────────────────────────────
@@ -918,6 +926,40 @@ async def dashboard_journal(period: str = "today", bot_id: str | None = None, li
     except Exception:
         entries = []
     return {"ok": True, "period": period, "journal": entries}
+
+
+@app.get("/api/dashboard/screenshots")
+async def dashboard_screenshots(bot_id: str | None = None, limit: int = 20):
+    try:
+        screenshots = acct.native_screenshots(selector=bot_id, limit=limit)
+        for shot in screenshots:
+            shot["url"] = f"/api/dashboard/screenshots/{shot['id']}/image"
+    except Exception:
+        logger.exception("Failed to load dashboard screenshots")
+        screenshots = []
+    return {"ok": True, "screenshots": screenshots}
+
+
+@app.get("/api/dashboard/screenshots/{screenshot_id}/image")
+async def dashboard_screenshot_image(screenshot_id: int):
+    try:
+        screenshot = acct.native_screenshot_file(screenshot_id)
+    except Exception:
+        logger.exception("Failed to load dashboard screenshot file")
+        screenshot = None
+    if not screenshot:
+        return JSONResponse({"ok": False, "error": "screenshot_not_found"}, status_code=404)
+    path = Path(str(screenshot.get("file_path") or ""))
+    try:
+        resolved = path.resolve()
+        allowed = (Path("data") / "screenshots").resolve()
+        if allowed not in resolved.parents and resolved != allowed:
+            return JSONResponse({"ok": False, "error": "screenshot_path_not_allowed"}, status_code=403)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid_screenshot_path"}, status_code=400)
+    if not resolved.exists():
+        return JSONResponse({"ok": False, "error": "screenshot_file_missing"}, status_code=404)
+    return FileResponse(resolved)
 
 
 @app.get("/api/dashboard/performance")

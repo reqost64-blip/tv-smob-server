@@ -3,988 +3,611 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MT5 Trading Dashboard</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>MT5 Orbit Command Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap&v=20260514_1" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    *, *::before, *::after { box-sizing: border-box; }
     :root {
-      --bg:           #07090d;
-      --panel:        #0c1018;
-      --panel-alt:    #0a0e14;
-      --border:       #1a2233;
-      --border-hi:    #243040;
-      --green:        #00ff88;
-      --red:          #ff4466;
-      --blue:         #00aaff;
-      --yellow:       #ffcc00;
-      --text:         #8fa0b4;
-      --text-hi:      #ccdde8;
-      --dim:          #3a4f5e;
-      --font:         'JetBrains Mono', 'Courier New', monospace;
+      --bg: #020305;
+      --panel: rgba(8, 12, 18, .82);
+      --panel-2: rgba(12, 18, 27, .72);
+      --line: rgba(111, 157, 190, .18);
+      --line-strong: rgba(255, 177, 82, .28);
+      --text: #91a4b8;
+      --hi: #e7f3ff;
+      --dim: #506578;
+      --gold: #ffb44c;
+      --orange: #ff7b2c;
+      --green: #29ff9a;
+      --red: #ff476a;
+      --blue: #43c7ff;
+      --yellow: #ffd15c;
+      --gray: #66717d;
+      --font: 'JetBrains Mono', Consolas, monospace;
     }
-
     html, body {
-      background: var(--bg);
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 50% 10%, rgba(30, 88, 130, .18), transparent 34rem),
+        radial-gradient(circle at 20% 70%, rgba(255, 122, 44, .09), transparent 26rem),
+        linear-gradient(180deg, #05070b 0%, #020305 42%, #030406 100%);
       color: var(--text);
       font-family: var(--font);
       font-size: 12px;
-      line-height: 1.5;
-      min-height: 100vh;
+      overflow-x: hidden;
     }
-
-    /* ── Header ── */
-    .header {
-      background: var(--panel);
-      border-bottom: 1px solid var(--border-hi);
-      padding: 10px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .header-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--green);
-      letter-spacing: 0.12em;
-    }
-    .header-title span { color: var(--dim); }
-
-    .header-meta {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      font-size: 11px;
-      color: var(--dim);
-    }
-
-    .header-meta #last-updated { color: var(--text-hi); }
-
-    /* ── Status bar ── */
-    .status-bar {
-      background: var(--panel-alt);
-      border-bottom: 1px solid var(--border);
-      padding: 5px 20px;
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      font-size: 11px;
-      flex-wrap: wrap;
-    }
-
-    .sb-item { display: flex; align-items: center; gap: 6px; }
-    .sb-label { color: var(--dim); }
-
-    /* ── Layout ── */
-    .container {
-      padding: 16px 20px;
-      display: grid;
-      gap: 14px;
-    }
-
-    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
-
-    @media (max-width: 960px)  { .row-2 { grid-template-columns: 1fr; } }
-    @media (max-width: 1100px) { .row-3 { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 700px)  { .row-3 { grid-template-columns: 1fr; } }
-
-    /* ── Panel ── */
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      overflow: hidden;
-    }
-
-    .panel-hd {
-      background: var(--panel-alt);
-      padding: 7px 14px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .panel-title {
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--blue);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-
-    .panel-badge {
-      font-size: 10px;
-      color: var(--dim);
-      letter-spacing: 0.06em;
-    }
-
-    .panel-body { padding: 12px 14px; }
-
-    /* ── Stat grid ── */
-    .stat-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px 16px;
-    }
-
-    .stat { display: flex; flex-direction: column; gap: 2px; }
-
-    .stat-lbl {
-      font-size: 9px;
-      color: var(--dim);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    .stat-val {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-hi);
-    }
-
-    .stat-val.green  { color: var(--green); }
-    .stat-val.red    { color: var(--red); }
-    .stat-val.blue   { color: var(--blue); }
-    .stat-val.yellow { color: var(--yellow); }
-    .stat-val.sm     { font-size: 12px; }
-
-    .source-tabs {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 10px;
-    }
-
-    .source-tab {
-      background: var(--panel-alt);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 10px;
-      padding: 4px 8px;
-      cursor: pointer;
-    }
-
-    .source-tab.active {
-      color: var(--green);
-      border-color: var(--green);
-      background: rgba(0,255,136,.08);
-    }
-
-    .metric-grid {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(90px, 1fr));
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(3, 1fr); } }
-    @media (max-width: 540px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
-
-    .metric-card {
-      background: var(--panel-alt);
-      border: 1px solid var(--border);
-      padding: 8px;
-    }
-
-    /* ── PnL hero ── */
-    .pnl-hero { text-align: center; padding: 8px 0 6px; }
-
-    .pnl-big {
-      font-size: 30px;
-      font-weight: 700;
-      line-height: 1;
-    }
-    .pnl-big.green  { color: var(--green); }
-    .pnl-big.red    { color: var(--red); }
-    .pnl-big.dim    { color: var(--dim); }
-
-    .pnl-sub { font-size: 9px; color: var(--dim); letter-spacing: 0.1em; margin-top: 4px; }
-
-    .divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
-
-    /* ── Win rate bar ── */
-    .wr-bar {
-      height: 3px;
-      background: var(--border);
-      border-radius: 2px;
-      margin-top: 10px;
-      overflow: hidden;
-    }
-    .wr-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--green), #00cc66);
-      border-radius: 2px;
-    }
-
-    /* ── Table ── */
-    .tbl-wrap { overflow-x: auto; }
-
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-
-    th {
-      text-align: left;
-      padding: 5px 10px;
-      color: var(--dim);
-      font-weight: 500;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      font-size: 9px;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-    }
-
-    td {
-      padding: 5px 10px;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-    }
-
-    tr:last-child td   { border-bottom: none; }
-    tbody tr:hover td  { background: rgba(0,170,255,0.03); }
-
-    tfoot td { font-size: 11px; padding: 6px 10px; }
-
-    .c-hi  { color: var(--text-hi); font-weight: 500; }
-    .c-green { color: var(--green); }
-    .c-red   { color: var(--red); }
-    .c-blue  { color: var(--blue); }
-    .c-dim   { color: var(--dim); }
-
-    /* ── Bot cards ── */
-    .bots-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      gap: 10px;
-      padding: 12px 14px;
-    }
-
-    .bot-card {
-      background: var(--panel-alt);
-      border: 1px solid var(--border);
-      border-left: 3px solid var(--dim);
-      border-radius: 2px;
-      padding: 10px 12px;
-    }
-    .bot-card.online   { border-left-color: var(--green); }
-    .bot-card.offline  { border-left-color: var(--dim); }
-    .bot-card.disabled { border-left-color: var(--red); }
-
-    .bot-symbol { font-size: 13px; font-weight: 700; color: var(--blue); margin-bottom: 2px; }
-    .bot-id     { font-size: 10px; color: var(--dim); margin-bottom: 7px; }
-
-    .bot-badges { display: flex; gap: 4px; margin-bottom: 7px; }
-
-    .bot-rows   { display: flex; flex-direction: column; gap: 2px; }
-
-    .bot-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-    }
-    .bot-row .lbl { color: var(--dim); }
-
-    /* ── Badges ── */
-    .badge {
-      display: inline-block;
-      padding: 1px 5px;
-      border-radius: 2px;
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      border: 1px solid transparent;
-    }
-    .badge-green  { background: rgba(0,255,136,.10); color: var(--green); border-color: rgba(0,255,136,.25); }
-    .badge-red    { background: rgba(255,68,102,.10); color: var(--red);   border-color: rgba(255,68,102,.25); }
-    .badge-blue   { background: rgba(0,170,255,.10); color: var(--blue);  border-color: rgba(0,170,255,.25); }
-    .badge-dim    { background: rgba(58,79,94,.15);  color: var(--dim);   border-color: var(--border); }
-
-    /* ── Dot indicator ── */
-    .dot {
-      display: inline-block;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-    }
-    .dot-green { background: var(--green); box-shadow: 0 0 5px var(--green); }
-    .dot-red   { background: var(--red); }
-    .dot-dim   { background: var(--dim); }
-
-    /* ── Spinner ── */
-    .spin {
-      display: inline-block;
-      width: 11px;
-      height: 11px;
-      border: 2px solid var(--border-hi);
-      border-top-color: var(--green);
-      border-radius: 50%;
-      animation: spin .75s linear infinite;
-      vertical-align: middle;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── State boxes ── */
-    .state {
-      padding: 22px;
-      text-align: center;
-      color: var(--dim);
-      font-size: 11px;
-    }
-    .state.err  { color: var(--red); }
-    .state.warn { color: var(--yellow); }
-
-    /* ── Scanline overlay ── */
-    body::after {
-      content: '';
+    body::before {
+      content: "";
       position: fixed;
       inset: 0;
-      background: repeating-linear-gradient(
-        0deg, transparent, transparent 3px,
-        rgba(0,170,255,.008) 3px, rgba(0,170,255,.008) 4px
-      );
       pointer-events: none;
-      z-index: 9999;
+      background-image:
+        radial-gradient(circle, rgba(255,255,255,.42) 0 1px, transparent 1px),
+        radial-gradient(circle, rgba(67,199,255,.22) 0 1px, transparent 1px);
+      background-size: 140px 140px, 220px 220px;
+      background-position: 12px 28px, 80px 120px;
+      opacity: .22;
+    }
+    button, input, select { font-family: var(--font); }
+    button {
+      background: rgba(13, 22, 32, .88);
+      color: var(--hi);
+      border: 1px solid rgba(67, 199, 255, .28);
+      border-radius: 6px;
+      padding: 8px 11px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: border-color .16s ease, box-shadow .16s ease, color .16s ease;
+    }
+    button:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(255,180,76,.18); }
+    button.danger { border-color: rgba(255,71,106,.36); }
+    button.good { border-color: rgba(41,255,154,.36); }
+    button.ghost { color: var(--text); }
+    .shell { padding: 16px; max-width: 1880px; margin: 0 auto; position: relative; }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(90deg, rgba(8,12,18,.92), rgba(7,10,15,.68));
+      border-radius: 8px;
+      box-shadow: 0 0 45px rgba(0,0,0,.35), inset 0 0 30px rgba(67,199,255,.025);
+    }
+    .title { color: var(--hi); font-weight: 800; font-size: 18px; letter-spacing: .14em; }
+    .subtitle { margin-top: 4px; color: var(--gold); font-size: 10px; letter-spacing: .18em; }
+    .top-meta { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+    .chip {
+      border: 1px solid var(--line);
+      background: rgba(5, 9, 13, .76);
+      padding: 7px 9px;
+      border-radius: 6px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .chip b { color: var(--hi); font-weight: 700; }
+    .green { color: var(--green); } .red { color: var(--red); } .blue { color: var(--blue); }
+    .yellow { color: var(--yellow); } .gold { color: var(--gold); } .dim { color: var(--dim); }
+    .main-grid {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: minmax(620px, 1.35fr) minmax(360px, .65fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+    .space-panel {
+      min-height: 560px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255,180,76,.2);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at center, rgba(255,180,76,.08), transparent 19rem),
+        linear-gradient(180deg, rgba(5,8,13,.74), rgba(3,4,7,.92));
+    }
+    .space-panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(transparent 0 49%, rgba(67,199,255,.035) 50%, transparent 51%);
+      background-size: 100% 6px;
+      mix-blend-mode: screen;
+      opacity: .55;
+    }
+    .black-hole {
+      position: absolute;
+      left: 50%;
+      top: 47%;
+      width: 184px;
+      height: 184px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(circle, #000 0 42%, #030405 48%, rgba(0,0,0,.5) 55%, transparent 62%);
+      box-shadow:
+        0 0 26px rgba(0,0,0,1),
+        0 0 58px rgba(255,123,44,.3),
+        0 0 118px rgba(67,199,255,.16);
+      z-index: 4;
+    }
+    .black-hole::before {
+      content: "";
+      position: absolute;
+      inset: -42px -76px;
+      border-radius: 50%;
+      background:
+        conic-gradient(from 20deg, transparent 0 10%, rgba(255,180,76,.95), rgba(255,123,44,.5), transparent 34%, rgba(67,199,255,.28), transparent 62%, rgba(255,209,92,.75), transparent 88%);
+      filter: blur(10px);
+      transform: rotateX(68deg);
+      animation: spin 8s linear infinite;
+      opacity: .88;
+    }
+    .black-hole::after {
+      content: "";
+      position: absolute;
+      inset: 48px;
+      border-radius: 50%;
+      background: #000;
+      box-shadow: inset 0 0 18px rgba(255,255,255,.04);
+    }
+    .orbit {
+      position: absolute;
+      left: 50%;
+      top: 47%;
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(122, 164, 194, .2);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .orbit.o1 { width: 300px; height: 180px; }
+    .orbit.o2 { width: 430px; height: 275px; border-color: rgba(255,180,76,.22); }
+    .orbit.o3 { width: 565px; height: 365px; }
+    .orbit.o4 { width: 710px; height: 450px; border-color: rgba(67,199,255,.18); }
+    .bot-node {
+      --color: var(--gray);
+      --x: 0px;
+      --y: 0px;
+      position: absolute;
+      left: calc(50% + var(--x));
+      top: calc(47% + var(--y));
+      transform: translate(-50%, -50%);
+      width: 74px;
+      min-height: 74px;
+      border: none;
+      background: transparent;
+      z-index: 6;
+      padding: 0;
+    }
+    .node-core {
+      width: 38px;
+      height: 38px;
+      margin: 0 auto 6px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #fff, var(--color) 24%, rgba(0,0,0,.85) 68%);
+      box-shadow: 0 0 20px var(--color), 0 0 44px color-mix(in srgb, var(--color) 42%, transparent);
+      animation: nodePulse 2.7s ease-in-out infinite;
+    }
+    .bot-node.stale .node-core, .bot-node.offline .node-core { animation: none; opacity: .55; }
+    .bot-node.error .node-core { animation: glitchPulse .9s infinite; }
+    .bot-node.position .node-core::after {
+      content: "";
+      position: absolute;
+      width: 58px;
+      height: 58px;
+      border: 1px solid var(--color);
+      border-radius: 50%;
+      transform: translate(-10px, -10px);
+      animation: ring 1.5s ease-out infinite;
+    }
+    .node-label { color: var(--hi); font-size: 11px; text-shadow: 0 0 10px #000; }
+    .node-state { margin-top: 2px; font-size: 9px; color: var(--color); }
+    .signal-flash { box-shadow: 0 0 0 9999px rgba(255,180,76,.035) inset; }
+    .drawer, .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 0 35px rgba(0,0,0,.22);
+    }
+    .drawer { min-height: 560px; overflow: hidden; }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,180,76,.04);
+    }
+    .panel-title {
+      color: var(--blue);
+      text-transform: uppercase;
+      letter-spacing: .16em;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .panel-body { padding: 12px; }
+    .kv { display: grid; grid-template-columns: 130px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(111,157,190,.09); }
+    .kv span:first-child { color: var(--dim); text-transform: uppercase; font-size: 9px; }
+    .kv span:last-child { color: var(--hi); overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(5,9,13,.7);
+    }
+    .filters select, .filters input {
+      background: rgba(7, 12, 18, .9);
+      border: 1px solid var(--line);
+      color: var(--hi);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-width: 150px;
+    }
+    .data-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-6 { grid-column: span 6; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat {
+      border: 1px solid rgba(111,157,190,.12);
+      background: rgba(4,8,12,.58);
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 62px;
+    }
+    .stat-label { color: var(--dim); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+    .stat-value { color: var(--hi); font-size: 17px; font-weight: 800; margin-top: 5px; }
+    .chart {
+      height: 64px;
+      margin-top: 12px;
+      border: 1px solid rgba(111,157,190,.12);
+      border-radius: 6px;
+      background: linear-gradient(180deg, rgba(67,199,255,.08), transparent);
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid rgba(111,157,190,.1); white-space: nowrap; }
+    th { color: var(--dim); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+    .table-wrap { overflow-x: auto; }
+    .empty, .error, .loading { color: var(--dim); padding: 18px; text-align: center; }
+    .error { color: var(--red); }
+    .badge { border: 1px solid var(--line); border-radius: 999px; padding: 3px 7px; font-size: 9px; text-transform: uppercase; }
+    .badge.green { border-color: rgba(41,255,154,.35); color: var(--green); }
+    .badge.red { border-color: rgba(255,71,106,.35); color: var(--red); }
+    .badge.yellow { border-color: rgba(255,209,92,.35); color: var(--yellow); }
+    .badge.gray { border-color: rgba(120,130,140,.3); color: var(--gray); }
+    .shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .shot { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: rgba(0,0,0,.28); }
+    .shot img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+    .shot div { padding: 7px; color: var(--dim); font-size: 10px; }
+    dialog { border: 1px solid var(--line-strong); border-radius: 8px; background: #05080d; color: var(--hi); max-width: min(1100px, 94vw); }
+    dialog::backdrop { background: rgba(0,0,0,.76); }
+    dialog img { width: 100%; display: block; }
+    .ui-version {
+      margin: 14px 2px 0;
+      color: rgba(145, 164, 184, .55);
+      font-size: 10px;
+      text-align: right;
+    }
+    @keyframes spin { to { transform: rotateX(68deg) rotate(360deg); } }
+    @keyframes nodePulse { 0%,100% { filter: brightness(1); transform: scale(1); } 50% { filter: brightness(1.35); transform: scale(1.08); } }
+    @keyframes ring { from { opacity: .7; transform: translate(-10px, -10px) scale(.75); } to { opacity: 0; transform: translate(-10px, -10px) scale(1.55); } }
+    @keyframes glitchPulse { 0%,100% { transform: translate(0,0) scale(1); } 30% { transform: translate(1px,-1px) scale(1.08); } 65% { transform: translate(-1px,1px) scale(.97); } }
+    @media (max-width: 1180px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .space-panel, .drawer { min-height: 500px; }
+      .span-3, .span-4, .span-6, .span-8 { grid-column: span 12; }
+    }
+    @media (max-width: 720px) {
+      .shell { padding: 10px; }
+      .topbar { grid-template-columns: 1fr; }
+      .top-meta { justify-content: flex-start; }
+      .space-panel { min-height: 430px; }
+      .orbit.o4 { width: 92vw; height: 330px; }
+      .orbit.o3 { width: 78vw; height: 270px; }
+      .orbit.o2 { width: 62vw; height: 210px; }
+      .orbit.o1 { width: 44vw; height: 150px; }
+      .bot-node { width: 64px; }
+      .shots { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-
-<!-- ── Header ─────────────────────────────────────────────────────────────── -->
-<div class="header">
-  <div class="header-title">▸ MT5 <span>//</span> TRADING DASHBOARD</div>
-  <div class="header-meta">
-    <div id="refresh-wrap" style="display:flex;align-items:center;gap:6px;">
-      <span id="spin-icon" class="spin" style="display:none;"></span>
-      <span>REFRESH <span id="countdown" style="color:var(--green)">30</span>s</span>
-    </div>
-    <div>UPDATED: <span id="last-updated">—</span></div>
-  </div>
-</div>
-
-<!-- ── Status bar ─────────────────────────────────────────────────────────── -->
-<div class="status-bar">
-  <div class="sb-item">
-    <span class="sb-label">MODE</span>
-    <span id="sb-mode" style="color:var(--blue)">—</span>
-  </div>
-  <div class="sb-item">
-    <span class="sb-label">TRADING</span>
-    <span id="sb-trading">—</span>
-  </div>
-  <div class="sb-item">
-    <span class="sb-label">BOTS ONLINE</span>
-    <span id="sb-bots">—</span>
-  </div>
-  <div class="sb-item">
-    <span class="sb-label">LAST HEARTBEAT</span>
-    <span id="sb-hb">—</span>
-  </div>
-</div>
-
-<!-- ── Content ────────────────────────────────────────────────────────────── -->
-<div class="container">
-
-  <!-- Row 1: Account + PnL -->
-  <div class="row-2">
-
-    <div class="panel">
-      <div class="panel-hd">
-        <span class="panel-title">Account</span>
-        <span class="panel-badge" id="acct-badge">—</span>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <div class="title">MT5 ORBIT COMMAND CENTER</div>
+        <div class="subtitle">NATIVE_MT5_ONLY · LIVE DATA FROM RENDER</div>
       </div>
-      <div class="panel-body" id="acct-panel"><div class="state"><span class="spin"></span></div></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-hd">
-        <span class="panel-title">P&amp;L Today</span>
-        <span class="panel-badge">TODAY</span>
+      <div class="top-meta">
+        <div class="chip">SYSTEM <b id="system-status">loading</b></div>
+        <div class="chip">BOTS <b id="bots-online">0/5</b></div>
+        <div class="chip">LAST HB <b id="heartbeat-age">нет данных</b></div>
+        <div class="chip">TIME <b id="clock">--:--:--</b></div>
+        <button onclick="refreshAll()">Refresh</button>
       </div>
-      <div class="panel-body" id="pnl-panel"><div class="state"><span class="spin"></span></div></div>
-    </div>
+    </header>
 
-  </div>
-
-  <!-- Row 2: Bots -->
-  <div class="panel">
-    <div class="panel-hd">
-      <span class="panel-title">Bot Status</span>
-      <span class="panel-badge" id="bots-badge">—</span>
-    </div>
-    <div id="bots-panel"><div class="state"><span class="spin"></span></div></div>
-  </div>
-
-  <!-- Row 3: Open Positions -->
-  <div class="panel">
-    <div class="panel-hd">
-      <span class="panel-title">Open Positions</span>
-      <span class="panel-badge" id="pos-badge">—</span>
-    </div>
-    <div id="pos-panel"><div class="state"><span class="spin"></span></div></div>
-  </div>
-
-  <!-- Row 4: Trades + Performance -->
-  <div class="row-2">
-
-    <div class="panel">
-      <div class="panel-hd">
-        <span class="panel-title">Recent Trades</span>
-        <span class="panel-badge" id="trades-badge">TODAY</span>
+    <section class="main-grid">
+      <div class="space-panel" id="space-panel">
+        <div class="orbit o1"></div><div class="orbit o2"></div><div class="orbit o3"></div><div class="orbit o4"></div>
+        <div class="black-hole"></div>
+        <div id="orbit-nodes"></div>
       </div>
-      <div id="trades-panel"><div class="state"><span class="spin"></span></div></div>
+      <aside class="drawer">
+        <div class="panel-head">
+          <div class="panel-title">Selected Bot</div>
+          <span class="badge gray" id="drawer-state">waiting</span>
+        </div>
+        <div class="panel-body" id="bot-drawer"><div class="empty">Выберите бота на орбите</div></div>
+      </aside>
+    </section>
+
+    <div class="filters">
+      <select id="bot-filter" onchange="onFilterChange()"><option value="ALL">All bots</option></select>
+      <select id="period-filter" onchange="onFilterChange()">
+        <option value="today">Today</option><option value="week">7 days</option><option value="month">30 days</option>
+      </select>
+      <select id="source-filter" onchange="onFilterChange()">
+        <option value="bot">Live trades</option><option value="backtest">Backtest</option><option value="all">All</option>
+      </select>
+      <input id="search-filter" oninput="renderAll()" placeholder="Search bot / symbol / event">
     </div>
 
-    <div class="panel">
-      <div class="panel-hd">
-        <span class="panel-title">Performance</span>
-        <span class="panel-badge">TODAY · PER BOT</span>
-      </div>
-      <div id="perf-panel"><div class="state"><span class="spin"></span></div></div>
-    </div>
-
+    <section class="data-grid">
+      <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div></div><div class="panel-body" id="account-panel"></div></div>
+      <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div></div><div class="panel-body" id="pnl-panel"></div></div>
+      <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">latest snapshots</span></div><div class="panel-body" id="curve-panel"></div></div>
+      <div class="panel span-12"><div class="panel-head"><div class="panel-title">Open Positions</div></div><div class="panel-body" id="positions-panel"></div></div>
+      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Recent Trades</div></div><div class="panel-body" id="trades-panel"></div></div>
+      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Alerts</div></div><div class="panel-body" id="alerts-panel"></div></div>
+      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Bot Journal</div></div><div class="panel-body" id="journal-panel"></div></div>
+      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Screenshots</div></div><div class="panel-body" id="screens-panel"></div></div>
+      <div class="panel span-12"><div class="panel-head"><div class="panel-title">Backtest / History</div><span class="badge yellow">REAL and BACKTEST separated</span></div><div class="panel-body" id="history-panel"></div></div>
+    </section>
+    <div class="ui-version">DASHBOARD_UI_VERSION = 20260514_ORBIT_V1</div>
   </div>
 
-  <!-- Row 5: Journal -->
-  <div class="panel">
-    <div class="panel-hd">
-      <span class="panel-title">Journal</span>
-      <span class="panel-badge" id="journal-badge">TODAY</span>
+  <dialog id="screenshot-modal" onclick="if(event.target===this)this.close()">
+    <div style="padding:10px;display:flex;justify-content:space-between;gap:12px;align-items:center">
+      <span id="modal-caption" class="dim"></span>
+      <button onclick="document.getElementById('screenshot-modal').close()">Close</button>
     </div>
-    <div id="journal-panel"><div class="state"><span class="spin"></span></div></div>
-  </div>
-
-</div><!-- /container -->
+    <img id="modal-image" alt="MT5 screenshot">
+  </dialog>
 
 <script>
 'use strict';
-
-const BASE    = 'https://tv-smob-server-1.onrender.com';
-const REFRESH = 30;
-let tradesSource = 'bot';
-let statsSource = 'bot';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const el = id => document.getElementById(id);
-
-function fmt(v, d = 2) {
-  if (v == null) return '—';
-  return Number(v).toFixed(d);
+const API = location.origin;
+const DASHBOARD_UI_VERSION = '20260514_ORBIT_V1';
+const CACHE_BUSTER = '20260514_1';
+console.info('DASHBOARD_UI_VERSION =', DASHBOARD_UI_VERSION);
+const BOT_IDS = ['NAS100_ORB_VWAP_RSI_OF','SP500_ORB_VWAP_RSI_OF','DJ30_ORB_VWAP_RSI_OF','BTCUSD_ORB_VWAP_RSI_OF','GER40_ORB_VWAP_RSI_OF'];
+const SHORT = { NAS100_ORB_VWAP_RSI_OF:'NAS100', SP500_ORB_VWAP_RSI_OF:'SP500', DJ30_ORB_VWAP_RSI_OF:'DJ30', BTCUSD_ORB_VWAP_RSI_OF:'BTCUSD', GER40_ORB_VWAP_RSI_OF:'GER40' };
+const POS = [
+  {x:-260,y:-86},{x:210,y:-126},{x:-135,y:154},{x:298,y:112},{x:20,y:-198}
+];
+let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
+let refreshTimer = null;
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const n = v => v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v);
+const fmt = (v,d=2) => n(v) == null ? 'нет данных' : n(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const money = v => n(v) == null ? 'нет данных' : (n(v) >= 0 ? '+' : '-') + Math.abs(n(v)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const clsPnl = v => n(v) == null ? 'dim' : n(v) >= 0 ? 'green' : 'red';
+function age(iso){ if(!iso) return 'ожидаю heartbeat'; const s=Math.max(0,Math.floor((Date.now()-new Date(iso).getTime())/1000)); if(s<60)return s+'s'; if(s<3600)return Math.floor(s/60)+'m'; return Math.floor(s/3600)+'h'; }
+function dt(iso){ if(!iso) return 'нет данных'; try{return new Date(iso).toLocaleString('en-GB',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});}catch{return esc(iso)}}
+async function api(path, opts){ const r=await fetch(API+path, opts); if(!r.ok) throw new Error(path+' HTTP '+r.status); return r.json(); }
+function period(){ return $('period-filter').value; }
+function selectedBot(){ return $('bot-filter').value; }
+function source(){ return $('source-filter').value; }
+function searchText(){ return $('search-filter').value.trim().toLowerCase(); }
+function botShort(id){ return SHORT[id] || (id || 'UNKNOWN').split('_')[0]; }
+function botStatus(b){
+  if(!b) return {kind:'offline', color:'var(--gray)', label:'offline'};
+  const enabled = b.enabled !== false;
+  const online = b.online_status === 'online';
+  const stale = b.online_status === 'stale';
+  const ev = String(b.last_event_type || '').toLowerCase();
+  const hasError = /fail|error|reject|blocked/.test(ev) || !!b.reason;
+  if(!online && !stale) return {kind:'offline', color:'var(--gray)', label:'offline'};
+  if(hasError) return {kind:'error', color:'var(--red)', label:'error'};
+  if(!enabled || stale) return {kind:'warn', color:'var(--yellow)', label: enabled ? 'stale' : 'disabled'};
+  return {kind:'online', color:'var(--green)', label:'online'};
 }
-
-function fmtMoney(v) {
-  if (v == null) return '—';
-  const n = Number(v);
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+' : '−') + abs;
+function mergedBots(){
+  return BOT_IDS.map((id,i)=>{
+    const found = state.bots.find(b => b.bot_id === id) || {};
+    return {...found, bot_id:id, asset:found.asset||botShort(id), orbit:POS[i]};
+  });
 }
-
-function fmtNum(v) {
-  if (v == null) return '—';
-  return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function filterRows(rows){
+  const bot = selectedBot(), q = searchText();
+  return (rows||[]).filter(r => (bot==='ALL' || r.bot_id===bot || r.symbol===bot) && (!q || JSON.stringify(r).toLowerCase().includes(q)));
 }
-
-function pnlCls(v) {
-  if (v == null) return '';
-  return Number(v) >= 0 ? 'c-green' : 'c-red';
+function stat(label,value,klass=''){ return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value ${klass}">${value}</div></div>`; }
+function table(headers, rows, empty){
+  if(!rows.length) return `<div class="empty">${empty}</div>`;
+  return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
-
-function pnlBig(v) {
-  if (v == null) return 'dim';
-  const n = Number(v);
-  if (n > 0) return 'green';
-  if (n < 0) return 'red';
-  return 'dim';
+function renderTop(){
+  const s = state.status || {};
+  const bots = mergedBots(), online = bots.filter(b=>b.online_status==='online').length;
+  $('system-status').textContent = s.system_mode || 'NATIVE_MT5_ONLY';
+  $('system-status').className = s.trading_enabled === false ? 'red' : 'green';
+  $('bots-online').textContent = `${online}/5`;
+  $('heartbeat-age').textContent = age(s.last_heartbeat_at);
+  $('clock').textContent = new Date().toLocaleTimeString('en-GB');
 }
-
-function timeAgo(iso) {
-  if (!iso) return '—';
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 0)    return 'just now';
-  if (s < 60)   return s + 's ago';
-  if (s < 3600) return Math.floor(s / 60) + 'm ago';
-  return Math.floor(s / 3600) + 'h ago';
+function renderOrbit(){
+  const latest = (state.journal[0] && (state.journal[0].trade_uid || state.journal[0].id || state.journal[0].created_at)) || '';
+  if(latest && state.lastEventKey && latest !== state.lastEventKey){ $('space-panel').classList.add('signal-flash'); setTimeout(()=>$('space-panel').classList.remove('signal-flash'), 900); }
+  if(latest) state.lastEventKey = latest;
+  $('orbit-nodes').innerHTML = mergedBots().map(b=>{
+    const st=botStatus(b), pos=b.orbit||{x:0,y:0};
+    const cls = st.kind==='error'?'error':st.kind==='offline'?'offline':st.kind==='warn'?'stale':'online';
+    return `<button class="bot-node ${cls} ${b.has_position?'position':''}" style="--x:${pos.x}px;--y:${pos.y}px;--color:${st.color}" onclick="selectBot('${b.bot_id}')">
+      <div class="node-core"></div><div class="node-label">${botShort(b.bot_id)}</div><div class="node-state">${st.label}${b.has_position?' · POSITION':''}</div>
+    </button>`;
+  }).join('');
 }
-
-function fmtTime(iso) {
-  if (!iso) return '—';
+function renderBotOptions(){
+  const current = selectedBot();
+  $('bot-filter').innerHTML = '<option value="ALL">All bots</option>' + BOT_IDS.map(id=>`<option value="${id}">${botShort(id)}</option>`).join('');
+  $('bot-filter').value = current || 'ALL';
+}
+function selectBot(id){ state.selected = id; $('bot-filter').value = id; renderAll(); }
+function renderDrawer(){
+  const id = state.selected || selectedBot();
+  const b = id && id !== 'ALL' ? mergedBots().find(x=>x.bot_id===id) : null;
+  if(!b){ $('drawer-state').textContent='waiting'; $('bot-drawer').innerHTML='<div class="empty">Выберите бота на орбите</div>'; return; }
+  const st=botStatus(b), pos=b.active_position || state.positions.find(p=>p.bot_id===b.bot_id || p.symbol===b.symbol);
+  const botTrades = state.trades.filter(t=>t.bot_id===b.bot_id);
+  const wins = botTrades.filter(t=>n(t.profit_money ?? t.profit)>0).length, losses = botTrades.filter(t=>n(t.profit_money ?? t.profit)<0).length;
+  $('drawer-state').textContent = st.label; $('drawer-state').className = 'badge ' + (st.kind==='online'?'green':st.kind==='error'?'red':st.kind==='warn'?'yellow':'gray');
+  $('bot-drawer').innerHTML = `
+    <div class="kv"><span>bot_id</span><span>${esc(b.bot_id)}</span></div>
+    <div class="kv"><span>symbol</span><span>${esc(b.symbol || b.asset || 'нет данных')}</span></div>
+    <div class="kv"><span>enabled</span><span class="${b.enabled!==false?'green':'red'}">${b.enabled!==false?'enabled':'disabled'}</span></div>
+    <div class="kv"><span>online</span><span>${esc(b.online_status || 'ожидаю heartbeat')}</span></div>
+    <div class="kv"><span>heartbeat age</span><span>${age(b.last_heartbeat_at)}</span></div>
+    <div class="kv"><span>last event</span><span>${esc(b.last_event_type || 'нет данных')}</span></div>
+    <div class="kv"><span>last error</span><span class="red">${esc(b.reason || findLastError(b.bot_id) || 'нет данных')}</span></div>
+    <div class="kv"><span>position</span><span>${pos ? esc((pos.side||'')+' '+(pos.lot||pos.volume||'')+' lots') : 'нет открытых позиций'}</span></div>
+    <div class="kv"><span>entry / sl</span><span>${pos ? `${fmt(pos.entry ?? pos.entry_price,5)} / ${fmt(pos.sl,5)}` : 'нет данных'}</span></div>
+    <div class="kv"><span>tp1 / tp2 / tp3</span><span>${pos ? `${fmt(pos.tp1,5)} / ${fmt(pos.tp2,5)} / ${fmt(pos.tp3,5)}` : 'нет данных'}</span></div>
+    <div class="kv"><span>today pnl</span><span class="${clsPnl(sum(botTrades.map(t=>t.profit_money??t.profit)))}">${money(sum(botTrades.map(t=>t.profit_money??t.profit)))}</span></div>
+    <div class="kv"><span>wins / losses</span><span><span class="green">${wins}</span> / <span class="red">${losses}</span></span></div>
+    <div class="kv"><span>account/equity</span><span>${state.account ? fmt(state.account.equity) : 'нет данных'}</span></div>
+    <div class="actions">
+      <button class="good" onclick="toggleBot('${b.bot_id}', true)">Enable bot</button>
+      <button class="danger" onclick="toggleBot('${b.bot_id}', false)">Disable bot</button>
+      <button onclick="openLastScreenshot('${b.bot_id}')">View last screenshot</button>
+      <button onclick="focusPanel('journal-panel')">View journal</button>
+      <button onclick="focusPanel('trades-panel')">View trades</button>
+      <button onclick="refreshAll()">Refresh</button>
+    </div>`;
+}
+function sum(values){ const nums=values.map(n).filter(v=>v!=null); return nums.length?nums.reduce((a,b)=>a+b,0):null; }
+function findLastError(botId){ const e=state.journal.find(x=>x.bot_id===botId && /fail|error|reject|blocked/i.test(String(x.event_type||x.message||''))); return e && (e.message || e.event_type); }
+async function toggleBot(botId, enabled){
+  let secret = sessionStorage.getItem('control_secret') || '';
+  if(!secret) { secret = prompt('Control secret for enable/disable'); if(secret) sessionStorage.setItem('control_secret', secret); }
+  if(!secret) return;
   try {
-    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch { return String(iso); }
+    await api(enabled?'/api/bots/enable':'/api/bots/disable', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({bot_id:botId, secret, reason:'dashboard control'})});
+    await refreshAll();
+  } catch(e) { alert('Control request failed: '+e.message); }
 }
-
-function fmtDateTime(iso) {
-  if (!iso) return '—';
+function renderAccount(){
+  const a=state.account; if(!a){ $('account-panel').innerHTML='<div class="empty">нет данных</div>'; return; }
+  $('account-panel').innerHTML = `<div class="stats">
+    ${stat('Balance', fmt(a.balance))}
+    ${stat('Equity', fmt(a.equity), 'blue')}
+    ${stat('Margin', fmt(a.margin))}
+    ${stat('Free margin', fmt(a.free_margin))}
+    ${stat('Margin level', n(a.margin_level)==null?'нет данных':fmt(a.margin_level,1)+'%', n(a.margin_level)>120?'green':'yellow')}
+    ${stat('Open positions', a.open_positions ?? state.positions.length)}
+  </div>`;
+}
+function renderPnl(){
+  const p=state.pnl||{}, closed=p.closed_pnl??p.net_pnl, floating=sum(state.positions.map(x=>x.profit??x.pnl));
+  const trades=p.trades_count??0, wins=p.wins??0, losses=p.losses??0, wr=trades?wins/trades*100:null;
+  $('pnl-panel').innerHTML = `<div class="stats">
+    ${stat('Closed PnL', money(closed), clsPnl(closed))}
+    ${stat('Floating PnL', money(floating), clsPnl(floating))}
+    ${stat('Trades', trades)}
+    ${stat('Wins / Losses', `<span class="green">${wins}</span> / <span class="red">${losses}</span>`)}
+    ${stat('Winrate', wr==null?'нет сделок сегодня':wr.toFixed(0)+'%', wr>=50?'green':'red')}
+    ${stat('Best / Worst', `<span class="green">${money(p.best_trade)}</span> / <span class="red">${money(p.worst_trade)}</span>`)}
+  </div>`;
+}
+function renderCurve(){
+  const closed = state.trades.slice().reverse().map(t=>n(t.profit_money??t.profit)).filter(v=>v!=null);
+  let acc=0, pts=closed.map(v=>(acc+=v)); if(!pts.length) { $('curve-panel').innerHTML='<div class="empty">нет данных equity curve</div>'; return; }
+  const min=Math.min(...pts,0), max=Math.max(...pts,0), range=max-min||1;
+  const path=pts.map((v,i)=>`${i?'L':'M'} ${i/(pts.length-1||1)*100} ${60-((v-min)/range)*52}`).join(' ');
+  $('curve-panel').innerHTML = `<svg class="chart" viewBox="0 0 100 64" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="var(--green)" stroke-width="1.8"/><line x1="0" y1="${60-((0-min)/range)*52}" x2="100" y2="${60-((0-min)/range)*52}" stroke="rgba(255,255,255,.16)" stroke-width=".6"/></svg>`;
+}
+function renderPositions(){
+  const rows=filterRows(state.positions).map(p=>`<tr><td class="blue">${esc(p.symbol||'нет данных')}</td><td class="${String(p.side).toLowerCase()==='buy'?'green':'red'}">${esc(p.side||'')}</td><td>${fmt(p.lot??p.volume,2)}</td><td>${fmt(p.entry??p.entry_price,5)}</td><td>${fmt(p.sl,5)}</td><td>${fmt(p.tp1,5)} / ${fmt(p.tp2,5)} / ${fmt(p.tp3,5)}</td><td class="${clsPnl(p.profit??p.pnl)}">${money(p.profit??p.pnl)}</td><td>${dt(p.opened_at||p.time)}</td><td>${esc(p.bot_id||p.magic||'нет данных')}</td></tr>`);
+  $('positions-panel').innerHTML = table(['symbol','side','lot','entry','sl','tp1/tp2/tp3','pnl','opened','bot'], rows, 'нет открытых позиций');
+}
+function renderTrades(){
+  const rows=filterRows(state.trades).slice(0,80).map(t=>`<tr><td>${dt(t.closed_at||t.close_time||t.created_at)}</td><td class="blue">${esc(t.bot_id||'нет данных')}</td><td>${esc(t.symbol||'')}</td><td class="${String(t.side).toLowerCase()==='buy'?'green':'red'}">${esc(t.side||'')}</td><td>${fmt(t.lot??t.volume??t.lots,2)}</td><td>${fmt(t.entry??t.entry_price??t.open_price,5)}</td><td>${fmt(t.exit_price??t.close_price,5)}</td><td class="${clsPnl(t.profit_money??t.profit??t.pnl)}">${money(t.profit_money??t.profit??t.pnl)}</td><td>${esc(t.status||t.close_reason||'')}</td></tr>`);
+  $('trades-panel').innerHTML = table(['time','bot','symbol','side','lot','entry','exit','pnl','status'], rows, 'нет сделок сегодня');
+}
+function renderJournal(){
+  const rows=filterRows(state.journal).slice(0,120).map(e=>`<tr><td>${dt(e.created_at||e.time||e.timestamp)}</td><td class="blue">${esc(e.bot_id||'нет данных')}</td><td class="${/fail|error|reject/i.test(e.event_type||'')?'red':'gold'}">${esc(e.event_type||e.type||'')}</td><td>${esc(e.message||e.detail||e.details||'')}</td><td>${esc(e.source||'mt5_native')}</td></tr>`);
+  $('journal-panel').innerHTML = table(['time','bot','event_type','message','source'], rows, 'нет записей журнала');
+}
+function renderAlerts(){
+  const alerts = mergedBots().filter(b=>botStatus(b).kind!=='online').map(b=>`<div class="kv"><span>${botShort(b.bot_id)}</span><span class="${botStatus(b).kind==='error'?'red':'yellow'}">${botStatus(b).label} · ${esc(b.reason||b.online_status||'нет данных')}</span></div>`);
+  $('alerts-panel').innerHTML = alerts.length ? alerts.join('') : '<div class="empty">нет активных alerts</div>';
+}
+function renderScreens(){
+  const shots=filterRows(state.screenshots).slice(0,6);
+  if(!shots.length){ $('screens-panel').innerHTML='<div class="empty">нет screenshots</div>'; return; }
+  $('screens-panel').innerHTML = `<div class="shots">${shots.map(s=>`<div class="shot" onclick="openScreenshot(${s.id})"><img src="${esc(s.url)}" loading="lazy" alt="screenshot"><div>${esc(s.bot_id||'')} · ${esc(s.event_type||'')} · ${dt(s.time||s.created_at)}</div></div>`).join('')}</div>`;
+}
+function renderHistory(){
+  const s=state.backtest?.summary||{}; const real=state.stats||{};
+  $('history-panel').innerHTML = `<div class="stats">
+    ${stat('REAL trades', real.total_trades??0)}
+    ${stat('REAL PnL', money(real.total_pnl), clsPnl(real.total_pnl))}
+    ${stat('REAL winrate', real.win_rate!=null?fmt(real.win_rate,1)+'%':'нет данных')}
+    ${stat('REAL PF', real.profit_factor!=null?fmt(real.profit_factor,2):'нет данных', 'blue')}
+    ${stat('BACKTEST trades', s.total_trades??s.total??0)}
+    ${stat('BACKTEST PnL', money(s.total_pnl), clsPnl(s.total_pnl))}
+    ${stat('BACKTEST winrate', s.win_rate!=null?fmt(s.win_rate,1)+'%':'нет данных')}
+    ${stat('BACKTEST PF', s.profit_factor!=null?fmt(s.profit_factor,2):'нет данных', 'blue')}
+  </div>`;
+}
+function openScreenshot(id){ const s=state.screenshots.find(x=>x.id===id); if(!s)return; $('modal-image').src=s.url; $('modal-caption').textContent=`${s.bot_id||''} · ${s.event_type||''} · ${dt(s.time||s.created_at)}`; $('screenshot-modal').showModal(); }
+function openLastScreenshot(botId){ const s=state.screenshots.find(x=>x.bot_id===botId); if(s) openScreenshot(s.id); else alert('Нет screenshot для выбранного бота'); }
+function focusPanel(id){ $(id).scrollIntoView({behavior:'smooth', block:'center'}); }
+function renderAll(){ renderTop(); renderBotOptions(); renderOrbit(); renderDrawer(); renderAccount(); renderPnl(); renderCurve(); renderPositions(); renderTrades(); renderJournal(); renderAlerts(); renderScreens(); renderHistory(); }
+async function refreshAll(){
+  const bot = selectedBot(), per = period(), src = source();
+  const asset = bot === 'ALL' ? 'ALL' : bot;
   try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-GB', { month: 'short', day: '2-digit' })
-      + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  } catch { return String(iso); }
-}
-
-function sideOf(t) {
-  const s = (t.side || t.type || '').toString().toLowerCase();
-  if (s === 'buy'  || s === '0') return 'BUY';
-  if (s === 'sell' || s === '1') return 'SELL';
-  return s.toUpperCase() || '—';
-}
-
-function sourceIcon(src) {
-  const s = (src || 'bot').toString().toLowerCase();
-  if (s === 'backtest') return '📊';
-  if (s === 'manual' || s === 'all') return '👤';
-  return '🤖';
-}
-
-function sourceTabs(active, target) {
-  const options = target === 'stats'
-    ? [['bot', '🤖 Только бот'], ['all', '👤 Все сделки'], ['backtest', '📊 Бэктест']]
-    : [['bot', '🤖 Бот'], ['all', '👤 Все сделки'], ['backtest', '📊 Бэктест']];
-  return '<div class="source-tabs">' + options.map(([value, label]) =>
-    `<button class="source-tab ${active === value ? 'active' : ''}" onclick="set${target === 'stats' ? 'Stats' : 'Trades'}Source('${value}')">${label}</button>`
-  ).join('') + '</div>';
-}
-
-function summarizeTrades(trades) {
-  const profits = trades.map(t => Number(t.profit_money ?? t.profit ?? t.pnl ?? 0));
-  const wins = profits.filter(v => v > 0);
-  const losses = profits.filter(v => v < 0);
-  const grossProfit = wins.reduce((a, b) => a + b, 0);
-  const grossLoss = losses.reduce((a, b) => a + b, 0);
-  return {
-    total: trades.length,
-    wins: wins.length,
-    losses: losses.length,
-    winRate: trades.length ? wins.length / trades.length * 100 : 0,
-    totalPnl: profits.reduce((a, b) => a + b, 0),
-    profitFactor: grossLoss < 0 ? grossProfit / Math.abs(grossLoss) : 0
-  };
-}
-
-function metricCards(items) {
-  return '<div class="metric-grid">' + items.map(item => `
-    <div class="metric-card">
-      <div class="stat-lbl">${item.label}</div>
-      <div class="stat-val ${item.cls || ''}">${item.value}</div>
-    </div>
-  `).join('') + '</div>';
-}
-
-// ── API ───────────────────────────────────────────────────────────────────────
-
-async function apiFetch(path) {
-  const res = await fetch(BASE + path, { signal: AbortSignal.timeout(12000) });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
-}
-
-// ── State helpers ─────────────────────────────────────────────────────────────
-
-function setLoading(target) {
-  target.innerHTML = '<div class="state"><span class="spin"></span></div>';
-}
-
-function setEmpty(target, msg = 'No data yet') {
-  target.innerHTML = '<div class="state">' + msg + '</div>';
-}
-
-function setError(target, msg = 'Failed to load') {
-  target.innerHTML = '<div class="state err">⚠ ' + msg + '</div>';
-}
-
-// ── Renderers ─────────────────────────────────────────────────────────────────
-
-function renderStatus(d) {
-  el('sb-mode').textContent = d.system_mode || '—';
-
-  const tr = d.trading_enabled;
-  el('sb-trading').innerHTML = tr == null
-    ? '—'
-    : tr
-      ? '<span class="dot dot-green"></span> <span class="c-green">ENABLED</span>'
-      : '<span class="dot dot-red"></span> <span class="c-red">DISABLED</span>';
-
-  el('sb-bots').innerHTML =
-    '<span class="c-green">' + (d.bots_online || 0) + '</span>' +
-    '<span class="c-dim">/' + (d.bots_total || 0) + ' online · </span>' +
-    '<span class="c-blue">' + (d.bots_enabled || 0) + '</span>' +
-    '<span class="c-dim"> enabled</span>';
-
-  el('sb-hb').innerHTML = d.last_heartbeat_at
-    ? '<span class="c-green">' + timeAgo(d.last_heartbeat_at) + '</span>'
-    : '<span class="c-dim">none</span>';
-}
-
-function renderAccount(d) {
-  const panel = el('acct-panel');
-  const a = d.account;
-  if (!a) { setEmpty(panel); return; }
-
-  el('acct-badge').textContent = a.account_id || a.login || '';
-
-  const cur = (a.currency ? a.currency + ' ' : '');
-  const ml = Number(a.margin_level || 0);
-
-  panel.innerHTML = `
-    <div class="stat-grid">
-      <div class="stat">
-        <div class="stat-lbl">Balance</div>
-        <div class="stat-val">${cur}${fmtNum(a.balance)}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Equity</div>
-        <div class="stat-val blue">${cur}${fmtNum(a.equity)}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Margin</div>
-        <div class="stat-val sm">${cur}${fmtNum(a.margin)}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Free Margin</div>
-        <div class="stat-val sm">${cur}${fmtNum(a.free_margin ?? a.margin_free)}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Margin Level</div>
-        <div class="stat-val ${ml > 200 ? 'green' : ml > 100 ? 'yellow' : 'red'}">${fmt(ml, 1)}%</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Floating P&amp;L</div>
-        <div class="stat-val ${pnlBig(a.profit)}">${fmtMoney(a.profit)}</div>
-      </div>
-    </div>
-    ${a.broker ? `<div style="margin-top:10px;font-size:9px;color:var(--dim)">${a.broker}${a.server ? ' · ' + a.server : ''}</div>` : ''}
-  `;
-}
-
-function renderPnl(d) {
-  const panel = el('pnl-panel');
-  const p = d.pnl;
-  if (!p || !Object.keys(p).length) { setEmpty(panel); return; }
-
-  const closed   = p.closed_pnl ?? p.net_pnl ?? 0;
-  const trades   = p.trades_count ?? 0;
-  const wins     = p.wins ?? 0;
-  const losses   = p.losses ?? 0;
-  const wr       = trades > 0 ? (wins / trades * 100) : 0;
-
-  panel.innerHTML = `
-    <div class="pnl-hero">
-      <div class="pnl-big ${pnlBig(closed)}">${fmtMoney(closed)}</div>
-      <div class="pnl-sub">CLOSED P&amp;L TODAY</div>
-    </div>
-    <hr class="divider">
-    <div class="stat-grid">
-      <div class="stat">
-        <div class="stat-lbl">Trades</div>
-        <div class="stat-val">${trades}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Win Rate</div>
-        <div class="stat-val ${wr >= 50 ? 'green' : 'red'}">${wr.toFixed(0)}%</div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Wins / Losses</div>
-        <div class="stat-val sm"><span class="c-green">${wins}</span> / <span class="c-red">${losses}</span></div>
-      </div>
-      <div class="stat">
-        <div class="stat-lbl">Best / Worst</div>
-        <div class="stat-val sm">
-          <span class="c-green">${p.best_trade != null ? fmtMoney(p.best_trade) : '—'}</span>
-          &nbsp;/&nbsp;
-          <span class="c-red">${p.worst_trade != null ? fmtMoney(p.worst_trade) : '—'}</span>
-        </div>
-      </div>
-    </div>
-    <div class="wr-bar"><div class="wr-fill" style="width:${wr}%"></div></div>
-  `;
-}
-
-function renderBots(d) {
-  const panel = el('bots-panel');
-  const bots  = d.bots || [];
-
-  el('bots-badge').textContent = bots.length + ' bot' + (bots.length !== 1 ? 's' : '');
-
-  if (!bots.length) { setEmpty(panel, 'No bots registered'); return; }
-
-  const cards = bots.map(b => {
-    const enabled  = b.enabled !== false;
-    const online   = b.online_status === 'online';
-    const cardCls  = !enabled ? 'disabled' : online ? 'online' : 'offline';
-
-    const enBadge  = enabled
-      ? '<span class="badge badge-green">ENABLED</span>'
-      : '<span class="badge badge-red">DISABLED</span>';
-    const onBadge  = online
-      ? '<span class="badge badge-green">ONLINE</span>'
-      : '<span class="badge badge-dim">OFFLINE</span>';
-
-    const pos = b.has_position && b.active_position
-      ? `<div class="bot-row"><span class="lbl">Position</span><span class="c-blue">${b.active_position.side || ''} ${b.active_position.volume || ''} lots</span></div>`
-      : '';
-
-    const reason = b.reason
-      ? `<div class="bot-row"><span class="lbl">Reason</span><span class="c-red">${b.reason}</span></div>`
-      : '';
-
-    return `
-      <div class="bot-card ${cardCls}">
-        <div class="bot-symbol">${b.symbol || b.asset || '—'}</div>
-        <div class="bot-id">${b.bot_id || '—'}</div>
-        <div class="bot-badges">${enBadge}${onBadge}</div>
-        <div class="bot-rows">
-          <div class="bot-row"><span class="lbl">Heartbeat</span><span>${timeAgo(b.last_heartbeat_at)}</span></div>
-          <div class="bot-row"><span class="lbl">Last event</span><span>${b.last_event_type || '—'}</span></div>
-          ${pos}${reason}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  panel.innerHTML = `<div class="bots-grid">${cards}</div>`;
-}
-
-function renderPositions(d) {
-  const panel = el('pos-panel');
-  const rows  = d.positions || [];
-
-  el('pos-badge').textContent = rows.length + ' open';
-
-  if (!rows.length) { setEmpty(panel, 'No open positions'); return; }
-
-  const trs = rows.map(p => {
-    const side  = sideOf(p);
-    const sCls  = side === 'BUY' ? 'c-green' : 'c-red';
-    const pnl   = p.profit ?? p.unrealized_pnl ?? p.pnl ?? null;
-    return `
-      <tr>
-        <td class="c-hi">${p.symbol || p.asset || '—'}</td>
-        <td class="${sCls}">${side}</td>
-        <td>${fmt(p.volume ?? p.lots, 2)}</td>
-        <td>${fmt(p.price_open ?? p.open_price, 5)}</td>
-        <td class="c-blue">${fmt(p.price_current ?? p.current_price, 5)}</td>
-        <td class="${pnlCls(pnl)}">${fmtMoney(pnl)}</td>
-        <td class="c-dim">${p.bot_id ?? p.magic ?? '—'}</td>
-        <td class="c-dim">${fmtDateTime(p.time ?? p.open_time ?? p.opened_at)}</td>
-      </tr>
-    `;
-  }).join('');
-
-  panel.innerHTML = `
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr>
-          <th>Symbol</th><th>Side</th><th>Volume</th>
-          <th>Open</th><th>Current</th><th>P&amp;L</th>
-          <th>Bot</th><th>Opened</th>
-        </tr></thead>
-        <tbody>${trs}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderTrades(d) {
-  const panel  = el('trades-panel');
-  const trades = d.trades || [];
-
-  el('trades-badge').textContent = trades.length + ' trade' + (trades.length !== 1 ? 's' : '');
-
-  const summary = summarizeTrades(trades);
-  const cards = metricCards([
-    { label: 'Total', value: d.total ?? summary.total },
-    { label: 'Wins', value: summary.wins, cls: 'green' },
-    { label: 'Losses', value: summary.losses, cls: 'red' },
-    { label: 'Win Rate', value: summary.winRate.toFixed(0) + '%', cls: summary.winRate >= 50 ? 'green' : 'red' },
-    { label: 'Total P&L', value: fmtMoney(summary.totalPnl), cls: pnlBig(summary.totalPnl) },
-    { label: 'Profit Factor', value: summary.profitFactor.toFixed(2), cls: 'blue' },
-  ]);
-
-  if (!trades.length) {
-    panel.innerHTML = sourceTabs(tradesSource, 'trades') + cards + '<div class="state">No trades today</div>';
-    return;
-  }
-
-  const trs = trades.map(t => {
-    const side = sideOf(t);
-    const sCls = side === 'BUY' ? 'c-green' : 'c-red';
-    const pnl  = t.profit_money ?? t.profit ?? t.pnl ?? null;
-    return `
-      <tr>
-        <td>${sourceIcon(t.source)}</td>
-        <td class="c-hi">${t.symbol || t.asset || '—'}</td>
-        <td class="${sCls}">${side}</td>
-        <td>${fmt(t.volume ?? t.lots, 2)}</td>
-        <td>${fmt(t.price_open ?? t.open_price ?? t.entry_price, 5)}</td>
-        <td>${fmt(t.price_close ?? t.close_price ?? t.exit_price, 5)}</td>
-        <td class="${pnlCls(pnl)}">${fmtMoney(pnl)}</td>
-        <td class="c-dim">${t.bot_id || '—'}</td>
-        <td class="c-dim">${fmtTime(t.time_close ?? t.closed_at ?? t.close_time)}</td>
-      </tr>
-    `;
-  }).join('');
-
-  panel.innerHTML = `
-    ${sourceTabs(tradesSource, 'trades')}
-    ${cards}
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr>
-          <th>Src</th><th>Symbol</th><th>Side</th><th>Volume</th>
-          <th>Open</th><th>Close</th><th>P&amp;L</th>
-          <th>Bot</th><th>Closed</th>
-        </tr></thead>
-        <tbody>${trs}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderPerformance(d) {
-  const panel = el('perf-panel');
-  const stats = d.stats || {};
-
-  panel.innerHTML = `
-    ${sourceTabs(statsSource, 'stats')}
-    ${metricCards([
-      { label: 'Total', value: stats.total_trades ?? 0 },
-      { label: 'Wins', value: stats.wins ?? 0, cls: 'green' },
-      { label: 'Losses', value: stats.losses ?? 0, cls: 'red' },
-      { label: 'Win Rate', value: fmt(stats.win_rate ?? 0, 0) + '%', cls: Number(stats.win_rate || 0) >= 50 ? 'green' : 'red' },
-      { label: 'Total P&L', value: fmtMoney(stats.total_pnl ?? 0), cls: pnlBig(stats.total_pnl ?? 0) },
-      { label: 'Profit Factor', value: fmt(stats.profit_factor ?? 0, 2), cls: 'blue' },
-    ])}
-    <div class="stat-grid">
-      <div class="stat"><div class="stat-lbl">Best Trade</div><div class="stat-val green">${stats.best_trade != null ? fmtMoney(stats.best_trade) : '—'}</div></div>
-      <div class="stat"><div class="stat-lbl">Worst Trade</div><div class="stat-val red">${stats.worst_trade != null ? fmtMoney(stats.worst_trade) : '—'}</div></div>
-      <div class="stat"><div class="stat-lbl">Average</div><div class="stat-val">${stats.avg_trade != null ? fmtMoney(stats.avg_trade) : '—'}</div></div>
-      <div class="stat"><div class="stat-lbl">Avg R</div><div class="stat-val blue">${stats.avg_r != null ? fmt(stats.avg_r, 2) + 'R' : '—'}</div></div>
-    </div>
-  `;
-}
-
-function renderJournal(d) {
-  const panel   = el('journal-panel');
-  const entries = d.journal || [];
-
-  el('journal-badge').textContent = entries.length + ' entr' + (entries.length !== 1 ? 'ies' : 'y');
-
-  if (!entries.length) { setEmpty(panel, 'No journal entries today'); return; }
-
-  const trs = entries.slice(0, 100).map(e => {
-    const ev = (e.event_type || e.type || '').toLowerCase();
-    let cls = 'c-dim';
-    if (/open|buy|entry/.test(ev))          cls = 'c-green';
-    else if (/close|sell|loss|stop/.test(ev)) cls = 'c-red';
-    else if (/tp|profit|win/.test(ev))       cls = 'c-green';
-    else if (/be|breakeven/.test(ev))        cls = 'c-blue';
-
-    const detail = e.detail || e.details || e.message || e.comment || '';
-    return `
-      <tr>
-        <td class="c-dim">${fmtTime(e.timestamp ?? e.created_at ?? e.time)}</td>
-        <td class="c-blue">${e.bot_id || '—'}</td>
-        <td class="${cls}">${ev || '—'}</td>
-        <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${detail}</td>
-      </tr>
-    `;
-  }).join('');
-
-  panel.innerHTML = `
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr>
-          <th>Time</th><th>Bot</th><th>Event</th><th>Details</th>
-        </tr></thead>
-        <tbody>${trs}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-// ── Main fetch ────────────────────────────────────────────────────────────────
-
-function setTradesSource(source) {
-  tradesSource = source;
-  fetchAll().then(startCountdown);
-}
-
-function setStatsSource(source) {
-  statsSource = source;
-  fetchAll().then(startCountdown);
-}
-
-async function fetchAll() {
-  el('spin-icon').style.display = 'inline-block';
-
-  const [statusR, accountR, pnlR, botsR, posR, tradesR, perfR, journalR] =
-    await Promise.allSettled([
-      apiFetch('/api/dashboard/status'),
-      apiFetch('/api/dashboard/account'),
-      apiFetch('/api/dashboard/pnl?period=today'),
-      apiFetch('/api/dashboard/bots'),
-      apiFetch('/api/dashboard/positions'),
-      apiFetch('/api/dashboard/trades?source=' + encodeURIComponent(tradesSource) + '&period=today&limit=50'),
-      apiFetch('/api/dashboard/stats?source=' + encodeURIComponent(statsSource) + '&period=week&asset=ALL'),
-      apiFetch('/api/dashboard/journal?period=today&limit=100'),
+    const [status, account, pnl, bots, positions, trades, stats, journal, screens, backtest] = await Promise.all([
+      api('/api/dashboard/status'),
+      api('/api/dashboard/account'),
+      api('/api/dashboard/pnl?period=today'),
+      api('/api/dashboard/bots'),
+      api('/api/dashboard/positions'),
+      api(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`),
+      api(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`),
+      api(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot==='ALL'?'':encodeURIComponent(bot)}&limit=150`),
+      api(`/api/dashboard/screenshots?bot_id=${bot==='ALL'?'':encodeURIComponent(bot)}&limit=24`),
+      api(`/api/dashboard/backtest?bot_id=${bot==='ALL'?'':encodeURIComponent(bot)}&limit=200`)
     ]);
-
-  el('spin-icon').style.display = 'none';
-  el('last-updated').textContent = new Date().toLocaleTimeString('en-GB');
-
-  if (statusR.status === 'fulfilled'  && statusR.value.ok)  renderStatus(statusR.value);
-
-  if (accountR.status === 'fulfilled' && accountR.value.ok) renderAccount(accountR.value);
-  else setError(el('acct-panel'), 'Account unavailable');
-
-  if (pnlR.status === 'fulfilled'     && pnlR.value.ok)     renderPnl(pnlR.value);
-  else setError(el('pnl-panel'), 'P&L unavailable');
-
-  if (botsR.status === 'fulfilled'    && botsR.value.ok)    renderBots(botsR.value);
-  else setError(el('bots-panel'), 'Bots unavailable');
-
-  if (posR.status === 'fulfilled'     && posR.value.ok)     renderPositions(posR.value);
-  else setError(el('pos-panel'), 'Positions unavailable');
-
-  if (tradesR.status === 'fulfilled'  && tradesR.value.ok)  renderTrades(tradesR.value);
-  else setError(el('trades-panel'), 'Trades unavailable');
-
-  if (perfR.status === 'fulfilled'    && perfR.value.ok)    renderPerformance(perfR.value);
-  else setError(el('perf-panel'), 'Performance unavailable');
-
-  if (journalR.status === 'fulfilled' && journalR.value.ok) renderJournal(journalR.value);
-  else setError(el('journal-panel'), 'Journal unavailable');
+    state.status=status; state.account=account.account; state.pnl=pnl.pnl; state.bots=bots.bots||[]; state.positions=positions.positions||[]; state.trades=trades.trades||[]; state.stats=stats.stats||{}; state.journal=journal.journal||[]; state.screenshots=screens.screenshots||[]; state.backtest=backtest;
+    renderAll();
+  } catch(e) {
+    console.error(e);
+    $('system-status').textContent='API ERROR'; $('system-status').className='red';
+  }
 }
-
-// ── Countdown + auto-refresh ──────────────────────────────────────────────────
-
-let countdown = REFRESH;
-let timer     = null;
-
-function startCountdown() {
-  countdown = REFRESH;
-  clearInterval(timer);
-  timer = setInterval(() => {
-    countdown--;
-    el('countdown').textContent = countdown;
-    if (countdown <= 0) {
-      clearInterval(timer);
-      fetchAll().then(startCountdown);
-    }
-  }, 1000);
-}
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
-
-fetchAll().then(startCountdown);
+function onFilterChange(){ const bot=selectedBot(); state.selected = bot === 'ALL' ? state.selected : bot; refreshAll(); }
+setInterval(()=>{ $('clock').textContent = new Date().toLocaleTimeString('en-GB'); }, 1000);
+refreshAll();
+refreshTimer = setInterval(refreshAll, 8000);
 </script>
 </body>
 </html>

@@ -23,8 +23,8 @@ DEFAULT_NATIVE_BOTS = [
     {"asset": "NAS100", "bot_id": "NAS100_ORB_VWAP_RSI_OF", "symbol": "NAS100.r", "magic_number": 26043001},
     {"asset": "SP500", "bot_id": "SP500_ORB_VWAP_RSI_OF", "symbol": "US500.r", "magic_number": 26043003},
     {"asset": "DJ30", "bot_id": "DJ30_ORB_VWAP_RSI_OF", "symbol": "DJ30.r", "magic_number": 26043002},
-    {"asset": "BTCUSD", "bot_id": "BTCUSD_ORB_VWAP_RSI_OF", "symbol": "BTCUSD", "magic_number": 26043004},
-    {"asset": "GER40", "bot_id": "GER40_ORB_VWAP_RSI_OF", "symbol": "GER40", "magic_number": 26043005},
+    {"asset": "BTCUSD", "bot_id": "BTCUSD_ORB_VWAP_RSI_OF", "symbol": "BTCUSD", "magic_number": 26043005},
+    {"asset": "GER40", "bot_id": "GER40_ORB_VWAP_RSI_OF", "symbol": "GER40", "magic_number": 26043004},
 ]
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
@@ -913,6 +913,37 @@ def last_native_screenshot(selector: Optional[str] = None) -> Optional[dict]:
             LIMIT 1
             """,
             params,
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def native_screenshots(selector: Optional[str] = None, limit: int = 20) -> list[dict]:
+    control = get_native_bot_control(selector) if selector else None
+    filters = []
+    params = []
+    if control:
+        filters.append("(bot_id = ? OR symbol = ?)")
+        params.extend([control.get("bot_id"), control.get("symbol")])
+    where = "WHERE " + " AND ".join(filters) if filters else ""
+    with db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id, trade_uid, bot_id, symbol, event_type, caption, time, created_at
+            FROM native_screenshots
+            {where}
+            ORDER BY COALESCE(time, created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            [*params, max(1, min(int(limit or 20), 100))],
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def native_screenshot_file(screenshot_id: int) -> Optional[dict]:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id, file_path, caption, bot_id, symbol, event_type, time, created_at FROM native_screenshots WHERE id = ?",
+            (screenshot_id,),
         ).fetchone()
         return dict(row) if row else None
 
