@@ -9,34 +9,40 @@
   <title>MT5 Orbit Command Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap&v=20260514_1" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap&v=20260514_2" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     :root {
-      --bg: #020305;
-      --panel: rgba(8, 12, 18, .82);
-      --panel-2: rgba(12, 18, 27, .72);
-      --line: rgba(111, 157, 190, .18);
-      --line-strong: rgba(255, 177, 82, .28);
-      --text: #91a4b8;
-      --hi: #e7f3ff;
-      --dim: #506578;
-      --gold: #ffb44c;
-      --orange: #ff7b2c;
-      --green: #29ff9a;
-      --red: #ff476a;
-      --blue: #43c7ff;
-      --yellow: #ffd15c;
-      --gray: #66717d;
-      --font: 'JetBrains Mono', Consolas, monospace;
+      --bg: #020408;
+      --bg2: #05080e;
+      --panel: rgba(7, 11, 17, .78);
+      --panel-strong: rgba(10, 16, 24, .92);
+      --glass: rgba(12, 19, 28, .64);
+      --line: rgba(120, 150, 175, .16);
+      --line2: rgba(170, 190, 205, .26);
+      --line-hot: rgba(193, 142, 74, .36);
+      --text: #93a3b4;
+      --muted: #5f7081;
+      --faint: #354454;
+      --hi: #e8f2fb;
+      --gold: #c99858;
+      --amber: #d58a42;
+      --blue: #6ab7df;
+      --cyan: #64d3d8;
+      --green: #45d68b;
+      --yellow: #d3b15c;
+      --red: #d85d62;
+      --orange: #d07944;
+      --gray: #717b85;
+      --font: "JetBrains Mono", Consolas, monospace;
     }
     html, body {
       margin: 0;
       min-height: 100%;
       background:
-        radial-gradient(circle at 50% 10%, rgba(30, 88, 130, .18), transparent 34rem),
-        radial-gradient(circle at 20% 70%, rgba(255, 122, 44, .09), transparent 26rem),
-        linear-gradient(180deg, #05070b 0%, #020305 42%, #030406 100%);
+        radial-gradient(circle at 50% -20%, rgba(90, 125, 155, .17), transparent 34rem),
+        radial-gradient(circle at 8% 42%, rgba(184, 129, 70, .08), transparent 28rem),
+        linear-gradient(180deg, #060912 0%, #020408 48%, #010204 100%);
       color: var(--text);
       font-family: var(--font);
       font-size: 12px;
@@ -47,281 +53,612 @@
       position: fixed;
       inset: 0;
       pointer-events: none;
-      background-image:
-        radial-gradient(circle, rgba(255,255,255,.42) 0 1px, transparent 1px),
-        radial-gradient(circle, rgba(67,199,255,.22) 0 1px, transparent 1px);
-      background-size: 140px 140px, 220px 220px;
-      background-position: 12px 28px, 80px 120px;
-      opacity: .22;
+      background:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(circle at 50% 28%, black, transparent 78%);
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(transparent 0 49%, rgba(116, 190, 224, .026) 50%, transparent 51%);
+      background-size: 100% 7px;
+      opacity: .42;
+      mix-blend-mode: screen;
     }
     button, input, select { font-family: var(--font); }
     button {
-      background: rgba(13, 22, 32, .88);
+      min-height: 32px;
+      border: 1px solid rgba(120, 150, 175, .24);
+      border-radius: 4px;
+      background: linear-gradient(180deg, rgba(18, 28, 38, .92), rgba(7, 11, 17, .94));
       color: var(--hi);
-      border: 1px solid rgba(67, 199, 255, .28);
-      border-radius: 6px;
-      padding: 8px 11px;
-      font-size: 11px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 7px 10px;
       cursor: pointer;
-      transition: border-color .16s ease, box-shadow .16s ease, color .16s ease;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 10px 24px rgba(0,0,0,.18);
+      transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, color .16s ease;
     }
-    button:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(255,180,76,.18); }
-    button.danger { border-color: rgba(255,71,106,.36); }
-    button.good { border-color: rgba(41,255,154,.36); }
+    button:hover {
+      border-color: rgba(201, 152, 88, .55);
+      color: white;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 22px rgba(201,152,88,.16), 0 12px 28px rgba(0,0,0,.28);
+      transform: translateY(-1px);
+    }
+    button.good { border-color: rgba(69,214,139,.36); }
+    button.danger { border-color: rgba(216,93,98,.4); }
     button.ghost { color: var(--text); }
-    .shell { padding: 16px; max-width: 1880px; margin: 0 auto; position: relative; }
+    select, input {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: rgba(5, 9, 14, .88);
+      color: var(--hi);
+      padding: 7px 9px;
+      outline: none;
+    }
+    select:focus, input:focus { border-color: rgba(106,183,223,.42); box-shadow: 0 0 0 2px rgba(106,183,223,.08); }
+    .green { color: var(--green); } .red { color: var(--red); } .blue { color: var(--blue); }
+    .yellow { color: var(--yellow); } .gold { color: var(--gold); } .muted { color: var(--muted); }
+    .shell {
+      position: relative;
+      max-width: 1900px;
+      margin: 0 auto;
+      padding: 14px;
+      z-index: 1;
+    }
     .topbar {
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) auto;
-      gap: 16px;
-      align-items: center;
-      padding: 14px 16px;
-      border: 1px solid var(--line);
-      background: linear-gradient(90deg, rgba(8,12,18,.92), rgba(7,10,15,.68));
-      border-radius: 8px;
-      box-shadow: 0 0 45px rgba(0,0,0,.35), inset 0 0 30px rgba(67,199,255,.025);
-    }
-    .title { color: var(--hi); font-weight: 800; font-size: 18px; letter-spacing: .14em; }
-    .subtitle { margin-top: 4px; color: var(--gold); font-size: 10px; letter-spacing: .18em; }
-    .top-meta { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
-    .chip {
-      border: 1px solid var(--line);
-      background: rgba(5, 9, 13, .76);
-      padding: 7px 9px;
-      border-radius: 6px;
-      color: var(--text);
-      white-space: nowrap;
-    }
-    .chip b { color: var(--hi); font-weight: 700; }
-    .green { color: var(--green); } .red { color: var(--red); } .blue { color: var(--blue); }
-    .yellow { color: var(--yellow); } .gold { color: var(--gold); } .dim { color: var(--dim); }
-    .main-grid {
-      margin-top: 14px;
-      display: grid;
-      grid-template-columns: minmax(620px, 1.35fr) minmax(360px, .65fr);
+      grid-template-columns: minmax(320px, 1fr) auto;
       gap: 14px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background:
+        linear-gradient(90deg, rgba(12,18,28,.94), rgba(7,11,17,.68)),
+        radial-gradient(circle at 18% 0%, rgba(106,183,223,.1), transparent 34rem);
+      box-shadow: 0 18px 52px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.035);
+      padding: 12px 14px;
+    }
+    .title {
+      color: var(--hi);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .subtitle {
+      margin-top: 5px;
+      color: var(--gold);
+      font-size: 10px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .top-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+    .chip {
+      display: grid;
+      gap: 2px;
+      min-width: 92px;
+      border: 1px solid rgba(120,150,175,.18);
+      border-radius: 4px;
+      background: rgba(4, 8, 13, .74);
+      padding: 7px 9px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+    }
+    .chip span { color: var(--muted); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
+    .chip b { color: var(--hi); font-size: 11px; font-weight: 800; white-space: nowrap; }
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(680px, 1.42fr) minmax(390px, .58fr);
+      gap: 14px;
+      margin-top: 14px;
       align-items: stretch;
     }
-    .space-panel {
-      min-height: 560px;
+    .cockpit {
       position: relative;
+      min-height: 610px;
       overflow: hidden;
-      border: 1px solid rgba(255,180,76,.2);
+      border: 1px solid rgba(120,150,175,.18);
       border-radius: 8px;
       background:
-        radial-gradient(circle at center, rgba(255,180,76,.08), transparent 19rem),
-        linear-gradient(180deg, rgba(5,8,13,.74), rgba(3,4,7,.92));
+        radial-gradient(circle at 50% 45%, rgba(195,150,92,.09), transparent 21rem),
+        linear-gradient(180deg, rgba(9,14,21,.84), rgba(3,5,9,.96));
+      box-shadow: inset 0 0 80px rgba(0,0,0,.58), 0 22px 70px rgba(0,0,0,.28);
+      isolation: isolate;
     }
-    .space-panel::after {
+    #particle-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: .72;
+      z-index: 0;
+    }
+    .cockpit::before {
       content: "";
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background: linear-gradient(transparent 0 49%, rgba(67,199,255,.035) 50%, transparent 51%);
-      background-size: 100% 6px;
-      mix-blend-mode: screen;
-      opacity: .55;
+      background:
+        radial-gradient(circle at 50% 45%, transparent 0 19rem, rgba(2,4,8,.22) 30rem, rgba(0,0,0,.44) 100%),
+        linear-gradient(115deg, transparent 0 54%, rgba(106,183,223,.035) 54.2%, transparent 55%),
+        linear-gradient(65deg, transparent 0 42%, rgba(201,152,88,.035) 42.2%, transparent 43%);
+      z-index: 1;
+    }
+    .system-label {
+      position: absolute;
+      left: 16px;
+      top: 14px;
+      z-index: 12;
+      color: var(--muted);
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
     }
     .black-hole {
       position: absolute;
       left: 50%;
-      top: 47%;
-      width: 184px;
-      height: 184px;
+      top: 48%;
+      width: 268px;
+      height: 268px;
       transform: translate(-50%, -50%);
       border-radius: 50%;
-      background: radial-gradient(circle, #000 0 42%, #030405 48%, rgba(0,0,0,.5) 55%, transparent 62%);
-      box-shadow:
-        0 0 26px rgba(0,0,0,1),
-        0 0 58px rgba(255,123,44,.3),
-        0 0 118px rgba(67,199,255,.16);
-      z-index: 4;
-    }
-    .black-hole::before {
-      content: "";
-      position: absolute;
-      inset: -42px -76px;
-      border-radius: 50%;
+      z-index: 5;
       background:
-        conic-gradient(from 20deg, transparent 0 10%, rgba(255,180,76,.95), rgba(255,123,44,.5), transparent 34%, rgba(67,199,255,.28), transparent 62%, rgba(255,209,92,.75), transparent 88%);
-      filter: blur(10px);
-      transform: rotateX(68deg);
-      animation: spin 8s linear infinite;
-      opacity: .88;
+        radial-gradient(circle at 50% 50%, #000 0 34%, #020203 38%, rgba(0,0,0,.78) 42%, transparent 45%),
+        radial-gradient(circle at 52% 46%, rgba(255,255,255,.08), transparent 21%);
+      box-shadow:
+        inset 0 0 36px #000,
+        0 0 42px rgba(0,0,0,.96),
+        0 0 96px rgba(196,139,72,.18),
+        0 0 160px rgba(91,146,178,.10);
     }
+    .black-hole::before,
     .black-hole::after {
       content: "";
       position: absolute;
-      inset: 48px;
-      border-radius: 50%;
-      background: #000;
-      box-shadow: inset 0 0 18px rgba(255,255,255,.04);
-    }
-    .orbit {
-      position: absolute;
-      left: 50%;
-      top: 47%;
-      transform: translate(-50%, -50%);
-      border: 1px solid rgba(122, 164, 194, .2);
       border-radius: 50%;
       pointer-events: none;
     }
-    .orbit.o1 { width: 300px; height: 180px; }
-    .orbit.o2 { width: 430px; height: 275px; border-color: rgba(255,180,76,.22); }
-    .orbit.o3 { width: 565px; height: 365px; }
-    .orbit.o4 { width: 710px; height: 450px; border-color: rgba(67,199,255,.18); }
-    .bot-node {
-      --color: var(--gray);
-      --x: 0px;
-      --y: 0px;
+    .black-hole::before {
+      left: -92px;
+      right: -92px;
+      top: 39px;
+      bottom: 39px;
+      background:
+        conic-gradient(from 214deg,
+          transparent 0deg,
+          rgba(85,111,128,.16) 34deg,
+          rgba(186,135,75,.54) 78deg,
+          rgba(214,153,78,.78) 105deg,
+          rgba(81,124,151,.22) 142deg,
+          transparent 180deg,
+          rgba(63,95,118,.18) 222deg,
+          rgba(149,105,62,.46) 282deg,
+          rgba(214,153,78,.62) 312deg,
+          transparent 360deg);
+      filter: blur(10px);
+      transform: rotateX(68deg) rotate(-10deg);
+      animation: diskDrift 26s linear infinite;
+      opacity: .88;
+      box-shadow: 0 0 56px rgba(192,137,74,.18);
+    }
+    .black-hole::after {
+      inset: 70px;
+      background: radial-gradient(circle, #000 0 60%, rgba(5,5,6,.9) 72%, transparent 78%);
+      box-shadow: inset 0 0 30px #000, 0 0 44px rgba(0,0,0,.95);
+    }
+    .lens-ring {
       position: absolute;
-      left: calc(50% + var(--x));
-      top: calc(47% + var(--y));
-      transform: translate(-50%, -50%);
-      width: 74px;
-      min-height: 74px;
-      border: none;
-      background: transparent;
-      z-index: 6;
-      padding: 0;
-    }
-    .node-core {
-      width: 38px;
-      height: 38px;
-      margin: 0 auto 6px;
+      left: 50%;
+      top: 48%;
+      transform: translate(-50%, -50%) rotateX(68deg);
+      border: 1px solid rgba(201,152,88,.18);
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 30%, #fff, var(--color) 24%, rgba(0,0,0,.85) 68%);
-      box-shadow: 0 0 20px var(--color), 0 0 44px color-mix(in srgb, var(--color) 42%, transparent);
-      animation: nodePulse 2.7s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 4;
+      filter: blur(.1px);
     }
-    .bot-node.stale .node-core, .bot-node.offline .node-core { animation: none; opacity: .55; }
-    .bot-node.error .node-core { animation: glitchPulse .9s infinite; }
-    .bot-node.position .node-core::after {
+    .lens-ring.r1 { width: 360px; height: 128px; box-shadow: 0 0 34px rgba(201,152,88,.09); }
+    .lens-ring.r2 { width: 480px; height: 176px; border-color: rgba(106,183,223,.12); }
+    .lens-ring.r3 { width: 610px; height: 232px; border-color: rgba(135,151,162,.09); }
+    .orbit-track {
+      position: absolute;
+      left: 50%;
+      top: 48%;
+      transform: translate(-50%, -50%) rotate(var(--tilt));
+      width: var(--w);
+      height: var(--h);
+      border: 1px solid rgba(150, 172, 188, var(--o));
+      border-radius: 50%;
+      z-index: 2;
+      pointer-events: none;
+      box-shadow: inset 0 0 20px rgba(106,183,223,.025);
+    }
+    .orbit-track::after {
       content: "";
       position: absolute;
-      width: 58px;
-      height: 58px;
-      border: 1px solid var(--color);
+      inset: -1px;
       border-radius: 50%;
-      transform: translate(-10px, -10px);
-      animation: ring 1.5s ease-out infinite;
+      border: 1px solid rgba(201,152,88,.035);
+      clip-path: polygon(0 0, 60% 0, 40% 100%, 0 100%);
     }
-    .node-label { color: var(--hi); font-size: 11px; text-shadow: 0 0 10px #000; }
-    .node-state { margin-top: 2px; font-size: 9px; color: var(--color); }
-    .signal-flash { box-shadow: 0 0 0 9999px rgba(255,180,76,.035) inset; }
-    .drawer, .panel {
+    .beam-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .position-beam {
+      position: absolute;
+      left: 50%;
+      top: 48%;
+      width: var(--len);
+      height: 1px;
+      transform-origin: 0 50%;
+      transform: rotate(var(--angle));
+      background: linear-gradient(90deg, transparent, var(--beam), rgba(255,255,255,.36), transparent);
+      box-shadow: 0 0 12px var(--beam);
+      opacity: .62;
+    }
+    .bot-layer { position: absolute; inset: 0; z-index: 8; }
+    .satellite {
+      --sx: 0px;
+      --sy: 0px;
+      --status: var(--gray);
+      --beam: var(--cyan);
+      position: absolute;
+      left: 50%;
+      top: 48%;
+      width: 142px;
+      min-height: 58px;
+      margin-left: -71px;
+      margin-top: -29px;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      text-align: left;
+      transform: translate(var(--sx), var(--sy));
+      animation: orbitalDrift var(--speed) ease-in-out infinite alternate;
+      z-index: 9;
+    }
+    .satellite.selected { animation-play-state: paused; }
+    .sat-frame {
+      position: relative;
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 9px;
+      align-items: center;
+      min-height: 54px;
+      padding: 7px 8px;
+      border: 1px solid rgba(120,150,175,.14);
+      border-radius: 5px;
+      background: linear-gradient(180deg, rgba(10,16,24,.74), rgba(3,6,10,.56));
+      box-shadow: 0 12px 30px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.04);
+      backdrop-filter: blur(6px);
+    }
+    .satellite:hover .sat-frame,
+    .satellite.selected .sat-frame {
+      border-color: rgba(201,152,88,.5);
+      box-shadow: 0 0 0 1px rgba(201,152,88,.15), 0 0 30px rgba(201,152,88,.13), 0 16px 36px rgba(0,0,0,.34);
+    }
+    .sat-icon {
+      position: relative;
+      width: 30px;
+      height: 30px;
+      border: 1px solid rgba(170,190,205,.24);
+      border-radius: 4px;
+      background:
+        linear-gradient(90deg, transparent 42%, rgba(255,255,255,.16) 43% 57%, transparent 58%),
+        linear-gradient(180deg, rgba(126,150,168,.18), rgba(0,0,0,.22));
+      box-shadow: inset 0 0 12px rgba(106,183,223,.06), 0 0 18px rgba(0,0,0,.4);
+    }
+    .sat-icon::before,
+    .sat-icon::after {
+      content: "";
+      position: absolute;
+      top: 10px;
+      width: 14px;
+      height: 8px;
+      border: 1px solid rgba(120,150,175,.2);
+      background: rgba(106,183,223,.08);
+    }
+    .sat-icon::before { left: -15px; }
+    .sat-icon::after { right: -15px; }
+    .status-dot {
+      position: absolute;
+      right: -4px;
+      top: -4px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--status);
+      box-shadow: 0 0 12px var(--status);
+    }
+    .sat-name {
+      color: var(--hi);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+    .sat-status {
+      margin-top: 3px;
+      color: var(--status);
+      font-size: 9px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .satellite.has-position .sat-frame {
+      border-color: color-mix(in srgb, var(--beam) 42%, rgba(120,150,175,.18));
+      box-shadow: 0 0 24px color-mix(in srgb, var(--beam) 18%, transparent), 0 16px 38px rgba(0,0,0,.38);
+    }
+    .satellite.has-position .sat-icon {
+      box-shadow: 0 0 18px color-mix(in srgb, var(--beam) 46%, transparent), inset 0 0 14px rgba(255,255,255,.06);
+    }
+    .satellite.has-position .sat-icon .active-ring {
+      position: absolute;
+      inset: -9px;
+      border: 1px solid var(--beam);
+      border-radius: 50%;
+      opacity: .72;
+      animation: ringPulse 2.4s ease-out infinite;
+    }
+    .panel, .drawer, .terminal-strip {
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: 0 0 35px rgba(0,0,0,.22);
+      border-radius: 6px;
+      background:
+        linear-gradient(180deg, rgba(15, 23, 33, .78), rgba(5, 9, 14, .84)),
+        radial-gradient(circle at 20% 0%, rgba(106,183,223,.06), transparent 18rem);
+      box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
     }
-    .drawer { min-height: 560px; overflow: hidden; }
+    .drawer { min-height: 610px; }
     .panel-head {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
       padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-      background: rgba(255,180,76,.04);
+      border-bottom: 1px solid rgba(120,150,175,.14);
+      background: rgba(4, 8, 13, .45);
     }
     .panel-title {
       color: var(--blue);
-      text-transform: uppercase;
-      letter-spacing: .16em;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
     }
     .panel-body { padding: 12px; }
-    .kv { display: grid; grid-template-columns: 130px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(111,157,190,.09); }
-    .kv span:first-child { color: var(--dim); text-transform: uppercase; font-size: 9px; }
-    .kv span:last-child { color: var(--hi); overflow-wrap: anywhere; }
+    .drawer-hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding-bottom: 12px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(120,150,175,.12);
+    }
+    .drawer-symbol { color: var(--hi); font-size: 22px; font-weight: 800; letter-spacing: .08em; }
+    .drawer-id { margin-top: 4px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+    .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .kv {
+      min-height: 48px;
+      border: 1px solid rgba(120,150,175,.1);
+      border-radius: 4px;
+      background: rgba(2,5,9,.32);
+      padding: 8px;
+    }
+    .kv .k {
+      color: var(--muted);
+      font-size: 8px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .kv .v {
+      margin-top: 5px;
+      color: var(--hi);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+    .position-card {
+      margin-top: 10px;
+      border: 1px solid rgba(106,183,223,.16);
+      border-radius: 5px;
+      background: linear-gradient(180deg, rgba(7,14,20,.78), rgba(3,7,12,.72));
+      padding: 10px;
+      box-shadow: inset 0 0 32px rgba(106,183,223,.035);
+    }
+    .position-card.buy { border-color: rgba(100,211,216,.28); box-shadow: inset 0 0 34px rgba(100,211,216,.045), 0 0 18px rgba(100,211,216,.07); }
+    .position-card.sell { border-color: rgba(216,93,98,.28); box-shadow: inset 0 0 34px rgba(216,93,98,.045), 0 0 18px rgba(216,93,98,.07); }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .filters {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 8px;
       margin: 14px 0;
       padding: 10px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(5,9,13,.7);
-    }
-    .filters select, .filters input {
-      background: rgba(7, 12, 18, .9);
-      border: 1px solid var(--line);
-      color: var(--hi);
       border-radius: 6px;
-      padding: 8px 10px;
-      min-width: 150px;
+      background: rgba(5, 9, 14, .68);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    .filters .label {
+      color: var(--muted);
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      margin-right: 4px;
     }
     .data-grid {
       display: grid;
-      grid-template-columns: repeat(12, 1fr);
+      grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 14px;
     }
-    .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-6 { grid-column: span 6; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
-    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .stat {
-      border: 1px solid rgba(111,157,190,.12);
-      background: rgba(4,8,12,.58);
-      border-radius: 6px;
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+    .metric {
+      min-height: 68px;
+      border: 1px solid rgba(120,150,175,.11);
+      border-radius: 5px;
+      background: linear-gradient(180deg, rgba(5,10,15,.72), rgba(2,5,9,.7));
       padding: 10px;
-      min-height: 62px;
-    }
-    .stat-label { color: var(--dim); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
-    .stat-value { color: var(--hi); font-size: 17px; font-weight: 800; margin-top: 5px; }
-    .chart {
-      height: 64px;
-      margin-top: 12px;
-      border: 1px solid rgba(111,157,190,.12);
-      border-radius: 6px;
-      background: linear-gradient(180deg, rgba(67,199,255,.08), transparent);
+      position: relative;
       overflow: hidden;
     }
+    .metric::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(106,183,223,.28), transparent);
+    }
+    .metric-label { color: var(--muted); font-size: 8px; letter-spacing: .13em; text-transform: uppercase; }
+    .metric-value { margin-top: 7px; color: var(--hi); font-size: 18px; font-weight: 800; letter-spacing: -.02em; }
+    .metric-small { margin-top: 6px; color: var(--muted); font-size: 9px; }
+    .bot-status-grid { display: grid; gap: 8px; }
+    .bot-row {
+      display: grid;
+      grid-template-columns: 76px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid rgba(120,150,175,.1);
+      border-radius: 4px;
+      background: rgba(2,5,9,.28);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 7px;
+      background: var(--dot);
+      box-shadow: 0 0 12px var(--dot);
+    }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid rgba(111,157,190,.1); white-space: nowrap; }
-    th { color: var(--dim); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+    th, td {
+      text-align: left;
+      padding: 8px 8px;
+      border-bottom: 1px solid rgba(120,150,175,.1);
+      white-space: nowrap;
+    }
+    th {
+      color: var(--muted);
+      font-size: 8px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+    td { color: var(--text); }
     .table-wrap { overflow-x: auto; }
-    .empty, .error, .loading { color: var(--dim); padding: 18px; text-align: center; }
+    .empty, .loading, .error {
+      color: var(--muted);
+      min-height: 74px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      border: 1px dashed rgba(120,150,175,.12);
+      border-radius: 5px;
+      background: rgba(2,5,9,.22);
+    }
     .error { color: var(--red); }
-    .badge { border: 1px solid var(--line); border-radius: 999px; padding: 3px 7px; font-size: 9px; text-transform: uppercase; }
-    .badge.green { border-color: rgba(41,255,154,.35); color: var(--green); }
-    .badge.red { border-color: rgba(255,71,106,.35); color: var(--red); }
-    .badge.yellow { border-color: rgba(255,209,92,.35); color: var(--yellow); }
-    .badge.gray { border-color: rgba(120,130,140,.3); color: var(--gray); }
-    .shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .shot { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: rgba(0,0,0,.28); }
-    .shot img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
-    .shot div { padding: 7px; color: var(--dim); font-size: 10px; }
-    dialog { border: 1px solid var(--line-strong); border-radius: 8px; background: #05080d; color: var(--hi); max-width: min(1100px, 94vw); }
-    dialog::backdrop { background: rgba(0,0,0,.76); }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border: 1px solid rgba(120,150,175,.2);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .badge.green { color: var(--green); border-color: rgba(69,214,139,.32); }
+    .badge.red { color: var(--red); border-color: rgba(216,93,98,.34); }
+    .badge.yellow { color: var(--yellow); border-color: rgba(211,177,92,.34); }
+    .badge.gray { color: var(--gray); border-color: rgba(113,123,133,.28); }
+    .chart {
+      height: 96px;
+      width: 100%;
+      display: block;
+      border: 1px solid rgba(120,150,175,.1);
+      border-radius: 5px;
+      background:
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(106,183,223,.06), transparent);
+      background-size: 100% 24px, 48px 100%, 100% 100%;
+      overflow: hidden;
+    }
+    .shots { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+    .shot {
+      border: 1px solid rgba(120,150,175,.14);
+      border-radius: 5px;
+      overflow: hidden;
+      background: rgba(2,5,9,.38);
+      cursor: pointer;
+    }
+    .shot img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; filter: contrast(1.02) saturate(.9); }
+    .shot div { padding: 7px; color: var(--muted); font-size: 9px; }
+    dialog {
+      border: 1px solid var(--line2);
+      border-radius: 6px;
+      background: #05080d;
+      color: var(--hi);
+      max-width: min(1120px, 94vw);
+      box-shadow: 0 28px 90px rgba(0,0,0,.62);
+    }
+    dialog::backdrop { background: rgba(0,0,0,.78); backdrop-filter: blur(4px); }
     dialog img { width: 100%; display: block; }
     .ui-version {
       margin: 14px 2px 0;
-      color: rgba(145, 164, 184, .55);
+      color: rgba(147,163,180,.52);
       font-size: 10px;
       text-align: right;
     }
-    @keyframes spin { to { transform: rotateX(68deg) rotate(360deg); } }
-    @keyframes nodePulse { 0%,100% { filter: brightness(1); transform: scale(1); } 50% { filter: brightness(1.35); transform: scale(1.08); } }
-    @keyframes ring { from { opacity: .7; transform: translate(-10px, -10px) scale(.75); } to { opacity: 0; transform: translate(-10px, -10px) scale(1.55); } }
-    @keyframes glitchPulse { 0%,100% { transform: translate(0,0) scale(1); } 30% { transform: translate(1px,-1px) scale(1.08); } 65% { transform: translate(-1px,1px) scale(.97); } }
-    @media (max-width: 1180px) {
-      .main-grid { grid-template-columns: 1fr; }
-      .space-panel, .drawer { min-height: 500px; }
-      .span-3, .span-4, .span-6, .span-8 { grid-column: span 12; }
+    @keyframes diskDrift { to { transform: rotateX(68deg) rotate(350deg); } }
+    @keyframes orbitalDrift {
+      0% { transform: translate(calc(var(--sx) - 5px), calc(var(--sy) + 2px)); }
+      100% { transform: translate(calc(var(--sx) + 5px), calc(var(--sy) - 2px)); }
     }
-    @media (max-width: 720px) {
+    @keyframes ringPulse {
+      from { opacity: .68; transform: scale(.72); }
+      to { opacity: 0; transform: scale(1.55); }
+    }
+    @media (max-width: 1240px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .cockpit, .drawer { min-height: 560px; }
+      .span-3, .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: span 12; }
+    }
+    @media (max-width: 760px) {
       .shell { padding: 10px; }
       .topbar { grid-template-columns: 1fr; }
       .top-meta { justify-content: flex-start; }
-      .space-panel { min-height: 430px; }
-      .orbit.o4 { width: 92vw; height: 330px; }
-      .orbit.o3 { width: 78vw; height: 270px; }
-      .orbit.o2 { width: 62vw; height: 210px; }
-      .orbit.o1 { width: 44vw; height: 150px; }
-      .bot-node { width: 64px; }
+      .title { font-size: 15px; }
+      .cockpit { min-height: 520px; }
+      .black-hole { width: 210px; height: 210px; }
+      .satellite { width: 118px; margin-left: -59px; }
+      .sat-frame { grid-template-columns: 28px 1fr; gap: 7px; }
+      .sat-icon { width: 25px; height: 25px; }
+      .kv-grid, .metric-grid { grid-template-columns: 1fr; }
       .shots { grid-template-columns: 1fr; }
     }
   </style>
@@ -331,61 +668,78 @@
     <header class="topbar">
       <div>
         <div class="title">MT5 ORBIT COMMAND CENTER</div>
-        <div class="subtitle">NATIVE_MT5_ONLY · LIVE DATA FROM RENDER</div>
+        <div class="subtitle">Cinematic black-hole trading cockpit / NATIVE_MT5_ONLY</div>
       </div>
       <div class="top-meta">
-        <div class="chip">SYSTEM <b id="system-status">loading</b></div>
-        <div class="chip">BOTS <b id="bots-online">0/5</b></div>
-        <div class="chip">LAST HB <b id="heartbeat-age">нет данных</b></div>
-        <div class="chip">TIME <b id="clock">--:--:--</b></div>
+        <div class="chip"><span>System</span><b id="system-status">loading</b></div>
+        <div class="chip"><span>Bots online</span><b id="bots-online">0/5</b></div>
+        <div class="chip"><span>Last heartbeat</span><b id="heartbeat-age">waiting</b></div>
+        <div class="chip"><span>Terminal time</span><b id="clock">--:--:--</b></div>
         <button onclick="refreshAll()">Refresh</button>
       </div>
     </header>
 
     <section class="main-grid">
-      <div class="space-panel" id="space-panel">
-        <div class="orbit o1"></div><div class="orbit o2"></div><div class="orbit o3"></div><div class="orbit o4"></div>
-        <div class="black-hole"></div>
-        <div id="orbit-nodes"></div>
+      <div class="cockpit" id="cockpit">
+        <canvas id="particle-canvas"></canvas>
+        <div class="system-label">System core / live MT5 telemetry</div>
+        <div class="orbit-track" style="--w:330px;--h:154px;--tilt:-9deg;--o:.18"></div>
+        <div class="orbit-track" style="--w:456px;--h:228px;--tilt:7deg;--o:.16"></div>
+        <div class="orbit-track" style="--w:594px;--h:326px;--tilt:-5deg;--o:.14"></div>
+        <div class="orbit-track" style="--w:746px;--h:430px;--tilt:8deg;--o:.12"></div>
+        <div class="lens-ring r1"></div>
+        <div class="lens-ring r2"></div>
+        <div class="lens-ring r3"></div>
+        <div class="black-hole" aria-hidden="true"></div>
+        <div class="beam-layer" id="beam-layer"></div>
+        <div class="bot-layer" id="orbit-nodes"></div>
       </div>
       <aside class="drawer">
         <div class="panel-head">
           <div class="panel-title">Selected Bot</div>
           <span class="badge gray" id="drawer-state">waiting</span>
         </div>
-        <div class="panel-body" id="bot-drawer"><div class="empty">Выберите бота на орбите</div></div>
+        <div class="panel-body" id="bot-drawer">
+          <div class="empty">Select a satellite node to inspect live MT5 state</div>
+        </div>
       </aside>
     </section>
 
     <div class="filters">
+      <span class="label">Filters</span>
       <select id="bot-filter" onchange="onFilterChange()"><option value="ALL">All bots</option></select>
       <select id="period-filter" onchange="onFilterChange()">
-        <option value="today">Today</option><option value="week">7 days</option><option value="month">30 days</option>
+        <option value="today">Today</option>
+        <option value="week">7 days</option>
+        <option value="month">30 days</option>
       </select>
       <select id="source-filter" onchange="onFilterChange()">
-        <option value="bot">Live trades</option><option value="backtest">Backtest</option><option value="all">All</option>
+        <option value="bot">Live trades</option>
+        <option value="backtest">Backtest</option>
+        <option value="all">All</option>
       </select>
       <input id="search-filter" oninput="renderAll()" placeholder="Search bot / symbol / event">
     </div>
 
     <section class="data-grid">
-      <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div></div><div class="panel-body" id="account-panel"></div></div>
-      <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div></div><div class="panel-body" id="pnl-panel"></div></div>
-      <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">latest snapshots</span></div><div class="panel-body" id="curve-panel"></div></div>
-      <div class="panel span-12"><div class="panel-head"><div class="panel-title">Open Positions</div></div><div class="panel-body" id="positions-panel"></div></div>
-      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Recent Trades</div></div><div class="panel-body" id="trades-panel"></div></div>
-      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Alerts</div></div><div class="panel-body" id="alerts-panel"></div></div>
-      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Bot Journal</div></div><div class="panel-body" id="journal-panel"></div></div>
-      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Screenshots</div></div><div class="panel-body" id="screens-panel"></div></div>
-      <div class="panel span-12"><div class="panel-head"><div class="panel-title">Backtest / History</div><span class="badge yellow">REAL and BACKTEST separated</span></div><div class="panel-body" id="history-panel"></div></div>
+      <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div><span class="badge gray">MT5</span></div><div class="panel-body" id="account-panel"></div></div>
+      <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div><span class="badge gray">Live</span></div><div class="panel-body" id="pnl-panel"></div></div>
+      <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">Closed trades</span></div><div class="panel-body" id="curve-panel"></div></div>
+      <div class="panel span-5"><div class="panel-head"><div class="panel-title">Bot Status</div><span class="badge gray">5 agents</span></div><div class="panel-body" id="bot-status-panel"></div></div>
+      <div class="panel span-7"><div class="panel-head"><div class="panel-title">Open Positions</div><span class="badge gray">Risk monitor</span></div><div class="panel-body" id="positions-panel"></div></div>
+      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Recent Trades</div><span class="badge gray">Execution</span></div><div class="panel-body" id="trades-panel"></div></div>
+      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Alerts</div><span class="badge gray">Blocks</span></div><div class="panel-body" id="alerts-panel"></div></div>
+      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Event Journal</div><span class="badge gray">Native MT5</span></div><div class="panel-body" id="journal-panel"></div></div>
+      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Screenshots</div><span class="badge gray">Chart evidence</span></div><div class="panel-body" id="screens-panel"></div></div>
+      <div class="panel span-12"><div class="panel-head"><div class="panel-title">Backtest / Stats</div><span class="badge yellow">Real and backtest separated</span></div><div class="panel-body" id="history-panel"></div></div>
     </section>
-    <div class="ui-version">DASHBOARD_UI_VERSION = 20260514_ORBIT_V1</div>
+    <div class="ui-version">DASHBOARD_UI_VERSION = "20260514_ORBIT_PRO_V2"</div>
   </div>
 
   <dialog id="screenshot-modal" onclick="if(event.target===this)this.close()">
     <div style="padding:10px;display:flex;justify-content:space-between;gap:12px;align-items:center">
-      <span id="modal-caption" class="dim"></span>
-      <button onclick="document.getElementById('screenshot-modal').close()">Close</button>
+      <span id="modal-caption" class="muted"></span>
+      <button onclick="document.getElementById('screenshot-modal').close()">Dismiss</button>
     </div>
     <img id="modal-image" alt="MT5 screenshot">
   </dialog>
@@ -393,196 +747,398 @@
 <script>
 'use strict';
 const API = location.origin;
-const DASHBOARD_UI_VERSION = '20260514_ORBIT_V1';
-const CACHE_BUSTER = '20260514_1';
-console.info('DASHBOARD_UI_VERSION =', DASHBOARD_UI_VERSION);
-const BOT_IDS = ['NAS100_ORB_VWAP_RSI_OF','SP500_ORB_VWAP_RSI_OF','DJ30_ORB_VWAP_RSI_OF','BTCUSD_ORB_VWAP_RSI_OF','GER40_ORB_VWAP_RSI_OF'];
-const SHORT = { NAS100_ORB_VWAP_RSI_OF:'NAS100', SP500_ORB_VWAP_RSI_OF:'SP500', DJ30_ORB_VWAP_RSI_OF:'DJ30', BTCUSD_ORB_VWAP_RSI_OF:'BTCUSD', GER40_ORB_VWAP_RSI_OF:'GER40' };
-const POS = [
-  {x:-260,y:-86},{x:210,y:-126},{x:-135,y:154},{x:298,y:112},{x:20,y:-198}
+const DASHBOARD_UI_VERSION = '20260514_ORBIT_PRO_V2';
+const CACHE_BUSTER = '20260514_2';
+console.info('DASHBOARD_UI_VERSION = "20260514_ORBIT_PRO_V2"');
+
+const BOT_IDS = [
+  'NAS100_ORB_VWAP_RSI_OF',
+  'SP500_ORB_VWAP_RSI_OF',
+  'DJ30_ORB_VWAP_RSI_OF',
+  'BTCUSD_ORB_VWAP_RSI_OF',
+  'GER40_ORB_VWAP_RSI_OF'
+];
+const SHORT = {
+  NAS100_ORB_VWAP_RSI_OF: 'NAS100',
+  SP500_ORB_VWAP_RSI_OF: 'US500',
+  DJ30_ORB_VWAP_RSI_OF: 'DJ30',
+  BTCUSD_ORB_VWAP_RSI_OF: 'BTCUSD',
+  GER40_ORB_VWAP_RSI_OF: 'GER40'
+};
+const ORBIT_POINTS = [
+  {x:-270,y:-92,speed:'16s'},
+  {x:250,y:-132,speed:'19s'},
+  {x:-185,y:146,speed:'22s'},
+  {x:306,y:126,speed:'24s'},
+  {x:18,y:-214,speed:'20s'}
 ];
 let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
 let refreshTimer = null;
 const $ = id => document.getElementById(id);
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const n = v => v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v);
-const fmt = (v,d=2) => n(v) == null ? 'нет данных' : n(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-const money = v => n(v) == null ? 'нет данных' : (n(v) >= 0 ? '+' : '-') + Math.abs(n(v)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const clsPnl = v => n(v) == null ? 'dim' : n(v) >= 0 ? 'green' : 'red';
-function age(iso){ if(!iso) return 'ожидаю heartbeat'; const s=Math.max(0,Math.floor((Date.now()-new Date(iso).getTime())/1000)); if(s<60)return s+'s'; if(s<3600)return Math.floor(s/60)+'m'; return Math.floor(s/3600)+'h'; }
-function dt(iso){ if(!iso) return 'нет данных'; try{return new Date(iso).toLocaleString('en-GB',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});}catch{return esc(iso)}}
-async function api(path, opts){ const r=await fetch(API+path, opts); if(!r.ok) throw new Error(path+' HTTP '+r.status); return r.json(); }
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = value => value === null || value === undefined || value === '' || Number.isNaN(Number(value)) ? null : Number(value);
+const fmt = (value, digits=2) => num(value) === null ? 'no data' : num(value).toLocaleString('en-US', {minimumFractionDigits:digits, maximumFractionDigits:digits});
+const money = value => num(value) === null ? 'no data' : (num(value) >= 0 ? '+' : '-') + Math.abs(num(value)).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+const pnlClass = value => num(value) === null ? 'muted' : num(value) >= 0 ? 'green' : 'red';
+const compact = value => value === null || value === undefined || value === '' ? 'no data' : esc(value);
+function age(iso) {
+  if(!iso) return 'waiting heartbeat';
+  const parsed = new Date(iso).getTime();
+  if(Number.isNaN(parsed)) return 'no data';
+  const sec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  if(sec < 60) return sec + 's';
+  if(sec < 3600) return Math.floor(sec / 60) + 'm';
+  return Math.floor(sec / 3600) + 'h';
+}
+function dt(iso) {
+  if(!iso) return 'no data';
+  try { return new Date(iso).toLocaleString('en-GB', {month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit'}); }
+  catch { return String(iso); }
+}
+async function api(path, options) {
+  const response = await fetch(API + path, options);
+  if(!response.ok) throw new Error(path + ' HTTP ' + response.status);
+  return response.json();
+}
 function period(){ return $('period-filter').value; }
 function selectedBot(){ return $('bot-filter').value; }
 function source(){ return $('source-filter').value; }
 function searchText(){ return $('search-filter').value.trim().toLowerCase(); }
-function botShort(id){ return SHORT[id] || (id || 'UNKNOWN').split('_')[0]; }
-function botStatus(b){
-  if(!b) return {kind:'offline', color:'var(--gray)', label:'offline'};
-  const enabled = b.enabled !== false;
-  const online = b.online_status === 'online';
-  const stale = b.online_status === 'stale';
-  const ev = String(b.last_event_type || '').toLowerCase();
-  const hasError = /fail|error|reject|blocked/.test(ev) || !!b.reason;
-  if(!online && !stale) return {kind:'offline', color:'var(--gray)', label:'offline'};
-  if(hasError) return {kind:'error', color:'var(--red)', label:'error'};
-  if(!enabled || stale) return {kind:'warn', color:'var(--yellow)', label: enabled ? 'stale' : 'disabled'};
-  return {kind:'online', color:'var(--green)', label:'online'};
+function botShort(id){ return SHORT[id] || String(id || 'UNKNOWN').split('_')[0]; }
+function sum(values) {
+  const numbers = values.map(num).filter(v => v !== null);
+  return numbers.length ? numbers.reduce((a,b) => a + b, 0) : null;
 }
-function mergedBots(){
-  return BOT_IDS.map((id,i)=>{
-    const found = state.bots.find(b => b.bot_id === id) || {};
-    return {...found, bot_id:id, asset:found.asset||botShort(id), orbit:POS[i]};
+function botPosition(bot) {
+  return bot?.active_position || state.positions.find(p => p.bot_id === bot?.bot_id || p.symbol === bot?.symbol || p.symbol === bot?.asset);
+}
+function botStatus(bot) {
+  if(!bot) return {kind:'offline', dot:'var(--gray)', label:'Offline'};
+  const enabled = bot.enabled !== false;
+  const online = bot.online_status === 'online';
+  const stale = bot.online_status === 'stale';
+  const event = String(bot.last_event_type || '').toLowerCase();
+  const reason = String(bot.reason || '').toLowerCase();
+  const hasError = /fail|error|reject|blocked|secret|config/.test(event + ' ' + reason);
+  if(!online && !stale) return {kind:'offline', dot:'var(--gray)', label:'Offline'};
+  if(hasError) return {kind:'error', dot:'var(--red)', label:'Error'};
+  if(!enabled) return {kind:'disabled', dot:'var(--red)', label:'Disabled'};
+  if(stale) return {kind:'stale', dot:'var(--yellow)', label:'Stale'};
+  return {kind:'online', dot:'var(--green)', label:'Online'};
+}
+function mergedBots() {
+  return BOT_IDS.map((id, index) => {
+    const found = state.bots.find(bot => bot.bot_id === id) || {};
+    return {...found, bot_id:id, asset:found.asset || botShort(id), orbit:ORBIT_POINTS[index] || {x:0,y:0,speed:'20s'}};
   });
 }
-function filterRows(rows){
-  const bot = selectedBot(), q = searchText();
-  return (rows||[]).filter(r => (bot==='ALL' || r.bot_id===bot || r.symbol===bot) && (!q || JSON.stringify(r).toLowerCase().includes(q)));
+function filterRows(rows) {
+  const bot = selectedBot();
+  const q = searchText();
+  return (rows || []).filter(row => {
+    const matchesBot = bot === 'ALL' || row.bot_id === bot || row.symbol === bot || row.asset === bot;
+    const matchesSearch = !q || JSON.stringify(row).toLowerCase().includes(q);
+    return matchesBot && matchesSearch;
+  });
 }
-function stat(label,value,klass=''){ return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value ${klass}">${value}</div></div>`; }
-function table(headers, rows, empty){
+function metric(label, value, klass='', hint='') {
+  return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${klass}">${value}</div>${hint ? `<div class="metric-small">${hint}</div>` : ''}</div>`;
+}
+function table(headers, rows, empty) {
   if(!rows.length) return `<div class="empty">${empty}</div>`;
-  return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
-function renderTop(){
-  const s = state.status || {};
-  const bots = mergedBots(), online = bots.filter(b=>b.online_status==='online').length;
-  $('system-status').textContent = s.system_mode || 'NATIVE_MT5_ONLY';
-  $('system-status').className = s.trading_enabled === false ? 'red' : 'green';
-  $('bots-online').textContent = `${online}/5`;
-  $('heartbeat-age').textContent = age(s.last_heartbeat_at);
+function field(obj, names) {
+  for(const name of names) {
+    if(obj && obj[name] !== undefined && obj[name] !== null && obj[name] !== '') return obj[name];
+  }
+  return null;
+}
+function renderTop() {
+  const status = state.status || {};
+  const bots = mergedBots();
+  const online = bots.filter(bot => bot.online_status === 'online').length;
+  $('system-status').textContent = status.system_mode || 'NATIVE_MT5_ONLY';
+  $('system-status').className = status.trading_enabled === false ? 'red' : 'green';
+  $('bots-online').textContent = `${online}/${BOT_IDS.length}`;
+  $('heartbeat-age').textContent = age(status.last_heartbeat_at);
   $('clock').textContent = new Date().toLocaleTimeString('en-GB');
 }
-function renderOrbit(){
-  const latest = (state.journal[0] && (state.journal[0].trade_uid || state.journal[0].id || state.journal[0].created_at)) || '';
-  if(latest && state.lastEventKey && latest !== state.lastEventKey){ $('space-panel').classList.add('signal-flash'); setTimeout(()=>$('space-panel').classList.remove('signal-flash'), 900); }
-  if(latest) state.lastEventKey = latest;
-  $('orbit-nodes').innerHTML = mergedBots().map(b=>{
-    const st=botStatus(b), pos=b.orbit||{x:0,y:0};
-    const cls = st.kind==='error'?'error':st.kind==='offline'?'offline':st.kind==='warn'?'stale':'online';
-    return `<button class="bot-node ${cls} ${b.has_position?'position':''}" style="--x:${pos.x}px;--y:${pos.y}px;--color:${st.color}" onclick="selectBot('${b.bot_id}')">
-      <div class="node-core"></div><div class="node-label">${botShort(b.bot_id)}</div><div class="node-state">${st.label}${b.has_position?' · POSITION':''}</div>
-    </button>`;
-  }).join('');
-}
-function renderBotOptions(){
+function renderBotOptions() {
   const current = selectedBot();
-  $('bot-filter').innerHTML = '<option value="ALL">All bots</option>' + BOT_IDS.map(id=>`<option value="${id}">${botShort(id)}</option>`).join('');
+  $('bot-filter').innerHTML = '<option value="ALL">All bots</option>' + BOT_IDS.map(id => `<option value="${id}">${botShort(id)}</option>`).join('');
   $('bot-filter').value = current || 'ALL';
 }
-function selectBot(id){ state.selected = id; $('bot-filter').value = id; renderAll(); }
-function renderDrawer(){
+function renderOrbit() {
+  const cockpit = $('cockpit').getBoundingClientRect();
+  const centerX = cockpit.width / 2;
+  const centerY = cockpit.height * .48;
+  const selected = state.selected || selectedBot();
+  const beams = [];
+  const nodes = mergedBots().map(bot => {
+    const status = botStatus(bot);
+    const pos = bot.orbit;
+    const active = botPosition(bot);
+    const side = String(active?.side || active?.type || '').toLowerCase();
+    const beam = side === 'sell' ? 'var(--orange)' : 'var(--cyan)';
+    if(active) {
+      const dx = pos.x;
+      const dy = pos.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      beams.push(`<div class="position-beam" style="--len:${len}px;--angle:${angle}deg;--beam:${beam}"></div>`);
+    }
+    const isSelected = selected === bot.bot_id;
+    return `<button class="satellite ${active ? 'has-position' : ''} ${isSelected ? 'selected' : ''}" style="--sx:${pos.x}px;--sy:${pos.y}px;--speed:${pos.speed};--status:${status.dot};--beam:${beam}" onclick="selectBot('${bot.bot_id}')">
+      <div class="sat-frame">
+        <div class="sat-icon"><span class="status-dot"></span>${active ? '<span class="active-ring"></span>' : ''}</div>
+        <div><div class="sat-name">${botShort(bot.bot_id)}</div><div class="sat-status">${status.label}${active ? ' / Active trade' : ''}</div></div>
+      </div>
+    </button>`;
+  }).join('');
+  $('beam-layer').innerHTML = beams.join('');
+  $('orbit-nodes').innerHTML = nodes;
+  const latest = (state.journal[0] && (state.journal[0].trade_uid || state.journal[0].id || state.journal[0].created_at)) || '';
+  if(latest && state.lastEventKey && latest !== state.lastEventKey) {
+    $('cockpit').animate([{boxShadow:'inset 0 0 80px rgba(0,0,0,.58), 0 0 0 rgba(201,152,88,0)'},{boxShadow:'inset 0 0 80px rgba(0,0,0,.58), 0 0 42px rgba(201,152,88,.22)'}], {duration:720, iterations:1});
+  }
+  if(latest) state.lastEventKey = latest;
+}
+function selectBot(id) {
+  state.selected = id;
+  $('bot-filter').value = id;
+  renderAll();
+}
+function renderDrawer() {
   const id = state.selected || selectedBot();
-  const b = id && id !== 'ALL' ? mergedBots().find(x=>x.bot_id===id) : null;
-  if(!b){ $('drawer-state').textContent='waiting'; $('bot-drawer').innerHTML='<div class="empty">Выберите бота на орбите</div>'; return; }
-  const st=botStatus(b), pos=b.active_position || state.positions.find(p=>p.bot_id===b.bot_id || p.symbol===b.symbol);
-  const botTrades = state.trades.filter(t=>t.bot_id===b.bot_id);
-  const wins = botTrades.filter(t=>n(t.profit_money ?? t.profit)>0).length, losses = botTrades.filter(t=>n(t.profit_money ?? t.profit)<0).length;
-  $('drawer-state').textContent = st.label; $('drawer-state').className = 'badge ' + (st.kind==='online'?'green':st.kind==='error'?'red':st.kind==='warn'?'yellow':'gray');
+  const bot = id && id !== 'ALL' ? mergedBots().find(item => item.bot_id === id) : null;
+  if(!bot) {
+    $('drawer-state').textContent = 'waiting';
+    $('drawer-state').className = 'badge gray';
+    $('bot-drawer').innerHTML = '<div class="empty">Select a satellite node to inspect live MT5 state</div>';
+    return;
+  }
+  const status = botStatus(bot);
+  const pos = botPosition(bot);
+  const side = String(pos?.side || pos?.type || '').toLowerCase();
+  const pnlValue = field(pos, ['profit','pnl','floating_pnl']);
+  const botTrades = state.trades.filter(t => t.bot_id === bot.bot_id);
+  const wins = botTrades.filter(t => num(t.profit_money ?? t.profit ?? t.pnl) > 0).length;
+  const losses = botTrades.filter(t => num(t.profit_money ?? t.profit ?? t.pnl) < 0).length;
+  const lastJournal = state.journal.find(e => e.bot_id === bot.bot_id) || {};
+  $('drawer-state').textContent = status.label;
+  $('drawer-state').className = 'badge ' + (status.kind === 'online' ? 'green' : status.kind === 'error' || status.kind === 'disabled' ? 'red' : status.kind === 'stale' ? 'yellow' : 'gray');
   $('bot-drawer').innerHTML = `
-    <div class="kv"><span>bot_id</span><span>${esc(b.bot_id)}</span></div>
-    <div class="kv"><span>symbol</span><span>${esc(b.symbol || b.asset || 'нет данных')}</span></div>
-    <div class="kv"><span>enabled</span><span class="${b.enabled!==false?'green':'red'}">${b.enabled!==false?'enabled':'disabled'}</span></div>
-    <div class="kv"><span>online</span><span>${esc(b.online_status || 'ожидаю heartbeat')}</span></div>
-    <div class="kv"><span>heartbeat age</span><span>${age(b.last_heartbeat_at)}</span></div>
-    <div class="kv"><span>last event</span><span>${esc(b.last_event_type || 'нет данных')}</span></div>
-    <div class="kv"><span>last error</span><span class="red">${esc(b.reason || findLastError(b.bot_id) || 'нет данных')}</span></div>
-    <div class="kv"><span>position</span><span>${pos ? esc((pos.side||'')+' '+(pos.lot||pos.volume||'')+' lots') : 'нет открытых позиций'}</span></div>
-    <div class="kv"><span>entry / sl</span><span>${pos ? `${fmt(pos.entry ?? pos.entry_price,5)} / ${fmt(pos.sl,5)}` : 'нет данных'}</span></div>
-    <div class="kv"><span>tp1 / tp2 / tp3</span><span>${pos ? `${fmt(pos.tp1,5)} / ${fmt(pos.tp2,5)} / ${fmt(pos.tp3,5)}` : 'нет данных'}</span></div>
-    <div class="kv"><span>today pnl</span><span class="${clsPnl(sum(botTrades.map(t=>t.profit_money??t.profit)))}">${money(sum(botTrades.map(t=>t.profit_money??t.profit)))}</span></div>
-    <div class="kv"><span>wins / losses</span><span><span class="green">${wins}</span> / <span class="red">${losses}</span></span></div>
-    <div class="kv"><span>account/equity</span><span>${state.account ? fmt(state.account.equity) : 'нет данных'}</span></div>
+    <div class="drawer-hero">
+      <div><div class="drawer-symbol">${botShort(bot.bot_id)}</div><div class="drawer-id">${esc(bot.bot_id)}</div></div>
+      <span class="badge ${status.kind === 'online' ? 'green' : status.kind === 'error' || status.kind === 'disabled' ? 'red' : status.kind === 'stale' ? 'yellow' : 'gray'}">${status.label}</span>
+    </div>
+    <div class="kv-grid">
+      ${kv('Symbol', bot.symbol || bot.asset)}
+      ${kv('Enabled', bot.enabled !== false ? 'Enabled' : 'Disabled', bot.enabled !== false ? 'green' : 'red')}
+      ${kv('Heartbeat', age(bot.last_heartbeat_at))}
+      ${kv('Last event', bot.last_event_type || lastJournal.event_type)}
+      ${kv('Magic', field(bot, ['magic','magic_number']) || field(pos, ['magic','magic_number']))}
+      ${kv('Lot', field(bot, ['lot','lots']) || field(pos, ['lot','lots','volume']))}
+      ${kv('ORB window', field(bot, ['orb_window','orb','orb_time']))}
+      ${kv('VWAP filter', field(bot, ['vwap_filter','use_vwap','vwap']))}
+      ${kv('OrderFlow filter', field(bot, ['orderflow_filter','use_orderflow','orderflow']))}
+      ${kv('TP enabled', field(bot, ['tp_enabled','take_profit_enabled']))}
+      ${kv('TP fixed values', field(bot, ['tp_fixed','tp_values','tp1_fixed']))}
+      ${kv('Exit flags', field(bot, ['exit_flags','return_inside','vwap_invalid']))}
+    </div>
+    <div class="position-card ${side === 'sell' ? 'sell' : side === 'buy' ? 'buy' : ''}">
+      <div class="panel-title">Open Position</div>
+      <div class="kv-grid" style="margin-top:9px">
+        ${kv('Side', pos ? (pos.side || pos.type || 'no data') : 'no open position', side === 'sell' ? 'red' : side === 'buy' ? 'green' : '')}
+        ${kv('Floating PnL', pos ? money(pnlValue) : 'no data', pnlClass(pnlValue))}
+        ${kv('Entry', pos ? field(pos, ['entry','entry_price','open_price']) : null)}
+        ${kv('SL', pos ? field(pos, ['sl','stop_loss']) : null)}
+        ${kv('TP1 / TP2 / TP3', pos ? `${fmt(pos.tp1,5)} / ${fmt(pos.tp2,5)} / ${fmt(pos.tp3,5)}` : null)}
+        ${kv('Opened', pos ? dt(pos.opened_at || pos.time || pos.open_time) : null)}
+      </div>
+    </div>
+    <div class="kv-grid" style="margin-top:10px">
+      ${kv('Today PnL', money(sum(botTrades.map(t => t.profit_money ?? t.profit ?? t.pnl))), pnlClass(sum(botTrades.map(t => t.profit_money ?? t.profit ?? t.pnl))))}
+      ${kv('Win / Loss', `<span class="green">${wins}</span> / <span class="red">${losses}</span>`)}
+      ${kv('Last error', findLastError(bot.bot_id) || bot.reason)}
+      ${kv('Equity snapshot', state.account ? fmt(state.account.equity) : null)}
+    </div>
     <div class="actions">
-      <button class="good" onclick="toggleBot('${b.bot_id}', true)">Enable bot</button>
-      <button class="danger" onclick="toggleBot('${b.bot_id}', false)">Disable bot</button>
-      <button onclick="openLastScreenshot('${b.bot_id}')">View last screenshot</button>
-      <button onclick="focusPanel('journal-panel')">View journal</button>
-      <button onclick="focusPanel('trades-panel')">View trades</button>
       <button onclick="refreshAll()">Refresh</button>
+      <button class="good" onclick="toggleBot('${bot.bot_id}', true)">Enable bot</button>
+      <button class="danger" onclick="toggleBot('${bot.bot_id}', false)">Disable bot</button>
+      <button onclick="focusPanel('bot-status-panel')">View details</button>
+      <button onclick="openLastScreenshot('${bot.bot_id}')">Screenshots</button>
+      <button onclick="focusPanel('journal-panel')">Journal</button>
     </div>`;
 }
-function sum(values){ const nums=values.map(n).filter(v=>v!=null); return nums.length?nums.reduce((a,b)=>a+b,0):null; }
-function findLastError(botId){ const e=state.journal.find(x=>x.bot_id===botId && /fail|error|reject|blocked/i.test(String(x.event_type||x.message||''))); return e && (e.message || e.event_type); }
-async function toggleBot(botId, enabled){
+function kv(label, value, klass='') {
+  const empty = value === null || value === undefined || value === '';
+  return `<div class="kv"><div class="k">${label}</div><div class="v ${klass}">${empty ? 'no data' : value}</div></div>`;
+}
+function findLastError(botId) {
+  const entry = state.journal.find(item => item.bot_id === botId && /fail|error|reject|blocked|secret|config/i.test(String(item.event_type || item.message || '')));
+  return entry && (entry.message || entry.event_type);
+}
+async function toggleBot(botId, enabled) {
   let secret = sessionStorage.getItem('control_secret') || '';
-  if(!secret) { secret = prompt('Control secret for enable/disable'); if(secret) sessionStorage.setItem('control_secret', secret); }
+  if(!secret) {
+    secret = prompt('Control secret for enable/disable');
+    if(secret) sessionStorage.setItem('control_secret', secret);
+  }
   if(!secret) return;
   try {
-    await api(enabled?'/api/bots/enable':'/api/bots/disable', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({bot_id:botId, secret, reason:'dashboard control'})});
+    await api(enabled ? '/api/bots/enable' : '/api/bots/disable', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({bot_id:botId, secret, reason:'dashboard control'})
+    });
     await refreshAll();
-  } catch(e) { alert('Control request failed: '+e.message); }
+  } catch(error) {
+    alert('Control request failed: ' + error.message);
+  }
 }
-function renderAccount(){
-  const a=state.account; if(!a){ $('account-panel').innerHTML='<div class="empty">нет данных</div>'; return; }
-  $('account-panel').innerHTML = `<div class="stats">
-    ${stat('Balance', fmt(a.balance))}
-    ${stat('Equity', fmt(a.equity), 'blue')}
-    ${stat('Margin', fmt(a.margin))}
-    ${stat('Free margin', fmt(a.free_margin))}
-    ${stat('Margin level', n(a.margin_level)==null?'нет данных':fmt(a.margin_level,1)+'%', n(a.margin_level)>120?'green':'yellow')}
-    ${stat('Open positions', a.open_positions ?? state.positions.length)}
+function renderAccount() {
+  const a = state.account;
+  if(!a) { $('account-panel').innerHTML = '<div class="empty">no account snapshot yet</div>'; return; }
+  $('account-panel').innerHTML = `<div class="metric-grid">
+    ${metric('Balance', fmt(a.balance))}
+    ${metric('Equity', fmt(a.equity), 'blue')}
+    ${metric('Margin', fmt(a.margin))}
+    ${metric('Free margin', fmt(a.free_margin))}
+    ${metric('Margin level', num(a.margin_level) === null ? 'no data' : fmt(a.margin_level,1) + '%', num(a.margin_level) > 120 ? 'green' : 'yellow')}
+    ${metric('Open positions', a.open_positions ?? state.positions.length)}
   </div>`;
 }
-function renderPnl(){
-  const p=state.pnl||{}, closed=p.closed_pnl??p.net_pnl, floating=sum(state.positions.map(x=>x.profit??x.pnl));
-  const trades=p.trades_count??0, wins=p.wins??0, losses=p.losses??0, wr=trades?wins/trades*100:null;
-  $('pnl-panel').innerHTML = `<div class="stats">
-    ${stat('Closed PnL', money(closed), clsPnl(closed))}
-    ${stat('Floating PnL', money(floating), clsPnl(floating))}
-    ${stat('Trades', trades)}
-    ${stat('Wins / Losses', `<span class="green">${wins}</span> / <span class="red">${losses}</span>`)}
-    ${stat('Winrate', wr==null?'нет сделок сегодня':wr.toFixed(0)+'%', wr>=50?'green':'red')}
-    ${stat('Best / Worst', `<span class="green">${money(p.best_trade)}</span> / <span class="red">${money(p.worst_trade)}</span>`)}
+function renderPnl() {
+  const p = state.pnl || {};
+  const closed = p.closed_pnl ?? p.net_pnl;
+  const floating = sum(state.positions.map(x => x.profit ?? x.pnl ?? x.floating_pnl));
+  const trades = p.trades_count ?? p.closed_trades_count ?? 0;
+  const wins = p.wins ?? 0;
+  const losses = p.losses ?? 0;
+  const winrate = trades ? wins / trades * 100 : null;
+  $('pnl-panel').innerHTML = `<div class="metric-grid">
+    ${metric('Closed PnL', money(closed), pnlClass(closed))}
+    ${metric('Floating PnL', money(floating), pnlClass(floating))}
+    ${metric('Trades', trades)}
+    ${metric('Wins / Losses', `<span class="green">${wins}</span> / <span class="red">${losses}</span>`)}
+    ${metric('Winrate', winrate === null ? 'no trades' : winrate.toFixed(0) + '%', winrate === null ? '' : winrate >= 50 ? 'green' : 'red')}
+    ${metric('Best / Worst', `<span class="green">${money(p.best_trade)}</span> / <span class="red">${money(p.worst_trade)}</span>`)}
   </div>`;
 }
-function renderCurve(){
-  const closed = state.trades.slice().reverse().map(t=>n(t.profit_money??t.profit)).filter(v=>v!=null);
-  let acc=0, pts=closed.map(v=>(acc+=v)); if(!pts.length) { $('curve-panel').innerHTML='<div class="empty">нет данных equity curve</div>'; return; }
-  const min=Math.min(...pts,0), max=Math.max(...pts,0), range=max-min||1;
-  const path=pts.map((v,i)=>`${i?'L':'M'} ${i/(pts.length-1||1)*100} ${60-((v-min)/range)*52}`).join(' ');
-  $('curve-panel').innerHTML = `<svg class="chart" viewBox="0 0 100 64" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="var(--green)" stroke-width="1.8"/><line x1="0" y1="${60-((0-min)/range)*52}" x2="100" y2="${60-((0-min)/range)*52}" stroke="rgba(255,255,255,.16)" stroke-width=".6"/></svg>`;
+function renderCurve() {
+  const closed = state.trades.slice().reverse().map(t => num(t.profit_money ?? t.profit ?? t.pnl)).filter(v => v !== null);
+  let acc = 0;
+  const points = closed.map(value => (acc += value));
+  if(!points.length) { $('curve-panel').innerHTML = '<div class="empty">no equity curve data</div>'; return; }
+  const min = Math.min(...points, 0);
+  const max = Math.max(...points, 0);
+  const range = max - min || 1;
+  const path = points.map((value, index) => `${index ? 'L' : 'M'} ${index / (points.length - 1 || 1) * 100} ${88 - ((value - min) / range) * 76}`).join(' ');
+  const zero = 88 - ((0 - min) / range) * 76;
+  $('curve-panel').innerHTML = `<svg class="chart" viewBox="0 0 100 96" preserveAspectRatio="none">
+    <path d="${path}" fill="none" stroke="var(--cyan)" stroke-width="1.5"/>
+    <path d="${path} L 100 96 L 0 96 Z" fill="rgba(100,211,216,.08)"/>
+    <line x1="0" y1="${zero}" x2="100" y2="${zero}" stroke="rgba(201,152,88,.28)" stroke-width=".6"/>
+  </svg>`;
 }
-function renderPositions(){
-  const rows=filterRows(state.positions).map(p=>`<tr><td class="blue">${esc(p.symbol||'нет данных')}</td><td class="${String(p.side).toLowerCase()==='buy'?'green':'red'}">${esc(p.side||'')}</td><td>${fmt(p.lot??p.volume,2)}</td><td>${fmt(p.entry??p.entry_price,5)}</td><td>${fmt(p.sl,5)}</td><td>${fmt(p.tp1,5)} / ${fmt(p.tp2,5)} / ${fmt(p.tp3,5)}</td><td class="${clsPnl(p.profit??p.pnl)}">${money(p.profit??p.pnl)}</td><td>${dt(p.opened_at||p.time)}</td><td>${esc(p.bot_id||p.magic||'нет данных')}</td></tr>`);
-  $('positions-panel').innerHTML = table(['symbol','side','lot','entry','sl','tp1/tp2/tp3','pnl','opened','bot'], rows, 'нет открытых позиций');
+function renderBotStatusPanel() {
+  const rows = mergedBots().map(bot => {
+    const status = botStatus(bot);
+    const pos = botPosition(bot);
+    return `<div class="bot-row" onclick="selectBot('${bot.bot_id}')">
+      <div><span class="dot" style="--dot:${status.dot}"></span><span class="blue">${botShort(bot.bot_id)}</span></div>
+      <div><div>${status.label} / ${bot.enabled !== false ? 'Enabled' : 'Disabled'}</div><div class="muted">HB ${age(bot.last_heartbeat_at)} / ${compact(bot.last_event_type || 'no event')}</div></div>
+      <div class="${pos ? pnlClass(pos.profit ?? pos.pnl ?? pos.floating_pnl) : 'muted'}">${pos ? money(pos.profit ?? pos.pnl ?? pos.floating_pnl) : 'flat'}</div>
+    </div>`;
+  });
+  $('bot-status-panel').innerHTML = `<div class="bot-status-grid">${rows.join('')}</div>`;
 }
-function renderTrades(){
-  const rows=filterRows(state.trades).slice(0,80).map(t=>`<tr><td>${dt(t.closed_at||t.close_time||t.created_at)}</td><td class="blue">${esc(t.bot_id||'нет данных')}</td><td>${esc(t.symbol||'')}</td><td class="${String(t.side).toLowerCase()==='buy'?'green':'red'}">${esc(t.side||'')}</td><td>${fmt(t.lot??t.volume??t.lots,2)}</td><td>${fmt(t.entry??t.entry_price??t.open_price,5)}</td><td>${fmt(t.exit_price??t.close_price,5)}</td><td class="${clsPnl(t.profit_money??t.profit??t.pnl)}">${money(t.profit_money??t.profit??t.pnl)}</td><td>${esc(t.status||t.close_reason||'')}</td></tr>`);
-  $('trades-panel').innerHTML = table(['time','bot','symbol','side','lot','entry','exit','pnl','status'], rows, 'нет сделок сегодня');
+function renderPositions() {
+  const rows = filterRows(state.positions).map(pos => {
+    const side = String(pos.side || pos.type || '').toLowerCase();
+    return `<tr><td class="blue">${compact(pos.symbol)}</td><td class="${side === 'buy' ? 'green' : 'red'}">${compact(pos.side || pos.type)}</td><td>${fmt(pos.lot ?? pos.volume,2)}</td><td>${fmt(pos.entry ?? pos.entry_price ?? pos.open_price,5)}</td><td>${fmt(pos.sl ?? pos.stop_loss,5)}</td><td>${fmt(pos.tp1,5)} / ${fmt(pos.tp2,5)} / ${fmt(pos.tp3,5)}</td><td class="${pnlClass(pos.profit ?? pos.pnl ?? pos.floating_pnl)}">${money(pos.profit ?? pos.pnl ?? pos.floating_pnl)}</td><td>${dt(pos.opened_at || pos.time || pos.open_time)}</td><td>${compact(pos.bot_id || pos.magic || pos.magic_number)}</td></tr>`;
+  });
+  $('positions-panel').innerHTML = table(['symbol','side','lot','entry','sl','tp1/tp2/tp3','floating pnl','opened','bot'], rows, 'no open positions');
 }
-function renderJournal(){
-  const rows=filterRows(state.journal).slice(0,120).map(e=>`<tr><td>${dt(e.created_at||e.time||e.timestamp)}</td><td class="blue">${esc(e.bot_id||'нет данных')}</td><td class="${/fail|error|reject/i.test(e.event_type||'')?'red':'gold'}">${esc(e.event_type||e.type||'')}</td><td>${esc(e.message||e.detail||e.details||'')}</td><td>${esc(e.source||'mt5_native')}</td></tr>`);
-  $('journal-panel').innerHTML = table(['time','bot','event_type','message','source'], rows, 'нет записей журнала');
+function renderTrades() {
+  const rows = filterRows(state.trades).slice(0,80).map(trade => {
+    const side = String(trade.side || '').toLowerCase();
+    const pnl = trade.profit_money ?? trade.profit ?? trade.pnl;
+    return `<tr><td>${dt(trade.closed_at || trade.close_time || trade.created_at || trade.time)}</td><td class="blue">${compact(trade.bot_id)}</td><td>${compact(trade.symbol)}</td><td class="${side === 'buy' ? 'green' : 'red'}">${compact(trade.side)}</td><td>${fmt(trade.lot ?? trade.volume ?? trade.lots,2)}</td><td>${fmt(trade.entry ?? trade.entry_price ?? trade.open_price,5)}</td><td>${fmt(trade.exit_price ?? trade.close_price,5)}</td><td class="${pnlClass(pnl)}">${money(pnl)}</td><td>${compact(trade.status || trade.close_reason || trade.reason)}</td></tr>`;
+  });
+  $('trades-panel').innerHTML = table(['time','bot','symbol','side','lot','entry','exit','pnl','status'], rows, 'no trades for selected filter');
 }
-function renderAlerts(){
-  const alerts = mergedBots().filter(b=>botStatus(b).kind!=='online').map(b=>`<div class="kv"><span>${botShort(b.bot_id)}</span><span class="${botStatus(b).kind==='error'?'red':'yellow'}">${botStatus(b).label} · ${esc(b.reason||b.online_status||'нет данных')}</span></div>`);
-  $('alerts-panel').innerHTML = alerts.length ? alerts.join('') : '<div class="empty">нет активных alerts</div>';
+function renderJournal() {
+  const rows = filterRows(state.journal).slice(0,120).map(entry => {
+    const event = entry.event_type || entry.type || '';
+    return `<tr><td>${dt(entry.created_at || entry.time || entry.timestamp)}</td><td class="blue">${compact(entry.bot_id)}</td><td class="${/fail|error|reject|blocked/i.test(event) ? 'red' : 'gold'}">${compact(event)}</td><td>${compact(entry.message || entry.detail || entry.details)}</td><td>${compact(entry.source || 'mt5_native')}</td></tr>`;
+  });
+  $('journal-panel').innerHTML = table(['time','bot','event_type','message','source'], rows, 'journal is empty');
 }
-function renderScreens(){
-  const shots=filterRows(state.screenshots).slice(0,6);
-  if(!shots.length){ $('screens-panel').innerHTML='<div class="empty">нет screenshots</div>'; return; }
-  $('screens-panel').innerHTML = `<div class="shots">${shots.map(s=>`<div class="shot" onclick="openScreenshot(${s.id})"><img src="${esc(s.url)}" loading="lazy" alt="screenshot"><div>${esc(s.bot_id||'')} · ${esc(s.event_type||'')} · ${dt(s.time||s.created_at)}</div></div>`).join('')}</div>`;
+function renderAlerts() {
+  const alerts = mergedBots().filter(bot => botStatus(bot).kind !== 'online').map(bot => {
+    const status = botStatus(bot);
+    return `<div class="kv"><div class="k">${botShort(bot.bot_id)}</div><div class="v ${status.kind === 'error' || status.kind === 'disabled' ? 'red' : 'yellow'}">${status.label} / ${compact(bot.reason || bot.online_status || 'no details')}</div></div>`;
+  });
+  $('alerts-panel').innerHTML = alerts.length ? `<div class="kv-grid" style="grid-template-columns:1fr">${alerts.join('')}</div>` : '<div class="empty">no active alerts</div>';
 }
-function renderHistory(){
-  const s=state.backtest?.summary||{}; const real=state.stats||{};
-  $('history-panel').innerHTML = `<div class="stats">
-    ${stat('REAL trades', real.total_trades??0)}
-    ${stat('REAL PnL', money(real.total_pnl), clsPnl(real.total_pnl))}
-    ${stat('REAL winrate', real.win_rate!=null?fmt(real.win_rate,1)+'%':'нет данных')}
-    ${stat('REAL PF', real.profit_factor!=null?fmt(real.profit_factor,2):'нет данных', 'blue')}
-    ${stat('BACKTEST trades', s.total_trades??s.total??0)}
-    ${stat('BACKTEST PnL', money(s.total_pnl), clsPnl(s.total_pnl))}
-    ${stat('BACKTEST winrate', s.win_rate!=null?fmt(s.win_rate,1)+'%':'нет данных')}
-    ${stat('BACKTEST PF', s.profit_factor!=null?fmt(s.profit_factor,2):'нет данных', 'blue')}
+function renderScreens() {
+  const shots = filterRows(state.screenshots).slice(0,6);
+  if(!shots.length) { $('screens-panel').innerHTML = '<div class="empty">no screenshots</div>'; return; }
+  $('screens-panel').innerHTML = `<div class="shots">${shots.map(shot => `<div class="shot" onclick="openScreenshot(${shot.id})"><img src="${esc(shot.url)}" loading="lazy" alt="screenshot"><div>${compact(shot.bot_id)} / ${compact(shot.event_type)} / ${dt(shot.time || shot.created_at)}</div></div>`).join('')}</div>`;
+}
+function renderHistory() {
+  const stats = state.stats || {};
+  const backtest = state.backtest?.summary || {};
+  $('history-panel').innerHTML = `<div class="metric-grid">
+    ${metric('REAL trades', stats.total_trades ?? 0)}
+    ${metric('REAL PnL', money(stats.total_pnl), pnlClass(stats.total_pnl))}
+    ${metric('REAL winrate', stats.win_rate !== undefined && stats.win_rate !== null ? fmt(stats.win_rate,1) + '%' : 'no data')}
+    ${metric('REAL profit factor', stats.profit_factor !== undefined && stats.profit_factor !== null ? fmt(stats.profit_factor,2) : 'no data', 'blue')}
+    ${metric('BACKTEST trades', backtest.total_trades ?? backtest.total ?? 0)}
+    ${metric('BACKTEST PnL', money(backtest.total_pnl), pnlClass(backtest.total_pnl))}
+    ${metric('BACKTEST winrate', backtest.win_rate !== undefined && backtest.win_rate !== null ? fmt(backtest.win_rate,1) + '%' : 'no data')}
+    ${metric('BACKTEST profit factor', backtest.profit_factor !== undefined && backtest.profit_factor !== null ? fmt(backtest.profit_factor,2) : 'no data', 'blue')}
   </div>`;
 }
-function openScreenshot(id){ const s=state.screenshots.find(x=>x.id===id); if(!s)return; $('modal-image').src=s.url; $('modal-caption').textContent=`${s.bot_id||''} · ${s.event_type||''} · ${dt(s.time||s.created_at)}`; $('screenshot-modal').showModal(); }
-function openLastScreenshot(botId){ const s=state.screenshots.find(x=>x.bot_id===botId); if(s) openScreenshot(s.id); else alert('Нет screenshot для выбранного бота'); }
-function focusPanel(id){ $(id).scrollIntoView({behavior:'smooth', block:'center'}); }
-function renderAll(){ renderTop(); renderBotOptions(); renderOrbit(); renderDrawer(); renderAccount(); renderPnl(); renderCurve(); renderPositions(); renderTrades(); renderJournal(); renderAlerts(); renderScreens(); renderHistory(); }
-async function refreshAll(){
-  const bot = selectedBot(), per = period(), src = source();
+function openScreenshot(id) {
+  const shot = state.screenshots.find(item => item.id === id);
+  if(!shot) return;
+  $('modal-image').src = shot.url;
+  $('modal-caption').textContent = `${shot.bot_id || ''} / ${shot.event_type || ''} / ${dt(shot.time || shot.created_at)}`;
+  $('screenshot-modal').showModal();
+}
+function openLastScreenshot(botId) {
+  const shot = state.screenshots.find(item => item.bot_id === botId);
+  if(shot) openScreenshot(shot.id);
+  else alert('No screenshot for selected bot');
+}
+function focusPanel(id) {
+  $(id).scrollIntoView({behavior:'smooth', block:'center'});
+}
+function renderAll() {
+  renderTop();
+  renderBotOptions();
+  renderOrbit();
+  renderDrawer();
+  renderAccount();
+  renderPnl();
+  renderCurve();
+  renderBotStatusPanel();
+  renderPositions();
+  renderTrades();
+  renderJournal();
+  renderAlerts();
+  renderScreens();
+  renderHistory();
+}
+async function refreshAll() {
+  const bot = selectedBot();
+  const per = period();
+  const src = source();
   const asset = bot === 'ALL' ? 'ALL' : bot;
   try {
     const [status, account, pnl, bots, positions, trades, stats, journal, screens, backtest] = await Promise.all([
@@ -593,19 +1149,77 @@ async function refreshAll(){
       api('/api/dashboard/positions'),
       api(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`),
       api(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`),
-      api(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot==='ALL'?'':encodeURIComponent(bot)}&limit=150`),
-      api(`/api/dashboard/screenshots?bot_id=${bot==='ALL'?'':encodeURIComponent(bot)}&limit=24`),
-      api(`/api/dashboard/backtest?bot_id=${bot==='ALL'?'':encodeURIComponent(bot)}&limit=200`)
+      api(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=150`),
+      api(`/api/dashboard/screenshots?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=24`),
+      api(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`)
     ]);
-    state.status=status; state.account=account.account; state.pnl=pnl.pnl; state.bots=bots.bots||[]; state.positions=positions.positions||[]; state.trades=trades.trades||[]; state.stats=stats.stats||{}; state.journal=journal.journal||[]; state.screenshots=screens.screenshots||[]; state.backtest=backtest;
+    state.status = status || {};
+    state.account = account.account || null;
+    state.pnl = pnl.pnl || {};
+    state.bots = bots.bots || [];
+    state.positions = positions.positions || [];
+    state.trades = trades.trades || [];
+    state.stats = stats.stats || {};
+    state.journal = journal.journal || [];
+    state.screenshots = screens.screenshots || [];
+    state.backtest = backtest || {};
     renderAll();
-  } catch(e) {
-    console.error(e);
-    $('system-status').textContent='API ERROR'; $('system-status').className='red';
+  } catch(error) {
+    console.error(error);
+    $('system-status').textContent = 'API ERROR';
+    $('system-status').className = 'red';
+    ['account-panel','pnl-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
+      if(!$(id).innerHTML) $(id).innerHTML = '<div class="error">API data unavailable</div>';
+    });
   }
 }
-function onFilterChange(){ const bot=selectedBot(); state.selected = bot === 'ALL' ? state.selected : bot; refreshAll(); }
-setInterval(()=>{ $('clock').textContent = new Date().toLocaleTimeString('en-GB'); }, 1000);
+function onFilterChange() {
+  const bot = selectedBot();
+  state.selected = bot === 'ALL' ? state.selected : bot;
+  refreshAll();
+}
+function initParticles() {
+  const canvas = $('particle-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    particles = Array.from({length: Math.min(120, Math.floor(rect.width / 9))}, () => ({
+      x: Math.random() * rect.width,
+      y: Math.random() * rect.height,
+      z: Math.random(),
+      vx: (Math.random() - .5) * .08,
+      vy: (Math.random() - .5) * .06
+    }));
+  }
+  function frame() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    ctx.clearRect(0,0,rect.width,rect.height);
+    for(const p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      if(p.x < 0) p.x = rect.width;
+      if(p.x > rect.width) p.x = 0;
+      if(p.y < 0) p.y = rect.height;
+      if(p.y > rect.height) p.y = 0;
+      const alpha = .12 + p.z * .34;
+      ctx.fillStyle = `rgba(170,190,205,${alpha})`;
+      ctx.fillRect(p.x, p.y, p.z > .72 ? 1.4 : 1, p.z > .72 ? 1.4 : 1);
+    }
+    requestAnimationFrame(frame);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  frame();
+}
+setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString('en-GB'); }, 1000);
+initParticles();
 refreshAll();
 refreshTimer = setInterval(refreshAll, 8000);
 </script>
