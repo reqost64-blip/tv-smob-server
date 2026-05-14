@@ -20,10 +20,15 @@ def main():
     init_db()
     report = calculate_bias_report(allow_network=False)
     assert len(report["symbols"]) == len(BIAS_SYMBOLS), report
-    assert report["macro_risk"] in {"LOW", "MEDIUM", "HIGH"}, report
+    assert report["macro_risk"] in {"LOW", "MEDIUM", "HIGH", "UNKNOWN"}, report
+    assert report["source_availability"]["market_data"] == "unavailable", report
+    assert report["source_availability"]["macro_calendar"] == "unavailable", report
     assert all(row["bias"] in {"LONG", "SHORT", "CONSOLIDATION"} for row in report["symbols"])
+    assert all(row["data_quality_score"] < 50 for row in report["symbols"])
     text = format_bias_telegram_message(report)
-    assert "📊 NY PRE-MARKET BIAS" in text
+    assert "NY PRE-MARKET BIAS" in text
+    assert "Data Quality:" in text
+    assert "LOW DATA QUALITY" in text
     assert "NAS100:" in text
     saved = save_bias_report(report)
     loaded = latest_bias_report()

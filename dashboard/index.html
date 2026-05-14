@@ -1041,15 +1041,20 @@ function renderBias() {
   const risk = String(bias.macro_risk || 'UNKNOWN').toUpperCase();
   $('bias-risk').textContent = 'Macro ' + risk;
   $('bias-risk').className = 'badge ' + (risk === 'HIGH' ? 'red' : risk === 'LOW' ? 'green' : 'yellow');
+  const sources = bias.source_availability || {};
+  const sourceText = Object.entries(sources).map(([key, value]) => `${key}:${value}`).join(' / ') || 'no sources';
   const rows = filterRows(bias.symbols).map(row => {
     const klass = row.bias === 'LONG' ? 'green' : row.bias === 'SHORT' ? 'red' : 'yellow';
-    return `<tr><td class="blue">${compact(row.symbol)}</td><td class="${klass}">${compact(row.bias)}</td><td>${row.confidence ?? 0}%</td><td>${row.long_percent ?? 0}% / ${row.short_percent ?? 0}% / ${row.consolidation_percent ?? 0}%</td><td>${compact((row.reasons || []).slice(0,2).join('; '))}</td></tr>`;
+    const rowSources = row.source_availability || {};
+    const rowSourceText = Object.entries(rowSources).filter(([, value]) => value !== 'unavailable').map(([key, value]) => `${key}:${value}`).join(' / ') || 'limited';
+    return `<tr><td class="blue">${compact(row.symbol)}</td><td class="${klass}">${compact(row.bias)}</td><td>${row.confidence ?? 0}%</td><td>${Math.round(row.data_quality_score || 0)}%</td><td>${compact(rowSourceText)}</td><td>${compact((row.reasons || []).slice(0,2).join('; '))}</td></tr>`;
   });
   $('bias-panel').innerHTML = `<div class="metric-grid" style="margin-bottom:8px">
     ${metric('Last update', dt(bias.run_at))}
     ${metric('NY / DE time', `${compact(bias.ny_time)} / ${compact(bias.berlin_time)}`)}
     ${metric('Data quality', `${Math.round(bias.data_quality_score || 0)}%`, (bias.data_quality_score || 0) >= 60 ? 'green' : 'yellow')}
-  </div>${table(['symbol','bias','confidence','L/S/C','reason'], rows, 'no bias rows for selected filter')}`;
+    ${metric('Sources', compact(sourceText))}
+  </div>${table(['symbol','bias','confidence','quality','sources','reason'], rows, 'no bias rows for selected filter')}`;
 }
 function renderCurve() {
   const closed = state.trades.slice().reverse().map(t => num(t.profit_money ?? t.profit ?? t.pnl)).filter(v => v !== null);

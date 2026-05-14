@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 from zoneinfo import ZoneInfo
+
+from .bias_sources import SeriesBundle, load_bias_source_context
 
 
 NY_TZ = ZoneInfo("America/New_York")
@@ -41,26 +42,20 @@ WEIGHTS = {
 }
 
 
-@dataclass
-class SeriesBundle:
-    closes: list[float]
-    highs: list[float]
-    lows: list[float]
-    volumes: list[float]
-
-
 def calculate_bias_report(allow_network: bool = True, now: Optional[datetime] = None) -> dict:
     now_utc = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
     ny_now = now_utc.astimezone(NY_TZ)
     berlin_now = now_utc.astimezone(BERLIN_TZ)
-    market_data, availability = _load_market_data(allow_network)
-    macro = _macro_context(ny_now)
-    news = _news_context()
+    source_context = load_bias_source_context(BIAS_SYMBOLS, INTERMARKET_TICKERS, allow_network=allow_network)
+    market_data = source_context["market_data"]
+    macro = source_context["macro"]
+    news = source_context["news"]
+    binance = source_context["binance"]
 
     rows = []
     qualities = []
     for item in BIAS_SYMBOLS:
-        result = _symbol_bias(item, market_data, macro, news)
+        result = _symbol_bias(item, market_data, macro, news, binance)
         rows.append(result)
         qualities.append(result["data_quality_score"])
 
@@ -73,7 +68,8 @@ def calculate_bias_report(allow_network: bool = True, now: Optional[datetime] = 
         "berlin_time": berlin_now.strftime("%H:%M %Z"),
         "macro_risk": macro_risk,
         "data_quality_score": quality,
-        "source_availability": availability | {"macro_calendar": macro["available"], "news_sentiment": news["available"]},
+        "source_availability": source_context["source_availability"],
+        "source_details": source_context.get("source_details") or {},
         "symbols": rows,
     }
     report["telegram_text"] = format_bias_telegram_message(report)
@@ -82,85 +78,50 @@ def calculate_bias_report(allow_network: bool = True, now: Optional[datetime] = 
 
 def format_bias_telegram_message(report: dict) -> str:
     lines = [
-        "📊 NY PRE-MARKET BIAS",
-        f"🕒 {report.get('ny_time', '09:20 NY')} / {report.get('berlin_time', '15:20 DE')}",
+        "\U0001f4ca NY PRE-MARKET BIAS",
+        f"\U0001f552 {report.get('ny_time', '09:20 NY')} / {report.get('berlin_time', '15:20 DE')}",
         "",
     ]
     for row in report.get("symbols", []):
         lines.append(f"{row['symbol']}: {row['bias']} {row['confidence']}%")
-    lines.extend(["", f"Macro Risk: {report.get('macro_risk', 'UNKNOWN')}", ""])
+    lines.extend(
+        [
+            "",
+            f"Macro Risk: {report.get('macro_risk', 'UNKNOWN')}",
+            f"\U0001f4e1 Data Quality: {int(round(float(report.get('data_quality_score') or 0)))}%",
+            "",
+            "Reasons:",
+        ]
+    )
     for row in report.get("symbols", []):
         reason = "; ".join(row.get("reasons", [])[:3]) or "data limited"
         lines.append(f"{row['symbol']}: {reason}")
-    unavailable = [k for k, v in (report.get("source_availability") or {}).items() if not v]
+    unavailable = [k for k, v in (report.get("source_availability") or {}).items() if v == "unavailable"]
     if unavailable:
         lines.extend(["", "Data unavailable: " + ", ".join(unavailable[:6])])
+    if float(report.get("data_quality_score") or 0) < 50:
+        lines.extend(["", "\u26a0 LOW DATA QUALITY  bias is limited."])
     return "\n".join(lines)
 
 
-def _load_market_data(allow_network: bool) -> tuple[dict[str, SeriesBundle], dict[str, bool]]:
-    tickers = {item["ticker"] for item in BIAS_SYMBOLS} | set(INTERMARKET_TICKERS.values())
-    data: dict[str, SeriesBundle] = {}
-    availability: dict[str, bool] = {"market_data": False, "intermarket": False}
-    if not allow_network:
-        return data, availability
-    try:
-        import yfinance as yf
-    except Exception:
-        return data, availability
-
-    for ticker in sorted(tickers):
-        try:
-            frame = yf.download(ticker, period="10d", interval="1h", progress=False, auto_adjust=False, threads=False)
-        except Exception:
-            continue
-        bundle = _bundle_from_frame(frame)
-        if bundle and len(bundle.closes) >= 20:
-            data[ticker] = bundle
-    availability["market_data"] = any(item["ticker"] in data for item in BIAS_SYMBOLS)
-    availability["intermarket"] = any(ticker in data for ticker in INTERMARKET_TICKERS.values())
-    return data, availability
-
-
-def _bundle_from_frame(frame: Any) -> Optional[SeriesBundle]:
-    if frame is None or getattr(frame, "empty", True):
-        return None
-
-    def column(name: str) -> list[float]:
-        try:
-            raw = frame[name]
-            if hasattr(raw, "iloc") and hasattr(raw, "columns"):
-                raw = raw.iloc[:, 0]
-            values = raw.dropna().astype(float).tolist()
-            return [float(v) for v in values if math.isfinite(float(v))]
-        except Exception:
-            return []
-
-    closes = column("Close")
-    highs = column("High") or closes
-    lows = column("Low") or closes
-    volumes = column("Volume")
-    if not closes:
-        return None
-    if len(highs) != len(closes):
-        highs = closes[:]
-    if len(lows) != len(closes):
-        lows = closes[:]
-    if len(volumes) != len(closes):
-        volumes = [1.0] * len(closes)
-    return SeriesBundle(closes=closes, highs=highs, lows=lows, volumes=volumes)
-
-
-def _symbol_bias(item: dict, market_data: dict[str, SeriesBundle], macro: dict, news: dict) -> dict:
+def _symbol_bias(item: dict, market_data: dict[str, SeriesBundle], macro: dict, news: dict, binance: dict) -> dict:
     bundle = market_data.get(item["ticker"])
-    sources = {"market_structure": bool(bundle), "premarket": bool(bundle), "intermarket": bool(market_data), "macro_calendar": macro["available"], "news_sentiment": news["available"]}
+    intermarket_score = _intermarket_score(item["symbol"], market_data, binance)
     factors = {
         "market_structure": _market_structure_score(bundle),
         "premarket": _premarket_score(bundle),
-        "intermarket": _intermarket_score(item["symbol"], market_data),
-        "macro_calendar": macro["score"],
-        "news_sentiment": news["score"],
+        "intermarket": intermarket_score,
+        "macro_calendar": _source_score(macro),
+        "news_sentiment": _source_score(news),
         "volatility_regime": _volatility_regime_score(bundle),
+    }
+    sources = {
+        "market_structure": "available" if factors["market_structure"] is not None else "unavailable",
+        "premarket": "available" if factors["premarket"] is not None else "unavailable",
+        "intermarket": _symbol_intermarket_status(item["symbol"], market_data, binance),
+        "macro_calendar": macro.get("availability", "unavailable"),
+        "news_sentiment": news.get("availability", "unavailable"),
+        "volatility_regime": "available" if factors["volatility_regime"] is not None else "unavailable",
     }
     available = {k: v for k, v in factors.items() if v is not None}
     if not available:
@@ -168,11 +129,24 @@ def _symbol_bias(item: dict, market_data: dict[str, SeriesBundle], macro: dict, 
     else:
         total_weight = sum(WEIGHTS[k] for k in available)
         final = sum(score * WEIGHTS[k] for k, score in available.items()) / total_weight
-    conflict = _factor_conflict(list(available.values()))
-    data_quality = round(100 * len(available) / len(WEIGHTS), 1)
-    confidence = _confidence(final, data_quality, conflict, macro["risk"])
-    bias = _bias_label(final, confidence, conflict, macro["risk"])
+
+    conflict = _factor_conflict(list(available.values())) or _strong_structure_intermarket_conflict(
+        factors["market_structure"], factors["intermarket"]
+    )
+    data_quality = _data_quality_score(sources, macro, news, binance)
+    macro_risk = macro.get("risk", "UNKNOWN")
+    confidence = _confidence(final, data_quality, conflict, macro_risk)
+    bias = _bias_label(final, confidence, conflict, macro_risk, data_quality)
     long_pct, short_pct, consolidation_pct = _percentages(final, confidence, bias)
+
+    flags = []
+    if data_quality < 50:
+        flags.append("LOW_DATA_QUALITY")
+    if conflict:
+        flags.append("FACTOR_CONFLICT")
+    if macro_risk in {"HIGH", "UNKNOWN"}:
+        flags.append(f"MACRO_{macro_risk}")
+
     return {
         "symbol": item["symbol"],
         "bot_id": item["bot_id"],
@@ -185,8 +159,9 @@ def _symbol_bias(item: dict, market_data: dict[str, SeriesBundle], macro: dict, 
         "factor_scores": {k: round(v, 1) if v is not None else None for k, v in factors.items()},
         "source_availability": sources,
         "data_quality_score": data_quality,
-        "high_risk": macro["risk"] == "HIGH",
-        "reasons": _reasons(item["symbol"], bundle, market_data, final, bias, macro, news),
+        "high_risk": macro_risk == "HIGH",
+        "flags": flags,
+        "reasons": _reasons(item["symbol"], bundle, market_data, final, bias, macro, news, binance),
     }
 
 
@@ -219,7 +194,7 @@ def _premarket_score(bundle: Optional[SeriesBundle]) -> Optional[float]:
     return _clamp(score, -100, 100)
 
 
-def _intermarket_score(symbol: str, market_data: dict[str, SeriesBundle]) -> Optional[float]:
+def _intermarket_score(symbol: str, market_data: dict[str, SeriesBundle], binance: dict) -> Optional[float]:
     def direction(key: str) -> Optional[float]:
         bundle = market_data.get(INTERMARKET_TICKERS[key])
         return _momentum_score(bundle.closes, 4, 25) if bundle else None
@@ -249,6 +224,8 @@ def _intermarket_score(symbol: str, market_data: dict[str, SeriesBundle]) -> Opt
             value = direction(key)
             if value is not None:
                 scores.append(weight * value)
+        if binance.get("availability") != "unavailable":
+            scores.append(float(binance.get("score") or 0))
     elif symbol == "GER40":
         for key, weight in (("EUROSTOXX", 0.55), ("EURUSD", 0.2), ("DXY", -0.25), ("SP500_F", 0.25)):
             value = direction(key)
@@ -271,34 +248,25 @@ def _volatility_regime_score(bundle: Optional[SeriesBundle]) -> Optional[float]:
     return 0.0
 
 
-def _macro_context(now_ny: datetime) -> dict:
-    # No confirmed calendar adapter is configured in this project. Mark common
-    # high-impact NY morning windows as caution only; do not invent events.
-    weekday = now_ny.weekday()
-    hour = now_ny.hour + now_ny.minute / 60
-    risk = "MEDIUM"
-    score = 0.0
-    if weekday >= 5:
-        risk = "HIGH"
-    elif 8.0 <= hour <= 10.2:
-        risk = "MEDIUM"
-    return {"available": False, "risk": risk, "score": score}
-
-
-def _news_context() -> dict:
-    return {"available": False, "score": 0.0}
-
-
 def _macro_risk(rows: list[dict], macro: dict) -> str:
-    if macro["risk"] == "HIGH" or any(row.get("high_risk") for row in rows):
+    risk = macro.get("risk", "UNKNOWN")
+    if risk == "HIGH" or any(row.get("high_risk") for row in rows):
         return "HIGH"
-    low_quality = sum(1 for row in rows if row.get("data_quality_score", 0) < 55)
-    if low_quality >= max(1, len(rows) // 2):
-        return "MEDIUM"
-    return "LOW" if macro["available"] else "MEDIUM"
+    if risk in {"LOW", "MEDIUM"} and macro.get("availability") != "unavailable":
+        return risk
+    return "UNKNOWN"
 
 
-def _reasons(symbol: str, bundle: Optional[SeriesBundle], market_data: dict[str, SeriesBundle], score: float, bias: str, macro: dict, news: dict) -> list[str]:
+def _reasons(
+    symbol: str,
+    bundle: Optional[SeriesBundle],
+    market_data: dict[str, SeriesBundle],
+    score: float,
+    bias: str,
+    macro: dict,
+    news: dict,
+    binance: dict,
+) -> list[str]:
     reasons: list[str] = []
     if bundle:
         relation = "above" if bundle.closes[-1] > _ema(bundle.closes, 20) else "below"
@@ -306,9 +274,11 @@ def _reasons(symbol: str, bundle: Optional[SeriesBundle], market_data: dict[str,
         momentum = "up" if _momentum_score(bundle.closes, 4, 1) >= 0 else "down"
         reasons.append(f"last hours momentum {momentum}")
     if symbol in {"NAS100", "SP500", "DJ30"}:
-        vix = _intermarket_direction_text("VIX", market_data, inverse=True)
-        if vix:
-            reasons.append(vix)
+        for key in ("VIX", "DXY", "US10Y"):
+            reason = _intermarket_direction_text(key, market_data, inverse=True)
+            if reason:
+                reasons.append(reason)
+                break
     if symbol == "XAUUSD":
         dxy = _intermarket_direction_text("DXY", market_data, inverse=True, label="DXY")
         if dxy:
@@ -317,10 +287,19 @@ def _reasons(symbol: str, bundle: Optional[SeriesBundle], market_data: dict[str,
         eth = _intermarket_direction_text("ETHUSD", market_data, label="ETH")
         if eth:
             reasons.append(eth)
-    if macro["risk"] != "LOW":
-        reasons.append("macro calendar unconfirmed")
-    if not news["available"]:
+        reasons.extend(str(reason) for reason in binance.get("reasons", [])[:1])
+    if symbol == "GER40":
+        estoxx = _intermarket_direction_text("EUROSTOXX", market_data, label="EuroStoxx")
+        if estoxx:
+            reasons.append(estoxx)
+    if macro.get("availability") == "unavailable":
+        reasons.append("macro calendar unavailable")
+    elif macro.get("risk") != "LOW":
+        reasons.extend(str(reason) for reason in macro.get("reasons", [])[:1])
+    if news.get("availability") == "unavailable":
         reasons.append("news source unavailable")
+    else:
+        reasons.extend(str(reason) for reason in news.get("reasons", [])[:1])
     if not reasons:
         reasons.append(f"{bias.lower()} score {round(score)}")
     return reasons[:4]
@@ -336,6 +315,66 @@ def _intermarket_direction_text(key: str, market_data: dict[str, SeriesBundle], 
         impact = "supports risk" if score < 0 else "pressures risk"
         return f"{label or key} {direction}, {impact}"
     return f"{label or key} {direction}"
+
+
+def _source_score(source: dict) -> Optional[float]:
+    if source.get("availability") == "unavailable":
+        return None
+    return float(source.get("score") or 0)
+
+
+def _symbol_intermarket_status(symbol: str, market_data: dict[str, SeriesBundle], binance: dict) -> str:
+    keys = {
+        "NAS100": ("NASDAQ_F", "SP500_F", "DJ30_F", "VIX", "DXY", "US10Y"),
+        "SP500": ("NASDAQ_F", "SP500_F", "DJ30_F", "VIX", "DXY", "US10Y"),
+        "DJ30": ("NASDAQ_F", "SP500_F", "DJ30_F", "VIX", "DXY", "US10Y"),
+        "XAUUSD": ("DXY", "US10Y", "VIX"),
+        "BTCUSD": ("ETHUSD", "NASDAQ_F", "DXY"),
+        "GER40": ("EUROSTOXX", "EURUSD", "DXY", "SP500_F"),
+    }.get(symbol, ())
+    available = sum(1 for key in keys if market_data.get(INTERMARKET_TICKERS[key]))
+    total = len(keys)
+    if symbol == "BTCUSD":
+        total += 1
+        available += 1 if binance.get("availability") != "unavailable" else 0
+    if available <= 0:
+        return "unavailable"
+    if available >= total:
+        return "available"
+    return "partial"
+
+
+def _data_quality_score(sources: dict[str, str], macro: dict, news: dict, binance: dict) -> float:
+    confidence = {
+        "market_structure": 72,
+        "premarket": 64,
+        "intermarket": 66,
+        "macro_calendar": float(macro.get("confidence") or 0),
+        "news_sentiment": float(news.get("confidence") or 0),
+        "volatility_regime": 55,
+    }
+    weighted = 0.0
+    for key, weight in WEIGHTS.items():
+        weighted += weight * _availability_weight(sources.get(key, "unavailable")) * confidence[key]
+    if binance.get("availability") == "partial":
+        weighted += 2
+    elif binance.get("availability") == "available":
+        weighted += 4
+    return round(_clamp(weighted, 0, 100), 1)
+
+
+def _availability_weight(status: str) -> float:
+    if status == "available":
+        return 1.0
+    if status == "partial":
+        return 0.55
+    return 0.0
+
+
+def _strong_structure_intermarket_conflict(structure: Optional[float], intermarket: Optional[float]) -> bool:
+    if structure is None or intermarket is None:
+        return False
+    return abs(structure) >= 30 and abs(intermarket) >= 30 and structure * intermarket < 0
 
 
 def _ema(values: list[float], period: int) -> float:
@@ -422,16 +461,18 @@ def _factor_conflict(scores: list[float]) -> bool:
 
 def _confidence(score: float, quality: float, conflict: bool, macro_risk: str) -> int:
     confidence = min(82.0, 45.0 + abs(score) * 0.45)
-    confidence *= max(0.45, quality / 100)
+    confidence *= max(0.25, quality / 100)
     if conflict:
         confidence -= 12
     if macro_risk == "HIGH":
-        confidence -= 10
+        confidence -= 12
+    elif macro_risk == "UNKNOWN":
+        confidence -= 6
     return int(round(_clamp(confidence, 0, 88)))
 
 
-def _bias_label(score: float, confidence: int, conflict: bool, macro_risk: str) -> str:
-    if confidence < 57 or conflict or macro_risk == "HIGH" or abs(score) < 18:
+def _bias_label(score: float, confidence: int, conflict: bool, macro_risk: str, data_quality: float) -> str:
+    if confidence < 57 or data_quality < 50 or conflict or macro_risk == "HIGH" or abs(score) < 18:
         return "CONSOLIDATION"
     return "LONG" if score > 0 else "SHORT"
 
@@ -460,4 +501,3 @@ def _average(values: list[float]) -> Optional[float]:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, float(value)))
-

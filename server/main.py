@@ -1077,6 +1077,7 @@ def _bias_public_payload(report: dict | None) -> dict | None:
         "macro_risk": report.get("macro_risk"),
         "data_quality_score": report.get("data_quality_score"),
         "source_availability": report.get("source_availability") or {},
+        "source_details": report.get("source_details") or {},
         "symbols": report.get("symbols") or [],
         "telegram_text": report.get("telegram_text"),
     }
