@@ -31,12 +31,17 @@ from .database import db
 
 try:
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+    try:
+        from telegram import WebAppInfo
+    except Exception:
+        WebAppInfo = None
     from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 except Exception:
     InlineKeyboardButton = None
     InlineKeyboardMarkup = None
     KeyboardButton = None
     ReplyKeyboardMarkup = None
+    WebAppInfo = None
     CallbackQueryHandler = None
     CommandHandler = None
     MessageHandler = None
@@ -102,33 +107,48 @@ MARKET_SYMBOLS = {
     "GER40": "^GDAXI",
     "VIX": "^VIX",
 }
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://tv-smob-server-1.onrender.com/dashboard")
+SITE_BUTTON_TEXT = "🌐 Сайт"
+
+
+def _keyboard_button_payload(text: str):
+    if text == SITE_BUTTON_TEXT:
+        return {"text": text, "web_app": {"url": DASHBOARD_URL}}
+    return {"text": text}
+
+
+def _reply_keyboard_button(text: str):
+    if text == SITE_BUTTON_TEXT and WebAppInfo:
+        try:
+            return KeyboardButton(text, web_app=WebAppInfo(url=DASHBOARD_URL))
+        except TypeError:
+            pass
+    return KeyboardButton(text)
+
+
 MAIN_KEYBOARD_ROWS = [
-    ["📊 Статус", "📋 Сделки"],
-    ["📈 Статистика", " Действия"],
-    ["🌍 Рынок", "🏆 Рекорды"],
-    ["📉 Риск", "🤖 Боты"],
+    ["📊 Статус", "🧾 Сделки"],
+    ["📈 Статистика", "📉 Риск"],
+    [SITE_BUTTON_TEXT],
 ]
 if ReplyKeyboardMarkup and KeyboardButton:
     MAIN_KEYBOARD = ReplyKeyboardMarkup(
-        [[KeyboardButton(text) for text in row] for row in MAIN_KEYBOARD_ROWS],
+        [[_reply_keyboard_button(text) for text in row] for row in MAIN_KEYBOARD_ROWS],
         resize_keyboard=True,
         is_persistent=True,
     )
 else:
     MAIN_KEYBOARD = {
-        "keyboard": [[{"text": text} for text in row] for row in MAIN_KEYBOARD_ROWS],
+        "keyboard": [[_keyboard_button_payload(text) for text in row] for row in MAIN_KEYBOARD_ROWS],
         "resize_keyboard": True,
         "is_persistent": True,
     }
 MENU_BUTTON_CALLBACKS = {
     "📊 Статус": "menu_status",
+    "🧾 Сделки": "menu_trades",
     "📋 Сделки": "menu_trades",
     "📈 Статистика": "menu_stats",
-    " Действия": "menu_actions",
-    "🌍 Рынок": "menu_market",
-    "🏆 Рекорды": "menu_records",
     "📉 Риск": "menu_risk",
-    "🤖 Боты": "menu_bots",
 }
 user_state = {}
 
@@ -158,7 +178,7 @@ def allow_real_trading():
     return os.getenv("ALLOW_REAL_TRADING", "false").lower() == "true"
 
 
-def send_telegram_message(text: str) -> bool:
+def send_telegram_message(text: str, reply_markup: Optional[dict] = None) -> bool:
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ADMIN_CHAT_ID:
         return False
     url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -166,7 +186,7 @@ def send_telegram_message(text: str) -> bool:
         {
             "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
             "text": text,
-            "reply_markup": json.dumps(dashboard_keyboard(), ensure_ascii=False),
+            "reply_markup": json.dumps(reply_markup or dashboard_keyboard(), ensure_ascii=False),
             "disable_web_page_preview": True,
         }
     ).encode("utf-8")
@@ -811,13 +831,32 @@ def ptb_reply_markup(markup):
     if InlineKeyboardMarkup and InlineKeyboardButton and "inline_keyboard" in markup:
         return InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton(btn.get("text", ""), callback_data=btn.get("callback_data")) for btn in row]
+                [
+                    InlineKeyboardButton(
+                        btn.get("text", ""),
+                        url=btn.get("url"),
+                        callback_data=btn.get("callback_data") if not btn.get("url") else None,
+                    )
+                    for btn in row
+                ]
                 for row in markup.get("inline_keyboard", [])
             ]
         )
     if ReplyKeyboardMarkup and KeyboardButton and "keyboard" in markup:
+        def make_button(btn):
+            if isinstance(btn, str):
+                return KeyboardButton(btn)
+            text = btn.get("text", "")
+            web_app = btn.get("web_app") or {}
+            if web_app.get("url") and WebAppInfo:
+                try:
+                    return KeyboardButton(text, web_app=WebAppInfo(url=web_app["url"]))
+                except TypeError:
+                    pass
+            return KeyboardButton(text)
+
         return ReplyKeyboardMarkup(
-            [[KeyboardButton(btn.get("text", "")) for btn in row] for row in markup.get("keyboard", [])],
+            [[make_button(btn) for btn in row] for row in markup.get("keyboard", [])],
             resize_keyboard=bool(markup.get("resize_keyboard", True)),
             is_persistent=bool(markup.get("is_persistent", True)),
         )
@@ -881,33 +920,33 @@ async def show_bots(update, context):
     await _reply_menu_section(update, "menu_bots")
 
 
+async def show_site(update, context):
+    if getattr(update, "message", None):
+        await update.message.reply_text(site_message(), reply_markup=ptb_reply_markup(site_inline_keyboard()))
+
+
 async def handle_menu_button(update, context):
     text = update.message.text
     if text == "📊 Статус":
         await show_status(update, context)
-    elif text == "📋 Сделки":
+    elif text in ("🧾 Сделки", "📋 Сделки"):
         await show_trades_menu(update, context)
     elif text == "📈 Статистика":
         await show_stats_menu(update, context)
-    elif text == " Действия":
-        await show_actions_menu(update, context)
-    elif text == "🌍 Рынок":
-        await show_market(update, context)
-    elif text == "🏆 Рекорды":
-        await show_records(update, context)
     elif text == "📉 Риск":
         await show_risk(update, context)
-    elif text == "🤖 Боты":
-        await show_bots(update, context)
+    elif text in (SITE_BUTTON_TEXT, "Сайт"):
+        await show_site(update, context)
 
 
-MENU_BUTTON_PATTERN = r"^(📊 Статус|📋 Сделки|📈 Статистика| Действия|🌍 Рынок|🏆 Рекорды|📉 Риск|🤖 Боты)$"
+MENU_BUTTON_PATTERN = r"^(📊 Статус|🧾 Сделки|📈 Статистика|📉 Риск|🌐 Сайт|Сайт)$"
 menu_message_handler = (
     MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
     if MessageHandler and filters
     else None
 )
 start_command_handler = CommandHandler(["start", "menu"], start) if CommandHandler else None
+site_command_handler = CommandHandler(["site", "dashboard"], show_site) if CommandHandler else None
 
 
 def register_menu_handlers(app) -> None:
@@ -915,6 +954,8 @@ def register_menu_handlers(app) -> None:
         app.add_handler(menu_message_handler, group=-1)
     if start_command_handler:
         app.add_handler(start_command_handler, group=-1)
+    if site_command_handler:
+        app.add_handler(site_command_handler, group=-1)
     if menu_callback_query_handler:
         app.add_handler(menu_callback_query_handler)
 
@@ -1008,6 +1049,17 @@ def inline_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
     }
 
 
+def site_inline_keyboard() -> dict:
+    if InlineKeyboardButton and InlineKeyboardMarkup:
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🌐 Открыть сайт", url=DASHBOARD_URL)]])
+        return markup.to_dict()
+    return {"inline_keyboard": [[{"text": "🌐 Открыть сайт", "url": DASHBOARD_URL}]]}
+
+
+def site_message() -> str:
+    return "Открыть торговую панель MT5:"
+
+
 def main_menu_keyboard() -> dict:
     return dashboard_keyboard()
 
@@ -1097,6 +1149,9 @@ def handle_telegram_update(update: dict) -> bool:
         if text.split()[0].lower() in ("/start", "/menu"):
             user_state[chat_id] = {"screen": "main"}
             menu_send(chat_id, menu_main_text(), main_menu_keyboard())
+            return True
+        if text in (SITE_BUTTON_TEXT, "Сайт") or text.split()[0].lower() in ("/site", "/dashboard"):
+            menu_send(chat_id, site_message(), site_inline_keyboard())
             return True
         if text.split()[0].lower() == "/backtest":
             if len(text.split()) > 1:
@@ -1776,6 +1831,8 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
 
     if command in ("/start", "/menu"):
         return menu_main_text()
+    if command in ("/site", "/dashboard"):
+        return site_message()
     if command == "/status":
         return format_status()
     if command == "/last_trade":
@@ -1888,10 +1945,13 @@ def normalize_dashboard_button(text: str) -> str:
     mapping = {
         "Core Status": "/status",
         "Trade Center": "/trades",
+        "🧾 Сделки": "/trades_today",
         "Market Intel": "/market_today",
         "Control Panel": "/settings",
         "Statistics": "/performance",
         "Last Screenshot": "/last_screenshot",
+        SITE_BUTTON_TEXT: "/site",
+        "Сайт": "/site",
         "📊 Core Status": "/status",
         "📈 Trade Center": "/trades",
         "📰 Market Intel": "/market_today",
@@ -1918,7 +1978,10 @@ def normalize_dashboard_button(text: str) -> str:
             "📸 Последний скрин": "/screenshot_menu",
             "Настройки": "/bot_settings",
             "Статус": "/status",
+            "🧾 Сделки": "/trades_today",
             "Сделки": "/trades_today",
+            SITE_BUTTON_TEXT: "/site",
+            "Сайт": "/site",
         }
     )
     return mapping.get(text, text)
