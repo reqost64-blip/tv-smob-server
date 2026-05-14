@@ -692,7 +692,7 @@ async def dashboard_status():
         return {
             "ok": True,
             "system_mode": config.SYSTEM_MODE,
-            "db_storage": config.DB_STORAGE_SOURCE,
+            **config.db_file_diagnostics(),
             "trading_enabled": bool(get_setting("trading_enabled", config.TRADING_ENABLED)),
             "last_heartbeat_at": heartbeat,
             "bots_total": len(bots),
@@ -703,7 +703,7 @@ async def dashboard_status():
         return {
             "ok": True,
             "system_mode": config.SYSTEM_MODE,
-            "db_storage": getattr(config, "DB_STORAGE_SOURCE", "unknown"),
+            **config.db_file_diagnostics(),
             "trading_enabled": None,
             "last_heartbeat_at": None,
             "bots_total": 0,

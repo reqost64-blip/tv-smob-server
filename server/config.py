@@ -1,14 +1,22 @@
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
+PERSISTENT_DB_PREFIX = "/var/data/"
+
 
 def _is_default_sqlite_path(value: str | None) -> bool:
     normalized = str(value or "").strip().replace("\\", "/")
     return normalized in {"", "bridge.db", "./bridge.db"}
+
+
+def _is_render_persistent_path(value: str | None) -> bool:
+    normalized = str(value or "").strip().replace("\\", "/")
+    return normalized == "/var/data/bridge.db" or normalized.startswith(PERSISTENT_DB_PREFIX)
 
 
 def _sqlite_path_from_database_url(value: str | None) -> str | None:
@@ -32,26 +40,88 @@ def _copy_seed_db_if_needed(target: Path) -> None:
         return
 
 
+def _ensure_parent_dir(target: Path) -> None:
+    if target.parent == Path(".") or _is_render_persistent_path(str(target)):
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+
+
+def _path_writable(path: Path) -> bool:
+    directory = path if path.is_dir() else path.parent
+    if not directory.exists() or not directory.is_dir():
+        return False
+    try:
+        with tempfile.NamedTemporaryFile(prefix=".db_write_test_", dir=directory, delete=True) as handle:
+            handle.write(b"ok")
+            handle.flush()
+            handle.seek(0)
+            return handle.read() == b"ok"
+    except OSError:
+        return False
+
+
+def _persistent_db_ready(path: Path) -> bool:
+    return _is_render_persistent_path(str(path)) and path.parent.exists() and _path_writable(path)
+
+
 def _resolve_db_file() -> tuple[str, str]:
     raw_db_file = os.getenv("DB_FILE")
     raw_database_url = os.getenv("DATABASE_URL")
     sqlite_url_path = _sqlite_path_from_database_url(raw_database_url)
-    render_disk = Path("/var/data")
 
     if sqlite_url_path:
         target = Path(sqlite_url_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_parent_dir(target)
         return str(target), "DATABASE_URL"
 
-    if os.getenv("RENDER") and render_disk.exists() and _is_default_sqlite_path(raw_db_file):
-        target = render_disk / "bridge.db"
+    target = Path(raw_db_file or "bridge.db")
+    _ensure_parent_dir(target)
+    if raw_db_file and _persistent_db_ready(target):
         _copy_seed_db_if_needed(target)
         return str(target), "render_persistent_disk"
-
-    target = Path(raw_db_file or "bridge.db")
-    if target.parent != Path("."):
-        target.parent.mkdir(parents=True, exist_ok=True)
     return str(target), "DB_FILE" if raw_db_file else "default"
+
+
+def db_file_diagnostics() -> dict:
+    path = Path(DB_FILE)
+    dir_path = path.parent if path.parent != Path("") else Path(".")
+    raw_db_file = os.getenv("DB_FILE")
+    configured = bool(raw_db_file)
+    persistent_path = _is_render_persistent_path(str(path))
+    dir_exists = dir_path.exists() and dir_path.is_dir()
+    file_exists = path.exists()
+    writable = _path_writable(path)
+    size = None
+    try:
+        size = path.stat().st_size if file_exists else 0
+    except OSError:
+        size = None
+
+    warning = None
+    if configured and not persistent_path:
+        warning = "DB_FILE is not under /var/data; Render trade history may be ephemeral."
+    elif not configured and not persistent_path:
+        warning = "DB_FILE is not set; using fallback SQLite path that may be ephemeral on Render."
+    elif persistent_path and not dir_exists:
+        warning = "/var/data directory does not exist; attach a Render persistent disk."
+    elif persistent_path and not writable:
+        warning = "/var/data is not writable; persistent SQLite is not ready."
+
+    persistent_ready = configured and persistent_path and dir_exists and writable
+    return {
+        "db_storage": "render_persistent_disk" if persistent_ready else DB_STORAGE_SOURCE,
+        "db_file_configured": configured,
+        "db_file_path": str(path),
+        "db_file_exists": file_exists,
+        "db_file_dir_exists": dir_exists,
+        "db_file_is_writable": writable,
+        "db_file_size": size,
+        "db_persistent_expected": persistent_ready,
+        "db_warning": warning,
+    }
 
 WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
 MT5_NATIVE_SECRET: str = os.getenv("MT5_NATIVE_SECRET") or WEBHOOK_SECRET
