@@ -93,6 +93,7 @@ NATIVE_SCREENSHOT_EVENTS = {
     "tp2_closed",
     "tp2_hit",
     "tp2_taken",
+    "tp2_silent",
     "tp3_closed",
     "tp3_hit",
     "tp3_taken",

@@ -127,11 +127,11 @@ def normalizeNativeTradeEvent(payload: dict) -> dict:
         "tp1_hit": "trade_tp1_be",
         "tp1_taken": "trade_tp1_be",
         "tp1_closed": "trade_tp1_be",
-        "tp2_hit": "trade_partial_silent",
-        "tp2_taken": "trade_partial_silent",
-        "tp2_closed": "trade_partial_silent",
-        "tp2_silent": "trade_partial_silent",
-        "partial_close_tp2": "trade_partial_silent",
+        "tp2_hit": "trade_tp2",
+        "tp2_taken": "trade_tp2",
+        "tp2_closed": "trade_tp2",
+        "tp2_silent": "trade_tp2",
+        "partial_close_tp2": "trade_tp2",
         "tp3_hit": "trade_partial_silent",
         "tp3_taken": "trade_partial_silent",
         "tp3_closed": "trade_partial_silent",
@@ -163,19 +163,22 @@ def normalizeNativeTradeEvent(payload: dict) -> dict:
     normalized_type = aliases.get(raw_type, "silent")
     if normalized_type == "trade_partial_silent" and tp_index == 1:
         normalized_type = "trade_tp1_be"
+    elif normalized_type == "trade_partial_silent" and tp_index == 2:
+        normalized_type = "trade_tp2"
 
     template = {
         "trade_opened": "opened",
         "trade_tp1_be": "tp1_be",
+        "trade_tp2": "tp2",
         "trade_closed": "closed",
         "trade_closed_profit": "closed",
         "trade_closed_loss": "closed",
         "trade_execution_error": "execution_error",
     }.get(normalized_type, "silent")
 
-    notify_types = {"trade_opened", "trade_tp1_be", "trade_closed", "trade_closed_profit", "trade_closed_loss", "trade_execution_error"}
+    notify_types = {"trade_opened", "trade_tp1_be", "trade_tp2", "trade_closed", "trade_closed_profit", "trade_closed_loss", "trade_execution_error"}
     should_notify = normalized_type in notify_types
-    if bool(payload.get("telegram_silent")):
+    if bool(payload.get("telegram_silent")) and normalized_type != "trade_tp2":
         should_notify = False
     if clean_mode_enabled() and normalized_type not in notify_types:
         should_notify = False
@@ -210,6 +213,8 @@ def accounting_event_type(payload: dict, normalized: dict) -> str:
         return "opened"
     if normalized_type == "trade_tp1_be":
         return "tp1_closed"
+    if normalized_type == "trade_tp2":
+        return "tp2_closed"
     if normalized_type == "trade_partial_silent":
         if tp_index == 3:
             return "tp3_closed"
@@ -282,6 +287,41 @@ def _duration_minutes(opened_at, closed_at) -> Optional[int]:
     return max(0, int((closed.astimezone(timezone.utc) - opened.astimezone(timezone.utc)).total_seconds() / 60))
 
 
+def _format_tp_taken_message(payload: dict, label: str, symbol: str, side: str, exit_price, default_closed_percent: int) -> str:
+    tp_key = label.lower()
+    net = first_present(
+        payload.get("realized_net"),
+        payload.get(f"{tp_key}_net"),
+        payload.get("profit_money"),
+        payload.get("profit"),
+    )
+    closed_percent = first_present(
+        payload.get("closed_percent"),
+        payload.get(f"{tp_key}_percent"),
+        default_closed_percent,
+    )
+    remaining = first_present(payload.get("remaining_percent"), payload.get("remaining_volume_percent"))
+    if remaining is None and _num(closed_percent) is not None:
+        remaining = max(0.0, 100.0 - _num(closed_percent))
+
+    lines = [f"🎯 {label} ВЗЯТ", "", f"📊 {symbol} | {side}", ""]
+    tp_price = first_present(payload.get(tp_key), payload.get(f"{tp_key}_price"), exit_price)
+    if _price(tp_price):
+        lines.append(f"{label}: {_price(tp_price)}")
+    if closed_percent is not None:
+        lines.append(f"Закрыто: {_percent(closed_percent)} позиции")
+    if _money(net):
+        lines.extend(["", f"💰 Зафиксировано: {_money(net)}"])
+    r_value = first_present(payload.get("r"), payload.get("profit_r"), payload.get("r_multiple"))
+    if _num(r_value) is not None:
+        lines.append(f"📊 R: {_num(r_value):.2f}R")
+    lines.extend(["", "🛡 SL BE"])
+    if remaining is not None:
+        lines.append(f"Остаток в рынке: {_percent(remaining)}")
+    lines.extend(["", f"🕘 {_time_text(first_present(payload.get('deal_time'), payload.get('time')))}"])
+    return "\n".join(lines)
+
+
 def _tp_rows(payload: dict, opened: bool = False) -> list[str]:
     rows: list[str] = []
     entry = _num(first_present(payload.get("entry"), payload.get("entry_price")))
@@ -320,6 +360,12 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
     entry = first_present(payload.get("entry"), payload.get("entry_price"))
     sl = first_present(payload.get("sl"), payload.get("sl_price"))
     exit_price = first_present(payload.get("exit_price"), payload.get("close_price"), payload.get("price"))
+
+    if template == "tp1_be":
+        return _format_tp_taken_message(payload, "TP1", symbol, side, exit_price, 75)
+
+    if template == "tp2":
+        return _format_tp_taken_message(payload, "TP2", symbol, side, exit_price, 25)
 
     if template == "opened":
         lines = ["СДЕЛКА ОТКРЫТА", "", header, ""]
