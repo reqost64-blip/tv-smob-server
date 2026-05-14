@@ -692,6 +692,7 @@ async def dashboard_status():
         return {
             "ok": True,
             "system_mode": config.SYSTEM_MODE,
+            "db_storage": config.DB_STORAGE_SOURCE,
             "trading_enabled": bool(get_setting("trading_enabled", config.TRADING_ENABLED)),
             "last_heartbeat_at": heartbeat,
             "bots_total": len(bots),
@@ -702,6 +703,7 @@ async def dashboard_status():
         return {
             "ok": True,
             "system_mode": config.SYSTEM_MODE,
+            "db_storage": getattr(config, "DB_STORAGE_SOURCE", "unknown"),
             "trading_enabled": None,
             "last_heartbeat_at": None,
             "bots_total": 0,
@@ -729,7 +731,7 @@ async def dashboard_positions():
 
 
 @app.get("/api/dashboard/trades")
-async def dashboard_trades(source: str = "bot", period: str = "today", asset: str = "ALL", limit: int = 50, offset: int = 0, bot_id: str | None = None):
+async def dashboard_trades(source: str = "bot", period: str = "all", asset: str = "ALL", limit: int = 50, offset: int = 0, bot_id: str | None = None):
     try:
         selector = bot_id or asset
         trades = acct.get_trades_filtered(source=source, period=period, asset=selector or "ALL", limit=min(limit, 500), offset=offset)
@@ -842,7 +844,7 @@ async def dashboard_backtest(bot_id: str | None = None, asset: str | None = None
 
 
 @app.get("/api/dashboard/stats")
-async def dashboard_stats(source: str = "bot", period: str = "week", asset: str = "ALL"):
+async def dashboard_stats(source: str = "bot", period: str = "all", asset: str = "ALL"):
     try:
         stats = acct.get_stats_filtered(source=source, period=period, asset=asset)
     except Exception:

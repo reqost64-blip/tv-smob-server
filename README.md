@@ -57,6 +57,12 @@ OPENAI_TIMEOUT_SECONDS=60
 ENABLE_AI_WEB_SEARCH=true
 ```
 
+For Render deployments, keep the SQLite database on a persistent disk. Mount the
+disk at `/var/data` and set `DB_FILE=/var/data/bridge.db`, or leave the default
+`bridge.db` only for local development. If Render runs without a persistent disk
+or external database, its normal service filesystem can be replaced on deploy and
+old trade history will not be durable.
+
 If `MT5_NATIVE_SECRET` is not set, native MT5 endpoints use `WEBHOOK_SECRET`.
 Do not print or commit real secrets.
 
@@ -201,6 +207,10 @@ native_trade_journal
 native_trade_events
 native_screenshots
 ```
+
+Those tables live in the configured SQLite `DB_FILE`. On Render this file must
+be on a persistent disk, for example `/var/data/bridge.db`, otherwise history is
+only durable for the current service filesystem.
 
 Commands:
 

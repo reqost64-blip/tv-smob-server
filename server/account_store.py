@@ -1843,7 +1843,7 @@ def _normalize_trade_row(row: dict) -> dict:
     open_time = first_present(row.get("open_time"), row.get("opened_at"))
     exit_price = first_present(row.get("exit_price"), row.get("close_price"))
     status = str(row.get("status") or "").strip().lower()
-    is_open = status == "open" or not close_time or exit_price is None
+    is_open = status == "open" or (not status and not close_time)
     if is_open:
         status = "open"
         profit_value = None
