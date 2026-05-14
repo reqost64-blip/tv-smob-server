@@ -401,6 +401,19 @@ def init_db() -> None:
                 created_at    TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bias_reports (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_date         TEXT NOT NULL,
+                run_at              TEXT NOT NULL,
+                ny_time             TEXT,
+                berlin_time         TEXT,
+                macro_risk          TEXT NOT NULL,
+                data_quality_score  REAL,
+                payload             TEXT NOT NULL,
+                created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         _ensure_columns(
             conn,
             "native_account_snapshots",
@@ -619,6 +632,10 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_screenshots_lookup
             ON native_screenshots (bot_id, symbol, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_bias_reports_time
+            ON bias_reports (report_date, created_at)
         """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),

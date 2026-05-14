@@ -725,6 +725,7 @@
     <section class="data-grid">
       <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div><span class="badge gray">MT5</span></div><div class="panel-body" id="account-panel"></div></div>
       <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div><span class="badge gray">Live</span></div><div class="panel-body" id="pnl-panel"></div></div>
+      <div class="panel span-6"><div class="panel-head"><div class="panel-title">NY Pre-Market Bias</div><span class="badge yellow" id="bias-risk">waiting</span></div><div class="panel-body" id="bias-panel"></div></div>
       <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">Closed trades</span></div><div class="panel-body" id="curve-panel"></div></div>
       <div class="panel span-5"><div class="panel-head"><div class="panel-title">Bot Status</div><span class="badge gray">5 agents</span></div><div class="panel-body" id="bot-status-panel"></div></div>
       <div class="panel span-7"><div class="panel-head"><div class="panel-title">Open Positions</div><span class="badge gray">Risk monitor</span></div><div class="panel-body" id="positions-panel"></div></div>
@@ -773,7 +774,7 @@ const ORBIT_POINTS = [
   {x:306,y:126,speed:'24s'},
   {x:18,y:-214,speed:'20s'}
 ];
-let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
+let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, bias:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
 let refreshTimer = null;
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1029,6 +1030,27 @@ function renderPnl() {
     ${metric('Best / Worst', `<span class="green">${money(p.best_trade)}</span> / <span class="red">${money(p.worst_trade)}</span>`)}
   </div>`;
 }
+function renderBias() {
+  const bias = state.bias;
+  if(!bias || !bias.symbols || !bias.symbols.length) {
+    $('bias-risk').textContent = 'waiting';
+    $('bias-risk').className = 'badge gray';
+    $('bias-panel').innerHTML = '<div class="empty">no NY pre-market bias report yet</div>';
+    return;
+  }
+  const risk = String(bias.macro_risk || 'UNKNOWN').toUpperCase();
+  $('bias-risk').textContent = 'Macro ' + risk;
+  $('bias-risk').className = 'badge ' + (risk === 'HIGH' ? 'red' : risk === 'LOW' ? 'green' : 'yellow');
+  const rows = filterRows(bias.symbols).map(row => {
+    const klass = row.bias === 'LONG' ? 'green' : row.bias === 'SHORT' ? 'red' : 'yellow';
+    return `<tr><td class="blue">${compact(row.symbol)}</td><td class="${klass}">${compact(row.bias)}</td><td>${row.confidence ?? 0}%</td><td>${row.long_percent ?? 0}% / ${row.short_percent ?? 0}% / ${row.consolidation_percent ?? 0}%</td><td>${compact((row.reasons || []).slice(0,2).join('; '))}</td></tr>`;
+  });
+  $('bias-panel').innerHTML = `<div class="metric-grid" style="margin-bottom:8px">
+    ${metric('Last update', dt(bias.run_at))}
+    ${metric('NY / DE time', `${compact(bias.ny_time)} / ${compact(bias.berlin_time)}`)}
+    ${metric('Data quality', `${Math.round(bias.data_quality_score || 0)}%`, (bias.data_quality_score || 0) >= 60 ? 'green' : 'yellow')}
+  </div>${table(['symbol','bias','confidence','L/S/C','reason'], rows, 'no bias rows for selected filter')}`;
+}
 function renderCurve() {
   const closed = state.trades.slice().reverse().map(t => num(t.profit_money ?? t.profit ?? t.pnl)).filter(v => v !== null);
   let acc = 0;
@@ -1127,6 +1149,7 @@ function renderAll() {
   renderDrawer();
   renderAccount();
   renderPnl();
+  renderBias();
   renderCurve();
   renderBotStatusPanel();
   renderPositions();
@@ -1142,7 +1165,7 @@ async function refreshAll() {
   const src = source();
   const asset = bot === 'ALL' ? 'ALL' : bot;
   try {
-    const [status, account, pnl, bots, positions, trades, stats, journal, screens, backtest] = await Promise.all([
+    const [status, account, pnl, bots, positions, trades, stats, bias, journal, screens, backtest] = await Promise.all([
       api('/api/dashboard/status'),
       api('/api/dashboard/account'),
       api('/api/dashboard/pnl?period=today'),
@@ -1150,6 +1173,7 @@ async function refreshAll() {
       api('/api/dashboard/positions'),
       api(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`),
       api(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`),
+      api('/api/dashboard/bias'),
       api(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=150`),
       api(`/api/dashboard/screenshots?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=24`),
       api(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`)
@@ -1161,6 +1185,7 @@ async function refreshAll() {
     state.positions = positions.positions || [];
     state.trades = trades.trades || [];
     state.stats = stats.stats || {};
+    state.bias = bias.bias || null;
     state.journal = journal.journal || [];
     state.screenshots = screens.screenshots || [];
     state.backtest = backtest || {};
@@ -1169,7 +1194,7 @@ async function refreshAll() {
     console.error(error);
     $('system-status').textContent = 'API ERROR';
     $('system-status').className = 'red';
-    ['account-panel','pnl-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
+    ['account-panel','pnl-panel','bias-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
       if(!$(id).innerHTML) $(id).innerHTML = '<div class="error">API data unavailable</div>';
     });
   }

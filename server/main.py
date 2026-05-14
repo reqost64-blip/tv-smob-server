@@ -12,6 +12,8 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from . import config
 from . import account_store as acct
+from . import bias_store
+from .bias_engine import calculate_bias_report
 from .database import init_db
 from .models import (
     AckRequest,
@@ -108,7 +110,9 @@ SCREENSHOT_DIR = Path("data") / "screenshots"
 SCREENSHOTS_TO_KEEP = 100
 SCREENSHOTS_TO_KEEP_PER_BOT = 20
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
+NY_TZ = ZoneInfo("America/New_York")
 _daily_report_task: asyncio.Task | None = None
+_bias_report_task: asyncio.Task | None = None
 pending_messages: dict[str, dict] = {}
 
 
@@ -233,16 +237,19 @@ def err(msg: str, status: int = 400) -> JSONResponse:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _daily_report_task
+    global _daily_report_task, _bias_report_task
     init_db()
     load_symbols()
     _daily_report_task = asyncio.create_task(daily_report_loop())
+    _bias_report_task = asyncio.create_task(bias_report_loop())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
     if _daily_report_task:
         _daily_report_task.cancel()
+    if _bias_report_task:
+        _bias_report_task.cancel()
 
 
 # ── 1. Health ──────────────────────────────────────────────────────────────────
@@ -637,6 +644,22 @@ async def api_daily_report_task(body: DailyReportTaskRequest, request: Request):
     return {"ok": True, "sent": sent, "reason": reason, "berlin_day": berlin_day}
 
 
+@app.post("/api/bias/run")
+async def api_bias_run(body: dict, request: Request):
+    send = bool(body.get("send")) if isinstance(body, dict) else False
+    allow_network = bool(body.get("allow_network", True)) if isinstance(body, dict) else True
+    if send and not task_secret_matches(str(body.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    try:
+        report = calculate_bias_report(allow_network=allow_network)
+        bias_store.save_bias_report(report)
+        sent = send_telegram_message(report["telegram_text"]) if send else False
+    except Exception as exc:
+        logger.exception("Bias run failed")
+        return err(f"Bias run failed: {exc}", status=500)
+    return {"ok": True, "sent": sent, "report": _bias_public_payload(report)}
+
+
 @app.get("/api/settings")
 async def api_get_settings():
     return {"ok": True, "settings": list_settings()}
@@ -871,6 +894,16 @@ async def dashboard_stats(source: str = "bot", period: str = "all", asset: str =
     return {"ok": True, "stats": stats}
 
 
+@app.get("/api/dashboard/bias")
+async def dashboard_bias():
+    try:
+        report = bias_store.latest_bias_report()
+    except Exception:
+        logger.exception("Failed to load bias report")
+        report = None
+    return {"ok": True, "bias": _bias_public_payload(report) if report else None}
+
+
 @app.get("/api/dashboard/pnl")
 async def dashboard_pnl(period: str = "today"):
     try:
@@ -999,6 +1032,54 @@ def send_daily_report_if_due(force: bool = False) -> tuple[bool, str, str]:
         acct.state_set(state_key, today_key)
         return True, "sent", today_key
     return False, "telegram_send_failed", today_key
+
+
+async def bias_report_loop() -> None:
+    while True:
+        try:
+            send_bias_report_if_due(force=False)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Bias report loop failed")
+        await asyncio.sleep(60)
+
+
+def send_bias_report_if_due(force: bool = False) -> tuple[bool, str, str]:
+    now_ny = datetime.now(NY_TZ)
+    today_key = now_ny.strftime("%Y-%m-%d")
+    state_key = "last_bias_report_date"
+    if not force:
+        if now_ny.weekday() >= 5:
+            return False, "weekend", today_key
+        if not (now_ny.hour == 9 and now_ny.minute >= 20):
+            return False, "not_due", today_key
+        if acct.state_get(state_key) == today_key:
+            return False, "already_sent", today_key
+    report = calculate_bias_report(allow_network=True)
+    bias_store.save_bias_report(report)
+    sent = send_telegram_message(report["telegram_text"])
+    if sent:
+        acct.state_set(state_key, today_key)
+        return True, "sent", today_key
+    return False, "telegram_send_failed", today_key
+
+
+def _bias_public_payload(report: dict | None) -> dict | None:
+    if not report:
+        return None
+    return {
+        "id": report.get("id"),
+        "report_date": report.get("report_date"),
+        "run_at": report.get("run_at"),
+        "ny_time": report.get("ny_time"),
+        "berlin_time": report.get("berlin_time"),
+        "macro_risk": report.get("macro_risk"),
+        "data_quality_score": report.get("data_quality_score"),
+        "source_availability": report.get("source_availability") or {},
+        "symbols": report.get("symbols") or [],
+        "telegram_text": report.get("telegram_text"),
+    }
 
 
 def normalize_control_symbol(symbol: str | None) -> str | None:

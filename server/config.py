@@ -53,6 +53,8 @@ def _path_writable(path: Path) -> bool:
     directory = path if path.is_dir() else path.parent
     if not directory.exists() or not directory.is_dir():
         return False
+    if os.name == "nt" and str(path).replace("\\", "/").startswith("/"):
+        return os.access(directory, os.W_OK)
     try:
         with tempfile.NamedTemporaryFile(prefix=".db_write_test_", dir=directory, delete=True) as handle:
             handle.write(b"ok")
@@ -86,10 +88,12 @@ def _resolve_db_file() -> tuple[str, str]:
 
 
 def db_file_diagnostics() -> dict:
-    path = Path(DB_FILE)
+    return db_file_diagnostics_for_path(DB_FILE, configured=bool(os.getenv("DB_FILE")), storage_source=DB_STORAGE_SOURCE)
+
+
+def db_file_diagnostics_for_path(db_file: str, configured: bool, storage_source: str = "DB_FILE") -> dict:
+    path = Path(db_file)
     dir_path = path.parent if path.parent != Path("") else Path(".")
-    raw_db_file = os.getenv("DB_FILE")
-    configured = bool(raw_db_file)
     persistent_path = _is_render_persistent_path(str(path))
     dir_exists = dir_path.exists() and dir_path.is_dir()
     file_exists = path.exists()
@@ -112,7 +116,7 @@ def db_file_diagnostics() -> dict:
 
     persistent_ready = configured and persistent_path and dir_exists and writable
     return {
-        "db_storage": "render_persistent_disk" if persistent_ready else DB_STORAGE_SOURCE,
+        "db_storage": "render_persistent_disk" if persistent_ready else storage_source,
         "db_file_configured": configured,
         "db_file_path": str(path),
         "db_file_exists": file_exists,
