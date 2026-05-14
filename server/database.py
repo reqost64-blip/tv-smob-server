@@ -325,6 +325,32 @@ def init_db() -> None:
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS history_deals (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_ticket     TEXT UNIQUE NOT NULL,
+                order_ticket    TEXT,
+                position_id     TEXT,
+                symbol          TEXT,
+                magic_number    INTEGER,
+                bot_id          TEXT,
+                side            TEXT,
+                entry_type      TEXT,
+                deal_type       TEXT,
+                volume          REAL,
+                price           REAL,
+                profit          REAL,
+                commission      REAL,
+                swap            REAL,
+                net             REAL,
+                deal_time       TEXT,
+                comment         TEXT,
+                source          TEXT DEFAULT 'mt5_history',
+                payload         TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS backtest_trades (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 bot_id         TEXT,
@@ -511,6 +537,31 @@ def init_db() -> None:
         )
         _ensure_columns(
             conn,
+            "history_deals",
+            {
+                "order_ticket": "TEXT",
+                "position_id": "TEXT",
+                "symbol": "TEXT",
+                "magic_number": "INTEGER",
+                "bot_id": "TEXT",
+                "side": "TEXT",
+                "entry_type": "TEXT",
+                "deal_type": "TEXT",
+                "volume": "REAL",
+                "price": "REAL",
+                "profit": "REAL",
+                "commission": "REAL",
+                "swap": "REAL",
+                "net": "REAL",
+                "deal_time": "TEXT",
+                "comment": "TEXT",
+                "source": "TEXT DEFAULT 'mt5_history'",
+                "payload": "TEXT",
+                "updated_at": "TEXT",
+            },
+        )
+        _ensure_columns(
+            conn,
             "backtest_trades",
             {
                 "tp3_price": "REAL",
@@ -560,6 +611,10 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_trade_events_time
             ON native_trade_events (event_type, time, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_history_deals_position
+            ON history_deals (bot_id, symbol, magic_number, position_id, deal_time)
         """)
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_native_screenshots_lookup

@@ -130,10 +130,12 @@ def normalizeNativeTradeEvent(payload: dict) -> dict:
         "tp2_hit": "trade_partial_silent",
         "tp2_taken": "trade_partial_silent",
         "tp2_closed": "trade_partial_silent",
+        "tp2_silent": "trade_partial_silent",
         "partial_close_tp2": "trade_partial_silent",
         "tp3_hit": "trade_partial_silent",
         "tp3_taken": "trade_partial_silent",
         "tp3_closed": "trade_partial_silent",
+        "tp3_silent": "trade_partial_silent",
         "partial_close_tp3": "trade_partial_silent",
         "partial_close": "trade_tp1_be" if tp_index == 1 else "trade_partial_silent",
         "be_moved": "silent",
@@ -141,8 +143,8 @@ def normalizeNativeTradeEvent(payload: dict) -> dict:
         "trade_closed": "trade_closed",
         "position_closed": "trade_closed",
         "closed_by_signal": "trade_closed",
-        "closed_profit": "trade_closed",
-        "closed_loss": "trade_closed",
+        "closed_profit": "trade_closed_profit",
+        "closed_loss": "trade_closed_loss",
         "open_failed": "trade_execution_error",
         "trade_send_failed": "trade_execution_error",
         "ordercheck_failed": "trade_execution_error",
@@ -154,6 +156,9 @@ def normalizeNativeTradeEvent(payload: dict) -> dict:
         "market_closed": "trade_execution_error",
         "trading_disabled": "trade_execution_error",
         "error": "trade_execution_error",
+        "execution_error": "trade_execution_error",
+        "native-history": "history_sync_silent",
+        "history_sync": "history_sync_silent",
     }
     normalized_type = aliases.get(raw_type, "silent")
     if normalized_type == "trade_partial_silent" and tp_index == 1:
@@ -163,11 +168,16 @@ def normalizeNativeTradeEvent(payload: dict) -> dict:
         "trade_opened": "opened",
         "trade_tp1_be": "tp1_be",
         "trade_closed": "closed",
+        "trade_closed_profit": "closed",
+        "trade_closed_loss": "closed",
         "trade_execution_error": "execution_error",
     }.get(normalized_type, "silent")
 
-    should_notify = normalized_type in {"trade_opened", "trade_tp1_be", "trade_closed", "trade_execution_error"}
-    if clean_mode_enabled() and normalized_type not in {"trade_opened", "trade_tp1_be", "trade_closed", "trade_execution_error"}:
+    notify_types = {"trade_opened", "trade_tp1_be", "trade_closed", "trade_closed_profit", "trade_closed_loss", "trade_execution_error"}
+    should_notify = normalized_type in notify_types
+    if bool(payload.get("telegram_silent")):
+        should_notify = False
+    if clean_mode_enabled() and normalized_type not in notify_types:
         should_notify = False
     if not clean_mode_enabled() and debug_trade_events_enabled() and normalized_type in {"trade_partial_silent", "silent"}:
         should_notify = True
@@ -204,7 +214,7 @@ def accounting_event_type(payload: dict, normalized: dict) -> str:
         if tp_index == 3:
             return "tp3_closed"
         return "tp2_closed"
-    if normalized_type == "trade_closed":
+    if normalized_type in {"trade_closed", "trade_closed_profit", "trade_closed_loss"}:
         return "position_closed"
     if normalized_type == "trade_execution_error":
         return raw_type if raw_type in {"open_failed", "close_failed", "rejected", "close_rejected", "error"} else "open_failed"
@@ -312,14 +322,14 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
     exit_price = first_present(payload.get("exit_price"), payload.get("close_price"), payload.get("price"))
 
     if template == "opened":
-        lines = ["🟢 СДЕЛКА ОТКРЫТА", "", f"📊 {header}", ""]
+        lines = ["СДЕЛКА ОТКРЫТА", "", header, ""]
         if _price(entry):
             lines.append(f"Entry: {_price(entry)}")
         if _price(sl):
             lines.append(f"SL: {_price(sl)}")
         tp_rows = _tp_rows(payload, opened=True)
         if tp_rows:
-            lines.extend(["", "🎯 ТЕЙКИ И РАСЧЁТ", "", *tp_rows])
+            lines.extend(["", "Тейки", "", *tp_rows])
         return "\n".join(line for line in lines if line is not None).rstrip()
 
     if template == "tp1_be":
@@ -329,7 +339,7 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
         remaining = first_present(payload.get("remaining_percent"), payload.get("remaining_volume_percent"))
         if remaining is None and _num(closed_percent) is not None:
             remaining = max(0.0, 100.0 - _num(closed_percent))
-        lines = ["🎯 TP1 ВЗЯТ", "", f"📊 {symbol} | {side}", ""]
+        lines = ["TP1 ВЗЯТ + SL BE", "", f"{symbol} | {side}", ""]
         tp1 = first_present(payload.get("tp1"), payload.get("tp1_price"), exit_price)
         if _price(tp1):
             lines.append(f"TP1: {_price(tp1)}")
@@ -338,21 +348,21 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
         if _num(volume) is not None:
             lines.append(f"Объём: {_num(volume):.2f} lot")
         if _money(net):
-            lines.extend(["", f"💰 Зафиксировано: {_money(net)}"])
+            lines.extend(["", f"Зафиксировано: {_money(net)}"])
         r_value = first_present(payload.get("r"), payload.get("profit_r"), payload.get("r_multiple"))
         if _num(r_value) is not None:
-            lines.append(f"📊 R: {_num(r_value):.2f}R")
-        lines.extend(["", "🛡 SL BE"])
+            lines.append(f"R: {_num(r_value):.2f}R")
+        lines.extend(["", "SL переведён в BE" if payload.get("sl_moved_to_be") else "SL BE не подтверждён"])
         if remaining is not None:
             lines.append(f"Остаток в рынке: {_percent(remaining)}")
-        lines.extend(["", f"🕐 {_time_text(first_present(payload.get('deal_time'), payload.get('time')))}"])
+        lines.extend(["", _time_text(first_present(payload.get("deal_time"), payload.get("time")))])
         return "\n".join(lines)
 
     if template == "closed":
         total = first_present(payload.get("total_net"), payload.get("realized_net"), payload.get("total_profit"), payload.get("profit_money"), payload.get("profit"))
         total_num = _num(total) or 0.0
         title = "СДЕЛКА ЗАКРЫТА ПРОФИТ" if total_num >= 0 else "СДЕЛКА ЗАКРЫТА УБЫТОК"
-        lines = [title, "", f"📊 {header}", ""]
+        lines = [title, "", header, ""]
         if _price(entry):
             lines.append(f"Entry: {_price(entry)}")
         if _price(exit_price):
@@ -363,7 +373,7 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
         reason = first_present(payload.get("close_reason"), payload.get("reason"))
         if reason:
             lines.extend(["", f"Причина: {reason}"])
-        lines.extend(["", f"💰 Итого: {_money(total_num)}"])
+        lines.extend(["", f"Итого: {_money(total_num)}"])
         duration = first_present(payload.get("duration_minutes"), None)
         if duration is None:
             duration = _duration_minutes(first_present(payload.get("opened_at"), payload.get("open_time")), first_present(payload.get("closed_at"), payload.get("close_time"), payload.get("time")))
@@ -372,16 +382,16 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
         if daily_stats:
             day = _money(daily_stats.get("closed_pnl"))
             if day:
-                lines.extend(["", f"📅 День: {day} | {daily_stats.get('wins', 0)}W / {daily_stats.get('losses', 0)}L"])
+                lines.extend(["", f"День: {day} | {daily_stats.get('wins', 0)}W / {daily_stats.get('losses', 0)}L"])
         return "\n".join(lines)
 
     if template == "execution_error":
         reason = first_present(payload.get("message"), payload.get("reason"), payload.get("retcode_description"), "Execution failed")
         lines = [
-            "🔴 ОШИБКА ИСПОЛНЕНИЯ",
+            "ОШИБКА ИСПОЛНЕНИЯ",
             "",
-            f"📍 Символ: {symbol}",
-            f"🤖 Бот: {first_present(payload.get('bot_id'), normalized.get('botId'), 'n/a')}",
+            f"Символ: {symbol}",
+            f"Бот: {first_present(payload.get('bot_id'), normalized.get('botId'), 'n/a')}",
             f"Событие: {first_present(normalized.get('rawEventType'), payload.get('event_type'), 'error')}",
             "",
             "Причина:",
@@ -396,3 +406,4 @@ def format_clean_trade_message(payload: dict, normalized: Optional[dict] = None,
         return "\n".join(lines)
 
     return ""
+

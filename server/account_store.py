@@ -2069,19 +2069,172 @@ def save_history_deals(bot_id: str, deals: list[dict]) -> int:
             if not isinstance(deal, dict):
                 continue
             resolved_bot = first_present(bot_id, deal.get("bot_id"))
-            ticket = deal.get("ticket")
+            ticket = first_present(deal.get("deal_ticket"), deal.get("ticket"))
             symbol = deal.get("symbol")
-            open_time = first_present(deal.get("open_time"), deal.get("opened_at"))
-            close_time = first_present(deal.get("close_time"), deal.get("closed_at"))
-            if not symbol or not open_time:
+            close_time = first_present(deal.get("deal_time"), deal.get("close_time"), deal.get("closed_at"))
+            if not symbol or ticket is None or ticket == "":
                 continue
+            position_id = first_present(deal.get("position_id"), deal.get("position_ticket"))
+            order_ticket = deal.get("order_ticket")
+            magic_number = first_present(deal.get("magic_number"), deal.get("magic"))
+            volume = first_present(deal.get("volume"), deal.get("lots"), deal.get("lot"))
+            price = first_present(deal.get("price"), deal.get("exit_price"), deal.get("close_price"))
+            profit = float_or_zero(deal.get("profit"))
+            commission = float_or_zero(deal.get("commission"))
+            swap = float_or_zero(deal.get("swap"))
+            net = first_present(deal.get("net"), deal.get("total_net"), deal.get("net_profit"), deal.get("total_profit"))
+            net_value = float_or_zero(net if net is not None else profit + commission + swap)
+            source = deal.get("source") or "mt5_history"
+            cur = conn.execute(
+                """
+                INSERT INTO history_deals
+                    (deal_ticket, order_ticket, position_id, symbol, magic_number, bot_id, side,
+                     entry_type, deal_type, volume, price, profit, commission, swap, net,
+                     deal_time, comment, source, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(deal_ticket) DO UPDATE SET
+                    order_ticket = excluded.order_ticket,
+                    position_id = excluded.position_id,
+                    symbol = excluded.symbol,
+                    magic_number = excluded.magic_number,
+                    bot_id = excluded.bot_id,
+                    side = excluded.side,
+                    entry_type = excluded.entry_type,
+                    deal_type = excluded.deal_type,
+                    volume = excluded.volume,
+                    price = excluded.price,
+                    profit = excluded.profit,
+                    commission = excluded.commission,
+                    swap = excluded.swap,
+                    net = excluded.net,
+                    deal_time = excluded.deal_time,
+                    comment = excluded.comment,
+                    source = excluded.source,
+                    payload = excluded.payload,
+                    updated_at = datetime('now')
+                """,
+                (
+                    str(ticket),
+                    str(order_ticket) if order_ticket is not None else None,
+                    str(position_id) if position_id is not None else None,
+                    symbol,
+                    magic_number,
+                    resolved_bot,
+                    deal.get("side"),
+                    deal.get("entry_type"),
+                    deal.get("deal_type"),
+                    volume,
+                    price,
+                    profit,
+                    commission,
+                    swap,
+                    net_value,
+                    close_time,
+                    deal.get("comment"),
+                    source,
+                    json.dumps(deal, ensure_ascii=False, default=str),
+                ),
+            )
+            saved += 1 if cur.rowcount else 0
+
+            # Journal is position-centric. History sync may send only closing deals,
+            # so create or update one durable journal row per MT5 position_id.
+            trade_uid = str(first_present(
+                deal.get("trade_uid"),
+                f"{resolved_bot}_{symbol}_{magic_number}_{position_id}" if position_id else None,
+                f"history_{ticket}",
+            ))
+            grouped = conn.execute(
+                """
+                SELECT
+                    bot_id, symbol, magic_number, position_id,
+                    MIN(deal_time) AS first_time,
+                    MAX(deal_time) AS last_time,
+                    SUM(volume) AS total_volume,
+                    MAX(price) AS last_price,
+                    SUM(profit) AS total_profit,
+                    SUM(commission) AS total_commission,
+                    SUM(swap) AS total_swap,
+                    SUM(net) AS total_net
+                FROM history_deals
+                WHERE COALESCE(bot_id, '') = COALESCE(?, '')
+                  AND symbol = ?
+                  AND COALESCE(magic_number, '') = COALESCE(?, '')
+                  AND COALESCE(position_id, deal_ticket) = COALESCE(?, ?)
+                GROUP BY bot_id, symbol, magic_number, position_id
+                """,
+                (resolved_bot, symbol, magic_number, str(position_id) if position_id is not None else None, str(ticket)),
+            ).fetchone()
+            if grouped:
+                total_net = float_or_zero(grouped["total_net"])
+                status = "win" if total_net > 0 else "loss" if total_net < 0 else "breakeven"
+                conn.execute(
+                    """
+                    INSERT INTO native_trade_journal
+                        (trade_uid, ticket, bot_id, symbol, magic_number, side, lot, exit_price,
+                         opened_at, closed_at, status, close_reason, profit, commission, swap,
+                         total_profit, total_commission, total_swap, total_net, position_id,
+                         deal_ticket, comment, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(trade_uid) DO UPDATE SET
+                        ticket = COALESCE(excluded.ticket, ticket),
+                        bot_id = excluded.bot_id,
+                        symbol = excluded.symbol,
+                        magic_number = excluded.magic_number,
+                        side = COALESCE(excluded.side, side),
+                        lot = excluded.lot,
+                        exit_price = excluded.exit_price,
+                        opened_at = COALESCE(opened_at, excluded.opened_at),
+                        closed_at = excluded.closed_at,
+                        status = excluded.status,
+                        close_reason = COALESCE(close_reason, excluded.close_reason),
+                        profit = excluded.profit,
+                        commission = excluded.commission,
+                        swap = excluded.swap,
+                        total_profit = excluded.total_profit,
+                        total_commission = excluded.total_commission,
+                        total_swap = excluded.total_swap,
+                        total_net = excluded.total_net,
+                        position_id = COALESCE(excluded.position_id, position_id),
+                        deal_ticket = excluded.deal_ticket,
+                        comment = COALESCE(excluded.comment, comment),
+                        source = excluded.source,
+                        updated_at = datetime('now')
+                    """,
+                    (
+                        trade_uid,
+                        str(ticket),
+                        grouped["bot_id"],
+                        grouped["symbol"],
+                        grouped["magic_number"],
+                        deal.get("side"),
+                        grouped["total_volume"],
+                        grouped["last_price"],
+                        grouped["first_time"],
+                        grouped["last_time"],
+                        status,
+                        deal.get("close_reason") or "history_sync",
+                        total_net,
+                        grouped["total_commission"],
+                        grouped["total_swap"],
+                        grouped["total_profit"],
+                        grouped["total_commission"],
+                        grouped["total_swap"],
+                        total_net,
+                        grouped["position_id"],
+                        str(ticket),
+                        deal.get("comment"),
+                        source,
+                    ),
+                )
+            continue
             trade_uid = str(first_present(
                 deal.get("trade_uid"),
                 f"history_{ticket}" if ticket is not None and ticket != "" else None,
                 "history_" + hashlib.sha1("|".join([
                     str(resolved_bot or ""),
                     str(symbol or ""),
-                    str(open_time or ""),
+                    str(close_time or ""),
                     str(deal.get("side") or ""),
                 ]).encode("utf-8")).hexdigest()[:24],
             ))
@@ -2263,6 +2416,10 @@ def backtest_trades(bot_id: Optional[str] = None, limit: int = 500) -> list[dict
             continue
         result.append(row)
     return result
+
+
+def native_trade_events(limit: int = 100, selector: Optional[str] = None) -> list[dict]:
+    return _trade_event_rows(None, selector, limit=max(1, min(int(limit or 100), 500)))
 
 
 def backtest_summary(bot_id: Optional[str] = None) -> dict:

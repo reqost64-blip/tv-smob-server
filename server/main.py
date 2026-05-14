@@ -731,6 +731,42 @@ async def dashboard_trades(source: str = "bot", period: str = "today", asset: st
     return {"ok": True, "source": source, "period": period, "asset": asset, "trades": trades, "total": total}
 
 
+@app.get("/api/dashboard/summary")
+async def dashboard_summary(period: str = "today", asset: str = "ALL"):
+    try:
+        return {
+            "ok": True,
+            "status": await dashboard_status(),
+            "account": (await dashboard_account()).get("account"),
+            "pnl": (await dashboard_pnl(period)).get("pnl"),
+            "stats": (await dashboard_stats(source="bot", period=period, asset=asset)).get("stats"),
+            "bots": (await dashboard_bots()).get("bots"),
+        }
+    except Exception:
+        logger.exception("Failed to load dashboard summary")
+        return {"ok": False, "error": "summary_unavailable"}
+
+
+@app.get("/api/dashboard/trade/{trade_uid}")
+async def dashboard_trade(trade_uid: str):
+    try:
+        trade = acct.get_native_trade_journal(trade_uid) or acct.get_journal_trade(trade_uid)
+    except Exception:
+        logger.exception("Failed to load dashboard trade")
+        trade = None
+    return {"ok": True, "trade": trade}
+
+
+@app.get("/api/dashboard/events")
+async def dashboard_events(limit: int = 100, bot_id: str | None = None):
+    try:
+        events = acct.native_trade_events(limit=min(limit, 500), selector=bot_id)
+    except Exception:
+        logger.exception("Failed to load dashboard events")
+        events = []
+    return {"ok": True, "events": events}
+
+
 @app.post("/api/mt5/native-backtest")
 async def mt5_native_backtest(body: dict, request: Request):
     if not native_secret_matches(str(body.get("secret") or ""), request):
