@@ -726,6 +726,7 @@
       <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div><span class="badge gray">MT5</span></div><div class="panel-body" id="account-panel"></div></div>
       <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div><span class="badge gray">Live</span></div><div class="panel-body" id="pnl-panel"></div></div>
       <div class="panel span-6"><div class="panel-head"><div class="panel-title">NY Pre-Market Bias</div><span class="badge yellow" id="bias-risk">waiting</span></div><div class="panel-body" id="bias-panel"></div></div>
+      <div class="panel span-6"><div class="panel-head"><div class="panel-title">Strategy Test Lab</div><span class="badge gray" id="strategy-risk">waiting</span></div><div class="panel-body" id="strategy-lab-panel"></div></div>
       <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">Closed trades</span></div><div class="panel-body" id="curve-panel"></div></div>
       <div class="panel span-5"><div class="panel-head"><div class="panel-title">Bot Status</div><span class="badge gray">5 agents</span></div><div class="panel-body" id="bot-status-panel"></div></div>
       <div class="panel span-7"><div class="panel-head"><div class="panel-title">Open Positions</div><span class="badge gray">Risk monitor</span></div><div class="panel-body" id="positions-panel"></div></div>
@@ -774,7 +775,7 @@ const ORBIT_POINTS = [
   {x:306,y:126,speed:'24s'},
   {x:18,y:-214,speed:'20s'}
 ];
-let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, bias:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
+let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, bias:null, strategyLab:null, strategyRecs:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
 let refreshTimer = null;
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1056,6 +1057,40 @@ function renderBias() {
     ${metric('Sources', compact(sourceText))}
   </div>${table(['symbol','bias','confidence','quality','sources','reason'], rows, 'no bias rows for selected filter')}`;
 }
+function renderStrategyLab() {
+  const lab = state.strategyLab || {};
+  const recs = state.strategyRecs || {};
+  const panel = $('strategy-lab-panel');
+  if(!lab.ok) {
+    $('strategy-risk').textContent = 'waiting';
+    $('strategy-risk').className = 'badge gray';
+    panel.innerHTML = '<div class="empty">no strategy lab data yet</div>';
+    return;
+  }
+  const bot = selectedBot();
+  const symbols = lab.per_symbol || {};
+  const scoped = bot === 'ALL' ? Object.values(symbols) : Object.values(symbols).filter(item => item.symbol === botShort(bot) || item.symbol === 'SP500' && botShort(bot) === 'US500');
+  const worst = (scoped.length ? scoped : Object.values(symbols)).slice().sort((a,b) => (num(b.risk_damage?.single_loss_damage_days) || 0) - (num(a.risk_damage?.single_loss_damage_days) || 0))[0];
+  const damage = worst?.risk_damage || lab.risk_damage_analytics || {};
+  const diag = worst?.tp_sl_diagnostics || {};
+  const status = String(damage.risk_status || 'UNKNOWN');
+  $('strategy-risk').textContent = status;
+  $('strategy-risk').className = 'badge ' + (status === 'OK' ? 'green' : status === 'DANGEROUS' ? 'yellow' : status === 'UNKNOWN' ? 'gray' : 'red');
+  const bestMap = recs.best_candidate_settings_per_symbol || {};
+  const best = worst ? bestMap[worst.symbol] : null;
+  const settings = best?.settings || {};
+  const warn = (num(damage.single_loss_damage_days) || 0) > 3 ? '<div class="error" style="margin-top:8px">One SL can erase more than 3 average profitable days</div>' : '';
+  panel.innerHTML = `<div class="metric-grid">
+    ${metric('Problem symbol', worst ? worst.symbol : 'no data', status === 'OK' ? 'green' : 'red')}
+    ${metric('One SL erases', damage.single_loss_damage_days !== null && damage.single_loss_damage_days !== undefined ? fmt(damage.single_loss_damage_days,1) + ' days' : 'no data', (num(damage.single_loss_damage_days) || 0) > 3 ? 'red' : 'green')}
+    ${metric('Current SL/TP', diag.sl_tp_ratio !== null && diag.sl_tp_ratio !== undefined ? fmt(diag.sl_tp_ratio,2) + 'x' : 'no data', (num(diag.sl_tp_ratio) || 0) > 3 ? 'yellow' : 'blue')}
+    ${metric('Best setup', settings.tp1_R ? `TP1 ${fmt(settings.tp1_R,1)}R / BE ${compact(settings.be_after_tp1)}` : 'no passing setup')}
+    ${metric('Profit factor', best?.metrics?.profit_factor !== undefined ? fmt(best.metrics.profit_factor,2) : fmt(damage.profit_factor,2), 'blue')}
+    ${metric('Expectancy R', best?.metrics?.expectancy_R !== undefined && best.metrics.expectancy_R !== null ? fmt(best.metrics.expectancy_R,2) + 'R' : (damage.expectancy_R !== null && damage.expectancy_R !== undefined ? fmt(damage.expectancy_R,2) + 'R' : 'no data'), 'gold')}
+    ${metric('Max drawdown', best?.metrics?.max_drawdown !== undefined ? money(-Math.abs(best.metrics.max_drawdown)) : money(-Math.abs(damage.max_drawdown || 0)), 'red')}
+    ${metric('Sample', lab.sample_warning || worst?.sample_warning || 'OK', lab.sample_warning || worst?.sample_warning ? 'yellow' : 'green')}
+  </div>${warn}`;
+}
 function renderCurve() {
   const closed = state.trades.slice().reverse().map(t => num(t.profit_money ?? t.profit ?? t.pnl)).filter(v => v !== null);
   let acc = 0;
@@ -1155,6 +1190,7 @@ function renderAll() {
   renderAccount();
   renderPnl();
   renderBias();
+  renderStrategyLab();
   renderCurve();
   renderBotStatusPanel();
   renderPositions();
@@ -1170,7 +1206,7 @@ async function refreshAll() {
   const src = source();
   const asset = bot === 'ALL' ? 'ALL' : bot;
   try {
-    const [status, account, pnl, bots, positions, trades, stats, bias, journal, screens, backtest] = await Promise.all([
+    const [status, account, pnl, bots, positions, trades, stats, bias, strategyLab, strategyRecs, journal, screens, backtest] = await Promise.all([
       api('/api/dashboard/status'),
       api('/api/dashboard/account'),
       api('/api/dashboard/pnl?period=today'),
@@ -1179,6 +1215,8 @@ async function refreshAll() {
       api(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`),
       api(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`),
       api('/api/dashboard/bias'),
+      api(`/api/dashboard/strategy-lab?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`),
+      api(`/api/dashboard/strategy-lab/recommendations?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`),
       api(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=150`),
       api(`/api/dashboard/screenshots?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=24`),
       api(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`)
@@ -1191,6 +1229,8 @@ async function refreshAll() {
     state.trades = trades.trades || [];
     state.stats = stats.stats || {};
     state.bias = bias.bias || null;
+    state.strategyLab = strategyLab || null;
+    state.strategyRecs = strategyRecs || null;
     state.journal = journal.journal || [];
     state.screenshots = screens.screenshots || [];
     state.backtest = backtest || {};
@@ -1199,7 +1239,7 @@ async function refreshAll() {
     console.error(error);
     $('system-status').textContent = 'API ERROR';
     $('system-status').className = 'red';
-    ['account-panel','pnl-panel','bias-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
+    ['account-panel','pnl-panel','bias-panel','strategy-lab-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
       if(!$(id).innerHTML) $(id).innerHTML = '<div class="error">API data unavailable</div>';
     });
   }

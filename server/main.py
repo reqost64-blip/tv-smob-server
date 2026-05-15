@@ -34,6 +34,8 @@ from .models import (
     WebhookPayload,
 )
 from .settings_store import audit_log, get_setting, list_settings, parse_value, record_audit_event, set_setting
+from .strategy_optimizer import recommendations_payload, run_strategy_lab
+from .strategy_test_lab import build_strategy_lab_report
 from .validators import validate_signal
 from . import queue as q
 from .symbol_mapper import load_symbols
@@ -902,6 +904,40 @@ async def dashboard_bias():
         logger.exception("Failed to load bias report")
         report = None
     return {"ok": True, "bias": _bias_public_payload(report) if report else None}
+
+
+@app.get("/api/dashboard/strategy-lab")
+async def dashboard_strategy_lab(symbol: str | None = None, bot_id: str | None = None):
+    try:
+        return build_strategy_lab_report(symbol=symbol, bot_id=bot_id, include_bias_filter=True)
+    except Exception as exc:
+        logger.exception("Failed to load strategy lab")
+        return {"ok": False, "error": f"strategy_lab_unavailable: {exc}"}
+
+
+@app.post("/api/strategy-lab/run")
+async def api_strategy_lab_run(body: dict):
+    payload = body or {}
+    try:
+        return run_strategy_lab(
+            symbol=payload.get("symbol"),
+            bot_id=payload.get("bot_id"),
+            dry_run=bool(payload.get("dry_run", True)),
+            optimize=bool(payload.get("optimize", True)),
+            include_bias_filter=bool(payload.get("include_bias_filter", False)),
+        )
+    except Exception as exc:
+        logger.exception("Strategy lab run failed")
+        return {"ok": False, "error": f"strategy_lab_run_failed: {exc}"}
+
+
+@app.get("/api/dashboard/strategy-lab/recommendations")
+async def dashboard_strategy_lab_recommendations(symbol: str | None = None, bot_id: str | None = None):
+    try:
+        return recommendations_payload(symbol=symbol, bot_id=bot_id)
+    except Exception as exc:
+        logger.exception("Failed to load strategy lab recommendations")
+        return {"ok": False, "error": f"strategy_lab_recommendations_unavailable: {exc}"}
 
 
 @app.get("/api/dashboard/pnl")

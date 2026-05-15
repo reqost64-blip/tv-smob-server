@@ -383,6 +383,22 @@ def init_db() -> None:
             ON backtest_trades (bot_id, symbol, open_time)
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_lab_runs (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol                TEXT,
+                bot_id                TEXT,
+                optimize              INTEGER NOT NULL DEFAULT 0,
+                include_bias_filter   INTEGER NOT NULL DEFAULT 0,
+                request_payload       TEXT NOT NULL,
+                result_payload        TEXT NOT NULL,
+                created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_strategy_lab_runs_time
+            ON strategy_lab_runs (created_at, id)
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS native_screenshots (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 trade_uid     TEXT,
