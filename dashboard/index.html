@@ -803,6 +803,13 @@ async function api(path, options) {
   if(!response.ok) throw new Error(path + ' HTTP ' + response.status);
   return response.json();
 }
+async function safeApi(path, fallback) {
+  try {
+    return await api(path);
+  } catch(error) {
+    return {...fallback, ok:false, error:String(error?.message || error)};
+  }
+}
 function period(){ return $('period-filter').value; }
 function selectedBot(){ return $('bot-filter').value; }
 function source(){ return $('source-filter').value; }
@@ -1207,19 +1214,19 @@ async function refreshAll() {
   const asset = bot === 'ALL' ? 'ALL' : bot;
   try {
     const [status, account, pnl, bots, positions, trades, stats, bias, strategyLab, strategyRecs, journal, screens, backtest] = await Promise.all([
-      api('/api/dashboard/status'),
-      api('/api/dashboard/account'),
-      api('/api/dashboard/pnl?period=today'),
-      api('/api/dashboard/bots'),
-      api('/api/dashboard/positions'),
-      api(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`),
-      api(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`),
-      api('/api/dashboard/bias'),
-      api(`/api/dashboard/strategy-lab?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`),
-      api(`/api/dashboard/strategy-lab/recommendations?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`),
-      api(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=150`),
-      api(`/api/dashboard/screenshots?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=24`),
-      api(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`)
+      safeApi('/api/dashboard/status', {system_mode:'unavailable', trading_enabled:null, bots_total:0, bots_online:0, bots_enabled:0}),
+      safeApi('/api/dashboard/account', {account:null}),
+      safeApi('/api/dashboard/pnl?period=today', {pnl:{}}),
+      safeApi('/api/dashboard/bots', {bots:[]}),
+      safeApi('/api/dashboard/positions', {positions:[]}),
+      safeApi(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`, {trades:[], total:0}),
+      safeApi(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`, {stats:{}}),
+      safeApi('/api/dashboard/bias', {bias:null}),
+      safeApi(`/api/dashboard/strategy-lab?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`, {trade_count:0, sample_warning:'NO_DATA', risk_damage_analytics:{}, per_symbol:{}, critical_problems:[]}),
+      safeApi(`/api/dashboard/strategy-lab/recommendations?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`, {best_candidate_settings_per_symbol:{}, rejected_settings:[], risk_warnings:[], sample_size_warning:null}),
+      safeApi(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=150`, {journal:[]}),
+      safeApi(`/api/dashboard/screenshots?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=24`, {screenshots:[]}),
+      safeApi(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`, {summary:{}, trades:[]})
     ]);
     state.status = status || {};
     state.account = account.account || null;
