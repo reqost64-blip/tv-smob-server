@@ -726,6 +726,7 @@
     <section class="data-grid">
       <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div><span class="badge gray">MT5</span></div><div class="panel-body" id="account-panel"></div></div>
       <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div><span class="badge gray">Live</span></div><div class="panel-body" id="pnl-panel"></div></div>
+      <div class="panel span-3"><div class="panel-head"><div class="panel-title">Storage / History Health</div><span class="badge gray" id="storage-risk">DB</span></div><div class="panel-body" id="storage-panel"></div></div>
       <div class="panel span-6"><div class="panel-head"><div class="panel-title">NY Pre-Market Bias</div><span class="badge yellow" id="bias-risk">waiting</span></div><div class="panel-body" id="bias-panel"></div></div>
       <div class="panel span-6"><div class="panel-head"><div class="panel-title">Strategy Test Lab</div><span class="badge gray" id="strategy-risk">waiting</span></div><div class="panel-body" id="strategy-lab-panel"></div></div>
       <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">Closed trades</span></div><div class="panel-body" id="curve-panel"></div></div>
@@ -776,7 +777,7 @@ const ORBIT_POINTS = [
   {x:306,y:126,speed:'24s'},
   {x:18,y:-214,speed:'20s'}
 ];
-let state = { status:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, bias:null, strategyLab:null, strategyRecs:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
+let state = { status:null, storageHealth:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, bias:null, strategyLab:null, strategyRecs:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
 let refreshTimer = null;
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1039,6 +1040,22 @@ function renderPnl() {
     ${metric('Best / Worst', `<span class="green">${money(p.best_trade)}</span> / <span class="red">${money(p.worst_trade)}</span>`)}
   </div>`;
 }
+function renderStorageHealth() {
+  const health = state.storageHealth || {};
+  const persistent = health.db_storage === 'render_persistent_disk' && health.db_file_exists && !health.db_warning;
+  $('storage-risk').textContent = persistent ? 'persistent' : 'warning';
+  $('storage-risk').className = 'badge ' + (persistent ? 'green' : 'yellow');
+  const warnings = health.warnings || [];
+  const historyEmpty = warnings.includes('history_empty');
+  $('storage-panel').innerHTML = `<div class="metric-grid">
+    ${metric('DB persistent', persistent ? 'yes' : 'no', persistent ? 'green' : 'red')}
+    ${metric('Trades found', health.trades_total ?? 0, historyEmpty ? 'yellow' : 'blue')}
+    ${metric('Closed trades', health.closed_trades_total ?? 0)}
+    ${metric('Native history', health.native_history_total ?? 0)}
+    ${metric('Last trade', dt(health.latest_trade_time))}
+    ${metric('Warning', warnings.length ? compact(warnings.slice(0,2).join(' / ')) : 'none', warnings.length ? 'yellow' : 'green')}
+  </div>`;
+}
 function renderBias() {
   const bias = state.bias;
   if(!bias || !bias.symbols || !bias.symbols.length) {
@@ -1197,6 +1214,7 @@ function renderAll() {
   renderDrawer();
   renderAccount();
   renderPnl();
+  renderStorageHealth();
   renderBias();
   renderStrategyLab();
   renderCurve();
@@ -1214,8 +1232,9 @@ async function refreshAll() {
   const src = source();
   const asset = bot === 'ALL' ? 'ALL' : bot;
   try {
-    const [status, account, pnl, bots, positions, trades, stats, bias, strategyLab, strategyRecs, journal, screens, backtest] = await Promise.all([
+    const [status, storageHealth, account, pnl, bots, positions, trades, stats, bias, strategyLab, strategyRecs, journal, screens, backtest] = await Promise.all([
       safeApi('/api/dashboard/status', {system_mode:'unavailable', trading_enabled:null, bots_total:0, bots_online:0, bots_enabled:0}),
+      safeApi('/api/dashboard/storage-health', {trades_total:0, closed_trades_total:0, native_history_total:0, warnings:['storage_health_unavailable']}),
       safeApi('/api/dashboard/account', {account:null}),
       safeApi('/api/dashboard/pnl?period=today', {pnl:{}}),
       safeApi('/api/dashboard/bots', {bots:[]}),
@@ -1230,6 +1249,7 @@ async function refreshAll() {
       safeApi(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`, {summary:{}, trades:[]})
     ]);
     state.status = status || {};
+    state.storageHealth = storageHealth || {};
     state.account = account.account || null;
     state.pnl = pnl.pnl || {};
     state.bots = bots.bots || [];
@@ -1247,7 +1267,7 @@ async function refreshAll() {
     console.error(error);
     $('system-status').textContent = 'API ERROR';
     $('system-status').className = 'red';
-    ['account-panel','pnl-panel','bias-panel','strategy-lab-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
+    ['account-panel','pnl-panel','storage-panel','bias-panel','strategy-lab-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
       if(!$(id).innerHTML) $(id).innerHTML = '<div class="error">API data unavailable</div>';
     });
   }

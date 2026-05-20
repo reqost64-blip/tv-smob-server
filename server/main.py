@@ -34,6 +34,7 @@ from .models import (
     WebhookPayload,
 )
 from .settings_store import audit_log, get_setting, list_settings, parse_value, record_audit_event, set_setting
+from .history_import import import_history_rows, parse_history_payload
 from .strategy_optimizer import recommendations_payload, run_strategy_lab
 from .strategy_test_lab import build_strategy_lab_report
 from .validators import validate_signal
@@ -235,6 +236,14 @@ def direct_screenshot_from_payload(event: NativeMT5Event, payload: dict) -> Path
 
 def err(msg: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"ok": False, "error": msg}, status_code=status)
+
+
+def bool_param(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 @app.on_event("startup")
@@ -737,6 +746,15 @@ async def dashboard_status():
         }
 
 
+@app.get("/api/dashboard/storage-health")
+async def dashboard_storage_health():
+    try:
+        return acct.storage_health()
+    except Exception as exc:
+        logger.exception("Failed to load storage health")
+        return {"ok": False, "error": f"storage_health_unavailable: {exc}"}
+
+
 @app.get("/api/dashboard/account")
 async def dashboard_account():
     try:
@@ -843,6 +861,45 @@ async def mt5_native_history(body: dict, request: Request):
     return {"ok": True, "status": "ok", "bot_id": bot_id, "received": len(deals), "saved": saved}
 
 
+@app.post("/api/history/import")
+async def api_history_import(
+    request: Request,
+    dry_run: bool = True,
+    source_name: str | None = None,
+    dedupe: bool = True,
+    bot_id: str | None = None,
+):
+    raw_body = await request.body()
+    content_type = request.headers.get("content-type", "")
+    try:
+        rows, input_format = parse_history_payload(raw_body, content_type)
+    except Exception as exc:
+        return err(f"Invalid history import payload: {exc}", status=400)
+    body_secret = ""
+    if "json" in content_type.lower() and raw_body:
+        try:
+            parsed_body = json.loads(raw_body.decode("utf-8-sig", errors="replace"))
+        except json.JSONDecodeError:
+            parsed_body = None
+        if isinstance(parsed_body, dict):
+            dry_run = bool_param(parsed_body.get("dry_run"), dry_run)
+            source_name = parsed_body.get("source_name") or source_name
+            dedupe = bool_param(parsed_body.get("dedupe"), dedupe)
+            bot_id = parsed_body.get("bot_id") or bot_id
+            body_secret = str(parsed_body.get("secret") or "")
+    if not dry_run and not task_secret_matches(body_secret, request):
+        return err("Invalid secret", status=403)
+    result = import_history_rows(
+        rows,
+        dry_run=dry_run,
+        source_name=source_name,
+        dedupe=dedupe,
+        bot_id=bot_id,
+    )
+    result["input_format"] = input_format
+    return result
+
+
 @app.get("/api/dashboard/backtest")
 async def dashboard_backtest(bot_id: str | None = None, asset: str | None = None, limit: int = 500):
     try:
@@ -913,6 +970,23 @@ async def dashboard_strategy_lab(symbol: str | None = None, bot_id: str | None =
     except Exception as exc:
         logger.exception("Failed to load strategy lab")
         return {"ok": False, "error": f"strategy_lab_unavailable: {exc}"}
+
+
+@app.get("/api/dashboard/strategy-lab/data-health")
+async def dashboard_strategy_lab_data_health(symbol: str | None = None, bot_id: str | None = None):
+    try:
+        report = build_strategy_lab_report(symbol=symbol, bot_id=bot_id, include_bias_filter=False)
+        storage = acct.storage_health()
+        return {
+            "ok": True,
+            "trade_count": report.get("trade_count", 0),
+            "sample_warning": report.get("sample_warning"),
+            "data_sources": report.get("data_sources", []),
+            "storage_health": storage,
+        }
+    except Exception as exc:
+        logger.exception("Failed to load strategy lab data health")
+        return {"ok": False, "error": f"strategy_lab_data_health_unavailable: {exc}"}
 
 
 @app.post("/api/strategy-lab/run")

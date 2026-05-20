@@ -2093,6 +2093,110 @@ def get_stats_filtered(source: str = "bot", period: str = "week", asset: str = "
     }
 
 
+def storage_health() -> dict:
+    diagnostics = config.db_file_diagnostics()
+    table_names = [
+        "native_trade_journal",
+        "native_mt5_closed_trades",
+        "history_deals",
+        "deal_reports",
+        "native_account_snapshots",
+        "native_mt5_accounts",
+        "account_snapshots",
+        "native_screenshots",
+        "strategy_lab_runs",
+        "bias_reports",
+    ]
+    with db() as conn:
+        found = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        counts = {name: _table_count(conn, name, found) for name in table_names}
+        latest_trade_time = _latest_value(
+            conn,
+            found,
+            [
+                ("native_trade_journal", "COALESCE(closed_at, opened_at, updated_at, created_at)"),
+                ("native_mt5_closed_trades", "COALESCE(closed_at, created_at)"),
+                ("history_deals", "COALESCE(deal_time, updated_at, created_at)"),
+                ("deal_reports", "COALESCE(closed_at, created_at)"),
+            ],
+        )
+        latest_account_time = _latest_value(
+            conn,
+            found,
+            [
+                ("native_account_snapshots", "COALESCE(snapshot_at, created_at)"),
+                ("native_mt5_accounts", "COALESCE(snapshot_at, created_at)"),
+                ("account_snapshots", "created_at"),
+            ],
+        )
+        closed_journal = _where_count(
+            conn,
+            "native_trade_journal",
+            found,
+            "COALESCE(closed_at, '') != '' OR lower(COALESCE(status, '')) IN ('win','loss','breakeven','closed','position_closed','closed_by_signal')",
+        )
+
+    trades_total = counts["native_trade_journal"]
+    closed_total = closed_journal + counts["native_mt5_closed_trades"] + counts["deal_reports"]
+    account_total = counts["native_account_snapshots"] + counts["native_mt5_accounts"] + counts["account_snapshots"]
+    warnings = []
+    if diagnostics.get("db_warning"):
+        warnings.append(diagnostics["db_warning"])
+    if not diagnostics.get("db_persistent_expected"):
+        warnings.append("persistent_disk_not_detected")
+    if trades_total == 0 and counts["history_deals"] == 0:
+        warnings.append("history_empty")
+    if closed_total == 0:
+        warnings.append("closed_trades_empty")
+    if account_total == 0:
+        warnings.append("account_snapshots_empty")
+    return {
+        "ok": True,
+        "db_file": diagnostics.get("db_file_path"),
+        "db_storage": diagnostics.get("db_storage"),
+        "db_file_exists": diagnostics.get("db_file_exists"),
+        "db_file_size": diagnostics.get("db_file_size"),
+        "db_warning": diagnostics.get("db_warning"),
+        "trades_total": trades_total,
+        "closed_trades_total": closed_total,
+        "native_history_total": counts["history_deals"],
+        "account_snapshots_total": account_total,
+        "screenshots_total": counts["native_screenshots"],
+        "latest_trade_time": latest_trade_time,
+        "latest_account_time": latest_account_time,
+        "tables_found": sorted(name for name in table_names if name in found),
+        "warnings": warnings,
+    }
+
+
+def _table_count(conn, table: str, found: set[str]) -> int:
+    if table not in found:
+        return 0
+    return int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"] or 0)
+
+
+def _where_count(conn, table: str, found: set[str], where: str) -> int:
+    if table not in found:
+        return 0
+    return int(conn.execute(f"SELECT COUNT(*) AS count FROM {table} WHERE {where}").fetchone()["count"] or 0)
+
+
+def _latest_value(conn, found: set[str], queries: list[tuple[str, str]]) -> Optional[str]:
+    values = []
+    for table, expression in queries:
+        if table not in found:
+            continue
+        row = conn.execute(f"SELECT MAX({expression}) AS latest FROM {table}").fetchone()
+        if row and row["latest"]:
+            values.append(str(row["latest"]))
+    return max(values) if values else None
+
+
 def save_history_deals(bot_id: str, deals: list[dict]) -> int:
     saved = 0
     with db() as conn:

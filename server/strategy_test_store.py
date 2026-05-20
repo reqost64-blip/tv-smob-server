@@ -130,7 +130,7 @@ def _append_trade(trades: list[dict], seen: set[str], trade: dict, symbol: Optio
         return
     if bot_id and bot_id not in str(trade.get("bot_id") or ""):
         return
-    key = str(trade.get("trade_uid") or trade.get("ticket") or "")
+    key = str(trade.get("dedupe_key") or trade.get("trade_uid") or trade.get("ticket") or "")
     if key and key in seen:
         return
     if key:
@@ -145,8 +145,15 @@ def _from_journal(row: dict) -> dict:
     tp1 = _first_number(row, "tp1", "tp1_price")
     tp2 = _first_number(row, "tp2", "tp2_price")
     tp3 = _first_number(row, "tp3", "tp3_price")
+    history_source = row.get("close_reason") == "history_sync"
+    dedupe_key = (
+        row.get("position_id") or row.get("deal_ticket") or row.get("ticket") or row.get("trade_uid")
+        if history_source
+        else row.get("trade_uid") or row.get("ticket") or row.get("position_id") or row.get("deal_ticket")
+    )
     return {
         "source": row.get("source") or "native_trade_journal",
+        "dedupe_key": dedupe_key,
         "trade_uid": row.get("trade_uid"),
         "ticket": row.get("ticket"),
         "symbol": canonical_symbol(row.get("symbol")),
@@ -222,6 +229,7 @@ def _from_history_deal(row: dict) -> dict:
     profit = _first_number(row, "net", "profit")
     return {
         "source": "history_deals",
+        "dedupe_key": row.get("position_id") or row.get("deal_ticket"),
         "trade_uid": row.get("position_id") or row.get("deal_ticket"),
         "ticket": row.get("deal_ticket"),
         "symbol": canonical_symbol(row.get("symbol")),

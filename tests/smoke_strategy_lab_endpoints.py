@@ -42,7 +42,9 @@ def main():
         "/api/dashboard/account",
         "/api/dashboard/bots",
         "/api/dashboard/bias",
+        "/api/dashboard/storage-health",
         "/api/dashboard/strategy-lab",
+        "/api/dashboard/strategy-lab/data-health",
         "/api/dashboard/strategy-lab/recommendations",
     ]:
         ok_get(client, path)
