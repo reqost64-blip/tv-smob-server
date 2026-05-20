@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 PERSISTENT_DB_PREFIX = "/var/data/"
+PERSISTENT_DATA_DIR = Path("/var/data")
+PERSISTENT_DB_FILE = PERSISTENT_DATA_DIR / "bridge.db"
 
 
 def _is_default_sqlite_path(value: str | None) -> bool:
@@ -29,8 +31,8 @@ def _sqlite_path_from_database_url(value: str | None) -> str | None:
     return path or None
 
 
-def _copy_seed_db_if_needed(target: Path) -> None:
-    source = Path("bridge.db")
+def _copy_seed_db_if_needed(target: Path, source: Path | None = None) -> None:
+    source = source or Path("bridge.db")
     try:
         if target.exists() or not source.exists() or source.resolve() == target.resolve():
             return
@@ -69,6 +71,10 @@ def _persistent_db_ready(path: Path) -> bool:
     return _is_render_persistent_path(str(path)) and path.parent.exists() and _path_writable(path)
 
 
+def _persistent_data_dir_ready() -> bool:
+    return PERSISTENT_DATA_DIR.exists() and PERSISTENT_DATA_DIR.is_dir() and _path_writable(PERSISTENT_DATA_DIR)
+
+
 def _resolve_db_file() -> tuple[str, str]:
     raw_db_file = os.getenv("DB_FILE")
     raw_database_url = os.getenv("DATABASE_URL")
@@ -77,6 +83,9 @@ def _resolve_db_file() -> tuple[str, str]:
     if sqlite_url_path:
         target = Path(sqlite_url_path)
         _ensure_parent_dir(target)
+        if not _is_render_persistent_path(str(target)) and _persistent_data_dir_ready():
+            _copy_seed_db_if_needed(PERSISTENT_DB_FILE, target)
+            return str(PERSISTENT_DB_FILE), "render_persistent_disk"
         return str(target), "DATABASE_URL"
 
     target = Path(raw_db_file or "bridge.db")
@@ -84,7 +93,15 @@ def _resolve_db_file() -> tuple[str, str]:
     if raw_db_file and _persistent_db_ready(target):
         _copy_seed_db_if_needed(target)
         return str(target), "render_persistent_disk"
+    if not _is_render_persistent_path(str(target)) and _persistent_data_dir_ready():
+        _copy_seed_db_if_needed(PERSISTENT_DB_FILE, target)
+        return str(PERSISTENT_DB_FILE), "render_persistent_disk"
     return str(target), "DB_FILE" if raw_db_file else "default"
+
+
+def runtime_data_path(*parts: str) -> Path:
+    base = PERSISTENT_DATA_DIR if _persistent_data_dir_ready() else Path("data")
+    return base.joinpath(*parts)
 
 
 def db_file_diagnostics() -> dict:

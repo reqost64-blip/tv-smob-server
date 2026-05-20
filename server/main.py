@@ -108,7 +108,7 @@ NATIVE_SCREENSHOT_EVENTS = {
     "closed_by_signal",
 }
 MAX_NATIVE_SCREENSHOT_BYTES = 10 * 1024 * 1024
-SCREENSHOT_DIR = Path("data") / "screenshots"
+SCREENSHOT_DIR = config.runtime_data_path("screenshots")
 SCREENSHOTS_TO_KEEP = 100
 SCREENSHOTS_TO_KEEP_PER_BOT = 20
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
