@@ -650,7 +650,7 @@ async def api_daily_report_task(body: DailyReportTaskRequest, request: Request):
 async def api_bias_run(body: dict, request: Request):
     send = bool(body.get("send")) if isinstance(body, dict) else False
     allow_network = bool(body.get("allow_network", True)) if isinstance(body, dict) else True
-    if send and not task_secret_matches(str(body.get("secret") or ""), request):
+    if (send or allow_network) and not task_secret_matches(str(body.get("secret") or ""), request):
         return err("Invalid secret", status=403)
     try:
         report = calculate_bias_report(allow_network=allow_network)
@@ -918,6 +918,8 @@ async def dashboard_strategy_lab(symbol: str | None = None, bot_id: str | None =
 @app.post("/api/strategy-lab/run")
 async def api_strategy_lab_run(body: dict):
     payload = body or {}
+    if payload.get("dry_run") is False:
+        return err("dry_run=false is not supported. Strategy lab is simulation-only.", status=400)
     try:
         return run_strategy_lab(
             symbol=payload.get("symbol"),

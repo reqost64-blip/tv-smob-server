@@ -2258,117 +2258,10 @@ def save_history_deals(bot_id: str, deals: list[dict]) -> int:
                         source,
                     ),
                 )
-            continue
-            trade_uid = str(first_present(
-                deal.get("trade_uid"),
-                f"history_{ticket}" if ticket is not None and ticket != "" else None,
-                "history_" + hashlib.sha1("|".join([
-                    str(resolved_bot or ""),
-                    str(symbol or ""),
-                    str(close_time or ""),
-                    str(deal.get("side") or ""),
-                ]).encode("utf-8")).hexdigest()[:24],
-            ))
-            total_profit = first_present(deal.get("total_profit"), deal.get("net_profit"), deal.get("profit"))
-            status = str(deal.get("status") or "").strip().lower()
-            if not status:
-                if not close_time or deal.get("exit_price") is None:
-                    status = "open"
-                elif float_or_zero(total_profit) > 0:
-                    status = "win"
-                elif float_or_zero(total_profit) < 0:
-                    status = "loss"
-                else:
-                    status = "breakeven"
-            params = (
-                trade_uid,
-                ticket,
-                resolved_bot,
-                symbol,
-                first_present(deal.get("magic_number"), deal.get("magic")),
-                deal.get("side"),
-                first_present(deal.get("lots"), deal.get("lot")),
-                first_present(deal.get("entry_price"), deal.get("entry")),
-                deal.get("exit_price"),
-                open_time,
-                close_time,
-                status,
-                deal.get("close_reason"),
-                total_profit,
-                deal.get("commission"),
-                deal.get("swap"),
-                deal.get("comment"),
-                deal.get("source") or "bot",
-            )
-            if ticket is not None and ticket != "":
-                cur = conn.execute(
-                    """
-                    INSERT INTO native_trade_journal
-                        (trade_uid, ticket, bot_id, symbol, magic_number, side, lot, entry, exit_price,
-                         opened_at, closed_at, status, close_reason, profit, commission, swap, comment, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(ticket) DO UPDATE SET
-                        bot_id = excluded.bot_id,
-                        symbol = excluded.symbol,
-                        magic_number = excluded.magic_number,
-                        side = excluded.side,
-                        lot = excluded.lot,
-                        entry = excluded.entry,
-                        exit_price = excluded.exit_price,
-                        opened_at = excluded.opened_at,
-                        closed_at = excluded.closed_at,
-                        status = excluded.status,
-                        close_reason = excluded.close_reason,
-                        profit = excluded.profit,
-                        commission = excluded.commission,
-                        swap = excluded.swap,
-                        comment = excluded.comment,
-                        source = excluded.source,
-                        updated_at = datetime('now')
-                    """,
-                    params,
-                )
-                saved += 1 if cur.rowcount else 0
-                continue
-
-            existing = conn.execute(
-                """
-                SELECT id FROM native_trade_journal
-                WHERE COALESCE(bot_id, '') = COALESCE(?, '')
-                  AND symbol = ?
-                  AND opened_at = ?
-                ORDER BY id DESC LIMIT 1
-                """,
-                (resolved_bot, symbol, open_time),
-            ).fetchone()
-            if existing:
-                cur = conn.execute(
-                    """
-                    UPDATE native_trade_journal
-                    SET exit_price = ?, closed_at = ?, status = ?, close_reason = ?,
-                        profit = ?, commission = ?, swap = ?, comment = ?, source = ?,
-                        updated_at = datetime('now')
-                    WHERE id = ?
-                    """,
-                    (deal.get("exit_price"), close_time, status, deal.get("close_reason"), total_profit,
-                     deal.get("commission"), deal.get("swap"), deal.get("comment"), deal.get("source") or "bot", existing["id"]),
-                )
-            else:
-                cur = conn.execute(
-                    """
-                    INSERT INTO native_trade_journal
-                        (trade_uid, ticket, bot_id, symbol, magic_number, side, lot, entry, exit_price,
-                         opened_at, closed_at, status, close_reason, profit, commission, swap, comment, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    params,
-                )
-            saved += 1 if cur.rowcount else 0
     return saved
 
 
 def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
-    print(f"native-backtest received bot_id={bot_id} trades={len(trades_list or [])}")
     saved = 0
     with db() as conn:
         for trade in trades_list or []:
@@ -2425,7 +2318,6 @@ def save_backtest_trades(bot_id: str, trades_list: list[dict]) -> int:
             )
             if cur.rowcount:
                 saved += 1
-    print(f"native-backtest saved bot_id={bot_id} saved={saved}")
     return saved
 
 

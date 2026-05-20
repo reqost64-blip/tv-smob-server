@@ -18,6 +18,9 @@ env/
 tests/*.sqlite3
 server/*.db
 
+# Runtime artifacts
+data/
+
 # Logs
 *.log
 logs/

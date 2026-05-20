@@ -23,6 +23,7 @@ PARTIAL_DISTS = {
     "50_30_20": (0.50, 0.30, 0.20),
 }
 BE_MODES = ("off", "entry", "entry_plus_0_1R", "entry_plus_spread")
+MAX_REJECTED_SETTINGS = 200
 
 
 def run_strategy_lab(
@@ -120,7 +121,9 @@ def optimize_settings(symbol: Optional[str] = None, bot_id: Optional[str] = None
             warnings.append({"symbol": sym, "warning": "NO_CANDIDATE_PASSED_MIN_FILTERS"})
     return {
         "recommendations": recommendations,
-        "rejected_settings": rejected,
+        "rejected_settings": rejected[:MAX_REJECTED_SETTINGS],
+        "rejected_settings_truncated": len(rejected) > MAX_REJECTED_SETTINGS,
+        "rejected_settings_total": len(rejected),
         "risk_warnings": warnings,
         "sample_size_warning": sample_warnings or None,
     }

@@ -48,6 +48,12 @@ def main():
         ok_get(client, path)
     run = ok_post(client, "/api/strategy-lab/run", {"dry_run": True, "optimize": True}, expected=(200,))
     assert run.json().get("dry_run") is True, run.text
+    unsafe_run = ok_post(client, "/api/strategy-lab/run", {"dry_run": False, "optimize": True}, expected=(400,))
+    assert unsafe_run.json().get("ok") is False, unsafe_run.text
+    safe_bias = ok_post(client, "/api/bias/run", {"allow_network": False, "send": False}, expected=(200,))
+    assert safe_bias.json().get("sent") is False, safe_bias.text
+    network_bias = ok_post(client, "/api/bias/run", {"allow_network": True, "send": False}, expected=(403,))
+    assert network_bias.json().get("ok") is False, network_bias.text
 
     secret = "do-not-leak-smoke-secret"
     ok_post(
