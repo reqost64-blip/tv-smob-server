@@ -18,18 +18,22 @@ def rows(markup):
 def main():
     init_db()
     assert rows(telegram_bot.dashboard_keyboard()) == [
-        ["🎛 Пульт", "📈 Bias"],
-        ["⚡ Сигналы", "🧾 Сделки"],
-        ["📊 Статистика", "🛡 Риск"],
-        ["🧠 Sources", "🌐 Сайт"],
+        ["📊 Счёт и позиции"],
+        ["📈 Байес", "⚡ Сигналы"],
+        ["🧾 Сделки", "📉 Аналитика"],
+        ["🌐 Открыть SMOB"],
     ]
     labels = {item for row in rows(telegram_bot.dashboard_keyboard()) for item in row}
-    for old in ("🌍 Рынок", "Действия", "🏆 Рекорды", "🤖 Боты"):
+    for old in ("🌍 Рынок", "Действия", "🏆 Рекорды", "🤖 Боты", "🎛 Пульт", "📊 Статистика", "🛡 Риск", "🧠 Sources", "🌐 Сайт"):
         assert old not in labels
     assert telegram_bot.normalize_dashboard_button("⚡ Сигналы") == "/signals"
-    assert "SIGNAL BOARD" in telegram_bot.handle_command("/signals")
-    assert "SYSTEM STATISTICS" in telegram_bot.handle_command("/stats")
-    assert "SIGNAL SOURCES" in telegram_bot.handle_command("/sources")
+    assert "СИГНАЛЫ" in telegram_bot.handle_command("/signals")
+    assert "АНАЛИТИКА" in telegram_bot.handle_command("/stats")
+    assert "ИСТОЧНИКИ СИГНАЛОВ" in telegram_bot.handle_command("/sources")
+    text, keyboard = telegram_bot.render_command_center()
+    assert "ПАНЕЛЬ SMOB" in text
+    assert keyboard["inline_keyboard"][0][0]["text"] == "📊 Счёт и позиции"
+    assert keyboard["inline_keyboard"][3][0]["url"] == telegram_bot.DASHBOARD_URL
     print({"telegram_signal_menu": "ok"})
 
 

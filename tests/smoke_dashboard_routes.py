@@ -37,12 +37,12 @@ def main():
         "/dashboard/risk",
         "/dashboard/bias",
         "/dashboard/lab",
+        "/dashboard/sources",
         "/dashboard/storage",
-        "/dashboard/settings",
     ]
     for page in pages:
         response = ok_get(client, page)
-        assert "MT5 Command" in response.text, page
+        assert "SMOB Торговая панель" in response.text, page
     for endpoint in [
         "/api/health",
         "/api/dashboard/status",

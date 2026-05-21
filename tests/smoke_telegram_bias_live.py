@@ -27,7 +27,7 @@ def main():
 
     bias_store.save_live_bias_report(report, sent_to_telegram=False, send_reason="smoke")
     response = handle_command("/bias")
-    assert "LIVE MARKET BIAS" in response, response
+    assert "БАЙЕС LIVE" in response, response
     assert "CONSOLIDATION" not in response, response
 
     should_send, reason = live_bias_send_decision(report, bias_store.latest_live_bias(), force_send=False)

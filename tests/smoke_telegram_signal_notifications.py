@@ -30,11 +30,11 @@ SIGNAL = {
 
 def main():
     valid = format_signal_notification(SIGNAL)
-    assert "SCALP SIGNAL" in valid and "NAS100" in valid, valid
+    assert "СКАЛЬП-СИГНАЛ" in valid and "NAS100" in valid, valid
     watch = format_signal_notification({**SIGNAL, "verdict": "WAIT_CONFIRMATION", "score": 61})
-    assert "SIGNAL WATCH" in watch, watch
+    assert "СИГНАЛ В НАБЛЮДЕНИИ" in watch, watch
     result = format_signal_result_notification(SIGNAL, {"horizon": "30m", "result": "correct", "r_multiple": 0.42}, {"trust_score": 76})
-    assert "SIGNAL RESULT" in result and "CORRECT" in result, result
+    assert "РЕЗУЛЬТАТ СИГНАЛА" in result and "CORRECT" in result, result
     print({"telegram_signal_notifications": "ok"})
 
 

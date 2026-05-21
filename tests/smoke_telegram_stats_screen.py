@@ -14,9 +14,9 @@ from server.database import init_db
 def main():
     init_db()
     text, keyboard = render_system_statistics_screen()
-    assert "SYSTEM STATISTICS" in text, text
-    assert "Signals:" in text and "Bias:" in text and "Sources:" in text, text
-    assert "SYSTEM STATISTICS" in handle_command("/stats")
+    assert "АНАЛИТИКА" in text, text
+    assert "Сигналы:" in text and "Байес:" in text and "Источники:" in text, text
+    assert "АНАЛИТИКА" in handle_command("/stats")
     assert keyboard.get("inline_keyboard"), keyboard
     print({"telegram_stats_screen": "ok"})
 

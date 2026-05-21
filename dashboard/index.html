@@ -6,515 +6,538 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>MT5 Command Dashboard</title>
+  <title>SMOB Торговая панель</title>
   <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     :root {
-      --bg: #f6f7fb;
-      --surface: #ffffff;
-      --surface-2: #f9fafc;
-      --line: #e4e8f0;
-      --line-strong: #d6dce8;
+      --page: #F0F2F7;
+      --white: #FFFFFF;
+      --border: #E5E7EB;
+      --border-light: #F3F4F6;
       --text: #111827;
-      --muted: #64748b;
-      --faint: #94a3b8;
-      --blue: #2563eb;
-      --blue-soft: #e8f0ff;
+      --text-md: #374151;
+      --text-muted: #6B7280;
+      --text-light: #9CA3AF;
+      --amber: #D97706;
+      --amber-mid: #F59E0B;
+      --amber-bg: #FFFBEB;
+      --amber-border: #FDE68A;
       --green: #059669;
-      --green-soft: #e7f7ef;
-      --red: #dc2626;
-      --red-soft: #fdecec;
-      --yellow: #b7791f;
-      --yellow-soft: #fff7df;
-      --shadow: 0 12px 34px rgba(15, 23, 42, .08);
-      --shadow-soft: 0 5px 18px rgba(15, 23, 42, .05);
-      --radius: 16px;
-      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --green-bg: #ECFDF5;
+      --green-border: #A7F3D0;
+      --red: #DC2626;
+      --red-bg: #FEF2F2;
+      --red-border: #FECACA;
+      --blue: #2563EB;
+      --blue-bg: #EFF6FF;
+      --blue-border: #BFDBFE;
+      --shadow: 0 10px 24px rgba(17, 24, 39, .06);
+      --font: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
     }
     html, body {
       margin: 0;
+      width: 100%;
       min-height: 100%;
-      max-width: 100%;
-      background: var(--bg);
+      background: var(--page);
       color: var(--text);
       font-family: var(--font);
-      font-size: 14px;
+      font-size: 13px;
       letter-spacing: 0;
+      overflow-x: hidden;
     }
-    body { overflow-x: hidden; }
     button, input, select { font: inherit; }
     button {
-      border: 1px solid var(--line-strong);
-      background: var(--surface);
-      color: var(--text);
-      min-height: 38px;
+      min-height: 44px;
+      border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 0 14px;
+      background: var(--white);
+      color: var(--text);
       cursor: pointer;
-      box-shadow: var(--shadow-soft);
     }
-    button:hover { border-color: #b7c2d6; }
-    select, input {
-      min-height: 38px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--surface);
-      color: var(--text);
-      padding: 0 12px;
-      outline: none;
-    }
-    select:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+    .mono { font-family: var(--mono); }
     .app {
-      display: grid;
-      grid-template-columns: 272px minmax(0, 1fr);
-      min-height: 100vh;
+      display: flex;
+      height: 100vh;
+      width: 100%;
+      overflow: hidden;
     }
     .sidebar {
-      position: sticky;
-      top: 0;
+      width: 220px;
+      flex: 0 0 220px;
       height: 100vh;
-      background: #ffffff;
-      border-right: 1px solid var(--line);
-      padding: 22px 18px;
+      background: var(--white);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 22px;
-      z-index: 20;
+      overflow-y: auto;
     }
     .brand {
+      padding: 18px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      min-height: 44px;
+      gap: 10px;
+      border-bottom: 1px solid var(--border-light);
     }
     .brand-mark {
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: #1C1F2A;
+      color: var(--amber-mid);
       display: grid;
       place-items: center;
-      border-radius: 14px;
-      color: #ffffff;
-      background: linear-gradient(145deg, #1d4ed8, #0f172a);
       font-weight: 800;
-      font-size: 13px;
+      font-size: 16px;
     }
-    .brand-title { font-weight: 800; font-size: 16px; }
-    .brand-subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .brand-title { font-size: 13px; font-weight: 800; line-height: 1.1; }
+    .brand-subtitle { margin-top: 2px; color: var(--text-muted); font-size: 10px; }
     .nav {
+      padding: 12px 10px;
       display: grid;
-      gap: 6px;
+      gap: 14px;
     }
-    .nav a {
+    .nav-group { display: grid; gap: 4px; }
+    .nav-group-title {
+      padding: 6px 10px;
+      color: var(--text-light);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .nav-item {
+      min-height: 36px;
       display: flex;
       align-items: center;
-      gap: 11px;
-      min-height: 42px;
-      padding: 0 12px;
-      border-radius: 12px;
-      color: #334155;
+      gap: 9px;
+      padding: 0 10px;
+      border-radius: 10px;
+      color: var(--text-md);
       text-decoration: none;
-      font-weight: 650;
-    }
-    .nav a:hover { background: #f1f5f9; color: var(--text); }
-    .nav a.active { background: var(--blue-soft); color: var(--blue); }
-    .nav-icon {
-      width: 24px;
-      height: 24px;
-      display: grid;
-      place-items: center;
-      border-radius: 8px;
-      background: #f1f5f9;
-      color: #475569;
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 600;
     }
-    .nav a.active .nav-icon { background: #dbeafe; color: var(--blue); }
+    .nav-item:hover { background: var(--border-light); color: var(--text); }
+    .nav-item.active {
+      background: var(--amber-bg);
+      color: var(--amber);
+      font-weight: 700;
+    }
+    .nav-icon {
+      width: 20px;
+      color: inherit;
+      font-size: 13px;
+      text-align: center;
+    }
     .sidebar-footer {
       margin-top: auto;
-      color: var(--muted);
-      border-top: 1px solid var(--line);
-      padding-top: 16px;
-      font-size: 12px;
-      line-height: 1.45;
+      padding: 14px 18px 18px;
+      border-top: 1px solid var(--border-light);
+      color: var(--text-muted);
+      font-size: 10px;
+      line-height: 1.6;
     }
-    .main {
-      min-width: 0;
-      max-width: 100%;
-      padding: 24px;
-    }
-    .topbar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 18px;
-      margin-bottom: 22px;
-    }
-    .mobile-menu { display: none; }
-    .page-title { font-size: 26px; font-weight: 820; margin: 0; }
-    .page-subtitle { color: var(--muted); margin-top: 5px; }
-    .status-strip {
+    .online-row {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-    .pill {
-      display: inline-flex;
       align-items: center;
       gap: 7px;
-      min-height: 32px;
-      padding: 0 10px;
+      color: var(--green);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .online-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--green); }
+    .main {
+      flex: 1;
+      min-width: 0;
+      height: 100vh;
+      background: var(--page);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .topbar {
+      height: 50px;
+      flex: 0 0 50px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 18px;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .mobile-logo {
+      display: none;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #1C1F2A;
+      color: var(--amber-mid);
+      place-items: center;
+      font-weight: 800;
+    }
+    .page-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .badge {
+      min-height: 26px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       border-radius: 999px;
-      border: 1px solid var(--line);
-      background: var(--surface);
-      color: #334155;
-      font-size: 12px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      font-weight: 700;
+    }
+    .badge.green { color: var(--green); background: var(--green-bg); border-color: var(--green-border); }
+    .badge.amber { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-border); }
+    .badge.red { color: var(--red); background: var(--red-bg); border-color: var(--red-border); }
+    .badge.blue { color: var(--blue); background: var(--blue-bg); border-color: var(--blue-border); }
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .stat-card, .panel {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+    .stat-card {
+      min-height: 128px;
+      padding: 14px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 126px;
+      gap: 8px;
+      align-items: end;
+    }
+    .stat-label {
+      color: var(--text-muted);
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .stat-value {
+      margin-top: 9px;
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+    .stat-value.green { color: var(--green); }
+    .stat-value.red { color: var(--red); }
+    .stat-value.blue { color: var(--blue); }
+    .stat-sub {
+      margin-top: 5px;
+      color: var(--text-muted);
+      font-size: 10px;
+      min-height: 14px;
+    }
+    .mini-badge {
+      margin-top: 9px;
+      display: inline-flex;
+      max-width: 100%;
+      min-height: 22px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 8px;
+      font-size: 10px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-badge.amber { color: var(--amber); background: var(--amber-bg); border: 1px solid var(--amber-border); }
+    .mini-badge.green { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); }
+    .mini-badge.red { color: var(--red); background: var(--red-bg); border: 1px solid var(--red-border); }
+    .mini-badge.blue { color: var(--blue); background: var(--blue-bg); border: 1px solid var(--blue-border); }
+    .sparkline {
+      width: 120px;
+      height: 32px;
+      align-self: center;
+      justify-self: end;
+      overflow: visible;
+    }
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .panel { padding: 14px; }
+    .panel-header {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .panel-title { font-weight: 800; font-size: 13px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border-radius: 999px;
+      padding: 0 8px;
+      color: var(--text-muted);
+      background: var(--border-light);
+      font-size: 10px;
       font-weight: 700;
       white-space: nowrap;
     }
-    .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--faint); }
-    .pill.green { color: var(--green); background: var(--green-soft); border-color: #c7ead7; }
-    .pill.green .dot { background: var(--green); }
-    .pill.red { color: var(--red); background: var(--red-soft); border-color: #facaca; }
-    .pill.red .dot { background: var(--red); }
-    .pill.yellow { color: var(--yellow); background: var(--yellow-soft); border-color: #f4dfaa; }
-    .pill.yellow .dot { background: var(--yellow); }
-    .pill.blue { color: var(--blue); background: var(--blue-soft); border-color: #c8d8ff; }
-    .pill.blue .dot { background: var(--blue); }
-    .toolbar {
-      display: flex;
+    .trade-list { display: grid; gap: 2px; }
+    .trade-row {
+      min-height: 42px;
+      display: grid;
+      grid-template-columns: 62px 48px minmax(74px, 1fr) 44px 70px;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 18px;
+      gap: 8px;
+      border-top: 1px solid var(--border-light);
+      font-size: 11px;
     }
-    .toolbar-left, .toolbar-right { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    .grid { display: grid; gap: 16px; }
-    .metrics { grid-template-columns: repeat(9, minmax(140px, 1fr)); }
-    .cols-2 { grid-template-columns: minmax(0, 1fr) minmax(320px, .46fr); }
-    .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-soft);
-      padding: 18px;
-      min-width: 0;
-      max-width: 100%;
+    .trade-row:first-child { border-top: 0; }
+    .symbol {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--text);
     }
-    .card.raised { box-shadow: var(--shadow); }
-    .card-title {
-      display: flex;
+    .side-badge {
+      min-height: 20px;
+      border-radius: 7px;
+      display: inline-flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-    .card-title h2, .card-title h3 {
-      margin: 0;
-      font-size: 15px;
+      justify-content: center;
+      padding: 0 7px;
+      font-size: 10px;
       font-weight: 800;
     }
-    .metric-card {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-soft);
-      padding: 15px;
-      min-height: 102px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
+    .side-badge.buy, .side-badge.long { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); }
+    .side-badge.sell, .side-badge.short { color: var(--red); background: var(--red-bg); border: 1px solid var(--red-border); }
+    .price-flow {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .metric-label { color: var(--muted); font-size: 12px; font-weight: 700; }
-    .metric-value { font-size: 22px; font-weight: 850; margin-top: 8px; overflow-wrap: anywhere; }
-    .metric-note { color: var(--faint); font-size: 12px; margin-top: 4px; }
+    .tp-dots { display: flex; gap: 4px; }
+    .tp-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 2px;
+      background: var(--border);
+    }
+    .tp-dot.done { background: var(--green); }
+    .pnl {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+      text-align: right;
+      white-space: nowrap;
+    }
     .green-text { color: var(--green); }
     .red-text { color: var(--red); }
+    .amber-text { color: var(--amber); }
     .blue-text { color: var(--blue); }
-    .yellow-text { color: var(--yellow); }
-    .muted { color: var(--muted); }
-    .mono { font-family: var(--mono); }
-    .table-wrap { overflow-x: auto; max-width: 100%; }
-    table { width: 100%; border-collapse: collapse; min-width: 760px; }
-    th {
-      text-align: left;
-      color: var(--muted);
-      font-size: 12px;
+    .bias-hero {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 4px 0 10px;
+    }
+    .bias-direction {
+      font-size: 28px;
+      line-height: 1;
       font-weight: 800;
-      padding: 10px 8px;
-      border-bottom: 1px solid var(--line);
-      background: var(--surface-2);
+      color: var(--green);
     }
-    td {
-      padding: 11px 8px;
-      border-bottom: 1px solid var(--line);
-      color: #1f2937;
-      vertical-align: top;
+    .bias-direction.short { color: var(--red); }
+    .bias-confidence {
+      font-family: var(--mono);
+      color: var(--amber);
+      font-size: 16px;
+      font-weight: 800;
     }
-    tr:last-child td { border-bottom: 0; }
-    .empty, .error, .loading {
-      min-height: 138px;
-      border: 1px dashed var(--line-strong);
-      border-radius: 14px;
+    .progress {
+      width: 100%;
+      height: 5px;
+      overflow: hidden;
+      background: var(--border-light);
+      border-radius: 999px;
+      margin-bottom: 10px;
+    }
+    .progress span { display: block; height: 100%; border-radius: inherit; background: var(--amber-mid); }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      max-width: 100%;
+      min-height: 22px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 8px;
+      background: var(--border-light);
+      color: var(--text-md);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .risk-list { display: grid; gap: 8px; }
+    .risk-row {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      gap: 12px;
+    }
+    .risk-row:last-child { border-bottom: 0; }
+    .risk-row span { color: var(--text-muted); font-size: 11px; }
+    .risk-row b { font-family: var(--mono); font-size: 11px; text-align: right; }
+    .empty {
+      min-height: 130px;
       display: grid;
       place-items: center;
       text-align: center;
-      color: var(--muted);
-      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      background: #FAFBFC;
       padding: 18px;
     }
-    .error { color: var(--red); background: var(--red-soft); border-color: #facaca; }
-    .stack { display: grid; gap: 12px; }
-    .row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 11px 0;
-      border-bottom: 1px solid var(--line);
-    }
-    .row:last-child { border-bottom: 0; }
-    .kv { display: grid; gap: 3px; }
-    .kv span { color: var(--muted); font-size: 12px; }
-    .kv b { font-size: 14px; overflow-wrap: anywhere; }
-    .tp-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .tp {
-      min-height: 28px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0 9px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--surface-2);
-      color: #334155;
-      font-size: 12px;
-      font-weight: 800;
-    }
-    .tp.done { color: var(--green); background: var(--green-soft); border-color: #c7ead7; }
-    .progress {
-      width: 100%;
-      height: 9px;
-      border-radius: 999px;
-      background: #e9edf5;
-      overflow: hidden;
-      margin-top: 12px;
-    }
-    .progress > span { display: block; height: 100%; background: var(--blue); border-radius: 999px; }
-    .chart {
-      width: 100%;
-      min-height: 280px;
-      border-radius: 14px;
-      background: linear-gradient(180deg, #ffffff, #f8fafc);
-      border: 1px solid var(--line);
-      overflow: hidden;
-    }
-    .chart svg { display: block; width: 100%; height: 280px; }
-    .bars { display: grid; gap: 10px; }
-    .bar-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 84px; gap: 10px; align-items: center; }
-    .bar-track { height: 10px; border-radius: 999px; background: #e9edf5; overflow: hidden; }
-    .bar-fill { height: 100%; border-radius: 999px; background: var(--blue); }
-    .bar-fill.negative { background: var(--red); }
-    .bias-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .bias-item, .position-card {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 14px;
-      background: var(--surface-2);
-    }
-    .position-head, .bias-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-    .symbol { font-weight: 850; font-size: 16px; }
-    .side { text-transform: uppercase; color: var(--muted); font-weight: 800; }
-    .mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .info-block {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 14px;
-      background: var(--surface-2);
-      color: #334155;
-      line-height: 1.55;
-    }
-    .hide { display: none !important; }
-    .desktop-table { display: block; }
-    .mobile-cards { display: none; }
-    .compact-list { display: grid; gap: 10px; }
-    .compact-card {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--surface-2);
-      padding: 13px;
+    .skeleton-page {
+      min-height: calc(100vh - 92px);
       display: grid;
-      gap: 10px;
-      min-width: 0;
+      place-items: center;
     }
-    .compact-head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
+    .skeleton-box {
+      width: min(520px, 100%);
+      min-height: 210px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
     }
+    .skeleton-box h2 { margin: 0 0 8px; font-size: 18px; }
+    .skeleton-box p { margin: 0; color: var(--text-muted); }
+    .loading {
+      min-height: calc(100vh - 92px);
+      display: grid;
+      place-items: center;
+      color: var(--text-muted);
+    }
+    .bottom-nav { display: none; }
     .endpoint-error {
-      min-height: auto;
-      margin-bottom: 12px;
-      padding: 10px 12px;
-      justify-items: start;
-      text-align: left;
-      font-size: 12px;
-      font-weight: 700;
+      margin-bottom: 10px;
+      color: var(--red);
+      background: var(--red-bg);
+      border: 1px solid var(--red-border);
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 11px;
     }
-    .bottom-nav,
-    .sheet-backdrop,
-    .more-sheet { display: none; }
-    @media (max-width: 1400px) {
-      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 1023px) {
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .content-grid { grid-template-columns: 1fr; }
     }
-    @media (min-width: 1024px) {
-      .sidebar { transform: none !important; }
-    }
-    @media (min-width: 768px) and (max-width: 1023px) {
-      .app { grid-template-columns: 1fr; }
-      .sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 272px;
-        transform: translateX(-104%);
-        transition: transform .18s ease;
-        box-shadow: var(--shadow);
+    @media (max-width: 768px) {
+      .app { height: auto; min-height: 100vh; overflow: visible; }
+      .sidebar { display: none; }
+      .main { min-height: 100vh; height: auto; padding-bottom: 68px; overflow: visible; }
+      .topbar { position: sticky; top: 0; z-index: 10; padding: 0 12px; }
+      .mobile-logo { display: grid; }
+      .page-title { display: none; }
+      .topbar-right .badge { display: none; }
+      .topbar-right #clock { display: inline; font-family: var(--mono); font-weight: 700; color: var(--text); }
+      .content { padding: 12px; overflow: visible; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .stat-card { grid-template-columns: 1fr; min-height: 142px; padding: 12px; }
+      .sparkline { width: 100%; max-width: 150px; justify-self: start; }
+      .content-grid { grid-template-columns: 1fr; }
+      .trade-row {
+        min-height: 70px;
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          "symbol pnl"
+          "side dots"
+          "price price";
+        padding: 9px 0;
       }
-      .sidebar.open { transform: translateX(0); }
-      .mobile-menu { display: inline-flex; align-items: center; justify-content: center; }
-      .main { padding: 18px; }
-      .topbar { grid-template-columns: 1fr; }
-      .status-strip { justify-content: flex-start; }
-      .cols-2, .cols-3, .cols-4, .bias-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .toolbar { align-items: flex-start; flex-direction: column; }
-    }
-    @media (max-width: 767px) {
-      button, select, input { min-height: 44px; }
-      .app { grid-template-columns: 1fr; }
-      .sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: min(292px, 86vw);
-        transform: translateX(-104%);
-        transition: transform .18s ease;
-        box-shadow: var(--shadow);
-      }
-      .sidebar.open { transform: translateX(0); }
-      .mobile-menu { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
-      .main { padding: 14px 12px 92px; }
-      .topbar { grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
-      .page-title { font-size: 22px; }
-      .page-subtitle { font-size: 13px; }
-      .status-strip { justify-content: flex-start; overflow: hidden; }
-      .toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
-      .toolbar-left, .toolbar-right { width: 100%; }
-      .toolbar-right button, .toolbar-left select { width: 100%; }
-      .grid, .cols-2, .cols-3, .cols-4, .bias-grid, .metrics, .mini-grid { grid-template-columns: 1fr; }
-      .metrics .metric-card:nth-child(n+5) { display: none; }
-      .card { padding: 14px; border-radius: 14px; }
-      .metric-card { min-height: 92px; }
-      .metric-value { font-size: 20px; }
-      .chart { min-height: 220px; }
-      .chart svg { height: 220px; max-width: 100%; }
-      .bar-row { grid-template-columns: 72px minmax(0, 1fr) 74px; gap: 8px; }
-      .row { align-items: flex-start; }
-      .table-wrap { overflow-x: visible; }
-      table { min-width: 0; }
-      thead { display: none; }
-      table, tbody, tr, td { display: block; width: 100%; }
-      tr {
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        background: var(--surface-2);
-        padding: 10px 12px;
-        margin-bottom: 10px;
-      }
-      td {
-        display: grid;
-        grid-template-columns: 104px minmax(0, 1fr);
-        gap: 10px;
-        border-bottom: 0;
-        padding: 7px 0;
-        overflow-wrap: anywhere;
-      }
-      td::before {
-        content: attr(data-label);
-        color: var(--muted);
-        font-weight: 800;
-        font-size: 12px;
-      }
-      .desktop-table { display: none; }
-      .mobile-cards { display: block; }
+      .trade-row .symbol { grid-area: symbol; }
+      .trade-row .side-badge { grid-area: side; width: fit-content; }
+      .trade-row .price-flow { grid-area: price; }
+      .trade-row .tp-dots { grid-area: dots; justify-self: end; }
+      .trade-row .pnl { grid-area: pnl; }
       .bottom-nav {
         position: fixed;
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 40;
+        z-index: 30;
         display: grid;
         grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 4px;
-        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-        background: rgba(255,255,255,.97);
-        border-top: 1px solid var(--line);
-        box-shadow: 0 -10px 28px rgba(15, 23, 42, .08);
+        min-height: 58px;
+        background: var(--white);
+        border-top: 1px solid var(--border);
+        box-shadow: 0 -8px 24px rgba(17, 24, 39, .08);
       }
       .bottom-nav button {
-        min-width: 0;
-        min-height: 46px;
-        padding: 0 4px;
+        min-height: 58px;
         border: 0;
+        border-radius: 0;
         box-shadow: none;
-        border-radius: 12px;
-        color: var(--muted);
-        font-size: 12px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 10px;
         font-weight: 800;
+        display: grid;
+        place-items: center;
+        gap: 2px;
       }
-      .bottom-nav button.active { background: var(--blue-soft); color: var(--blue); }
-      .sheet-backdrop.open {
-        display: block;
-        position: fixed;
-        inset: 0;
-        z-index: 38;
-        background: rgba(15, 23, 42, .22);
-      }
-      .more-sheet {
-        position: fixed;
-        left: 10px;
-        right: 10px;
-        bottom: 74px;
-        z-index: 39;
-        display: none;
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        background: var(--surface);
-        box-shadow: var(--shadow);
-        padding: 10px;
-      }
-      .more-sheet.open { display: grid; gap: 6px; }
-      .more-sheet button {
-        justify-content: flex-start;
-        text-align: left;
-        box-shadow: none;
-        border-color: transparent;
-        background: var(--surface-2);
-      }
-      .more-sheet button.active { background: var(--blue-soft); color: var(--blue); }
+      .bottom-nav button.active { color: var(--amber); background: var(--amber-bg); }
     }
   </style>
 </head>
@@ -522,71 +545,60 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="brand-mark">MT5</div>
+        <div class="brand-mark">S</div>
         <div>
-          <div class="brand-title">MT5 Command</div>
-          <div class="brand-subtitle">Broker Dashboard</div>
+          <div class="brand-title">SMOB</div>
+          <div class="brand-subtitle">Торговая панель</div>
         </div>
       </div>
-      <nav class="nav" id="nav"></nav>
+      <nav class="nav" id="nav" aria-label="Навигация"></nav>
       <div class="sidebar-footer">
-        <div>Refresh: <b id="refresh-interval">30s</b></div>
-        <div>Version: <b id="dash-version">broker-dashboard</b></div>
+        <div class="online-row"><span class="online-dot"></span><span>MT5 · Online</span></div>
+        <div id="sidebar-time">—</div>
+        <div id="sidebar-bots">Боты: —</div>
       </div>
     </aside>
-
     <main class="main">
-      <div class="topbar">
-        <div>
-          <button class="mobile-menu" id="menu-toggle" type="button">Menu</button>
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="mobile-logo">S</div>
           <h1 class="page-title" id="page-title">Главная</h1>
-          <div class="page-subtitle" id="page-subtitle">Профессиональная панель MT5, Render и persistent storage.</div>
         </div>
-        <div class="status-strip" id="status-strip"></div>
-      </div>
-
-      <div class="toolbar">
-        <div class="toolbar-left">
-          <span class="pill blue"><span class="dot"></span><span id="clock">—</span></span>
-          <span class="pill"><span class="dot"></span>Last update: <span id="last-update">—</span></span>
+        <div class="topbar-right">
+          <span class="badge green">● Render Live</span>
+          <span class="badge amber" id="topbar-bias">Байес: —</span>
+          <span id="clock">—</span>
         </div>
-        <div class="toolbar-right">
-          <button id="refresh-button" type="button">Refresh</button>
-        </div>
-      </div>
-
-      <section id="content" class="grid"></section>
+      </header>
+      <section class="content" id="content"></section>
     </main>
   </div>
-  <nav class="bottom-nav" id="bottom-nav" aria-label="Mobile dashboard navigation"></nav>
-  <div class="sheet-backdrop" id="sheet-backdrop"></div>
-  <div class="more-sheet" id="more-sheet" aria-label="More dashboard pages"></div>
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Мобильная навигация"></nav>
 
   <script>
-    const DASHBOARD_VERSION = 'broker-dashboard-2026-05';
+    const DASHBOARD_VERSION = 'smob-minimal-2026-05';
     const REFRESH_MS = 30000;
     const ROUTES = [
-      {id:'overview', path:'overview', label:'Главная', subtitle:'Сводка счёта, риска, bias и последних MT5 событий.', icon:'OV'},
-      {id:'portfolio', path:'portfolio', label:'Портфель', subtitle:'Balance, equity, margin и история account snapshots.', icon:'PF'},
-      {id:'positions', path:'positions', label:'Позиции', subtitle:'Открытые позиции, SL, BE и TP checklist.', icon:'PO'},
-      {id:'trades', path:'trades', label:'Сделки', subtitle:'Сегодняшние и последние сделки с фильтрами.', icon:'TR'},
-      {id:'signals', path:'signals', label:'Signals', subtitle:'Signal Intelligence, source reliability and signal accuracy.', icon:'SG'},
-      {id:'history', path:'history', label:'История', subtitle:'Native history, импорт MT5 и состояние trade storage.', icon:'HI'},
-      {id:'analytics', path:'analytics', label:'Аналитика', subtitle:'Winrate, profit factor, expectancy и symbol performance.', icon:'AN'},
-      {id:'risk', path:'risk', label:'Риск', subtitle:'Daily risk, SL damage и risk status.', icon:'RK'},
-      {id:'bias', path:'bias', label:'Bias', subtitle:'Live market bias, factor breakdown и pre-market session report.', icon:'BI'},
-      {id:'lab', path:'lab', label:'Strategy Lab', subtitle:'Data health, recommendations и optimizer status.', icon:'LB'},
-      {id:'storage', path:'storage', label:'Storage', subtitle:'Persistent SQLite, counts, warnings и timestamps.', icon:'ST'},
-      {id:'settings', path:'settings', label:'Настройки', subtitle:'Read-only system, Render, GitHub и endpoint status.', icon:'SE'}
+      {id:'overview', path:'overview', label:'Главная', group:'Обзор', icon:'⌂'},
+      {id:'portfolio', path:'portfolio', label:'Счёт', group:'Обзор', icon:'€'},
+      {id:'positions', path:'positions', label:'Позиции', group:'Обзор', icon:'◈'},
+      {id:'trades', path:'trades', label:'Сделки', group:'Торговля', icon:'↕'},
+      {id:'history', path:'history', label:'История', group:'Торговля', icon:'◷'},
+      {id:'signals', path:'signals', label:'Сигналы', group:'Торговля', icon:'⚡'},
+      {id:'bias', path:'bias', label:'Байес', group:'Анализ', icon:'↗'},
+      {id:'analytics', path:'analytics', label:'Статистика', group:'Анализ', icon:'▦'},
+      {id:'risk', path:'risk', label:'Риск', group:'Анализ', icon:'!'},
+      {id:'lab', path:'lab', label:'Strategy Lab', group:'Анализ', icon:'◌'},
+      {id:'sources', path:'sources', label:'Источники', group:'Система', icon:'◎'},
+      {id:'storage', path:'storage', label:'Хранилище', group:'Система', icon:'▣'}
     ];
     const MOBILE_NAV = [
-      {id:'overview', label:'Главная'},
-      {id:'positions', label:'Позиции'},
-      {id:'trades', label:'Сделки'},
-      {id:'risk', label:'Риск'},
-      {id:'more', label:'Ещё'}
+      {id:'overview', label:'Главная', icon:'⌂'},
+      {id:'trades', label:'Сделки', icon:'↕'},
+      {id:'bias', label:'Байес', icon:'↗'},
+      {id:'signals', label:'Сигналы', icon:'⚡'},
+      {id:'analytics', label:'Анализ', icon:'▦'}
     ];
-    const MORE_ROUTES = ['portfolio', 'signals', 'history', 'analytics', 'bias', 'lab', 'storage', 'settings'];
     const routeById = Object.fromEntries(ROUTES.map(route => [route.id, route]));
     const endpointList = [
       '/api/health',
@@ -643,8 +655,7 @@
       data: {},
       errors: {},
       loading: true,
-      lastUpdate: null,
-      filters: {symbol: 'ALL', result: 'ALL'}
+      lastUpdate: null
     };
 
     const $ = id => document.getElementById(id);
@@ -656,22 +667,15 @@
       return Number.isFinite(parsed) ? parsed : null;
     };
     const dash = value => value === null || value === undefined || value === '' ? '—' : value;
-    const raw = value => ({__raw: String(value ?? '')});
-    const renderCell = value => value && typeof value === 'object' && value.__raw !== undefined ? value.__raw : esc(value);
-    const compact = value => {
-      if (value === null || value === undefined || value === '') return '—';
-      const text = String(value);
-      return text.length > 64 ? text.slice(0, 61) + '...' : text;
-    };
     const money = value => {
       const n = num(value);
       if (n === null) return '—';
       const sign = n > 0 ? '+' : n < 0 ? '-' : '';
-      return `${sign}€${Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+      return `${sign}€${Math.abs(n).toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
     };
     const price = value => {
       const n = num(value);
-      return n === null ? '—' : n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      return n === null ? '—' : n.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
     };
     const pct = value => {
       const n = num(value);
@@ -684,15 +688,10 @@
     const dateTime = value => {
       if (!value) return '—';
       const parsed = new Date(String(value).replace(' ', 'T'));
-      if (Number.isNaN(parsed.getTime())) return esc(value);
-      return parsed.toLocaleString([], {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+      if (Number.isNaN(parsed.getTime())) return String(value);
+      return parsed.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
     };
-    const ageMinutes = value => {
-      if (!value) return null;
-      const parsed = new Date(String(value).replace(' ', 'T'));
-      if (Number.isNaN(parsed.getTime())) return null;
-      return Math.max(0, Math.round((Date.now() - parsed.getTime()) / 60000));
-    };
+    const first = (...values) => values.find(value => value !== null && value !== undefined && value !== '');
 
     function initialRoute() {
       const hash = window.location.hash.replace('#', '').replace('/', '');
@@ -703,76 +702,8 @@
 
     function setRoute(routeId) {
       state.route = routeById[routeId] ? routeId : 'overview';
-      const currentHash = window.location.hash.replace('#', '');
-      if (currentHash !== state.route) window.location.hash = state.route;
+      if (window.location.hash.replace('#', '') !== state.route) window.location.hash = state.route;
       render();
-      closeSidebar();
-      closeMoreSheet();
-    }
-
-    function renderNav() {
-      $('nav').innerHTML = ROUTES.map(route => `
-        <a href="#${route.id}" class="${state.route === route.id ? 'active' : ''}" data-route="${route.id}">
-          <span class="nav-icon">${esc(route.icon)}</span>
-          <span>${esc(route.label)}</span>
-        </a>`).join('');
-      document.querySelectorAll('[data-route]').forEach(link => {
-        link.addEventListener('click', event => {
-          event.preventDefault();
-          setRoute(link.dataset.route);
-        });
-      });
-    }
-
-    function renderBottomNav() {
-      const bottomNav = $('bottom-nav');
-      const moreSheet = $('more-sheet');
-      if (!bottomNav || !moreSheet) return;
-      const isMoreActive = MORE_ROUTES.includes(state.route);
-      bottomNav.innerHTML = MOBILE_NAV.map(item => `
-        <button type="button" class="${item.id === state.route || (item.id === 'more' && isMoreActive) ? 'active' : ''}" data-mobile-route="${item.id}">
-          ${esc(item.label)}
-        </button>`).join('');
-      moreSheet.innerHTML = MORE_ROUTES.map(routeId => {
-        const route = routeById[routeId];
-        return `<button type="button" class="${state.route === routeId ? 'active' : ''}" data-more-route="${routeId}">
-          ${esc(route.label)}
-        </button>`;
-      }).join('') + '<button type="button" data-refresh-mobile>Dashboard refresh</button>';
-      bottomNav.querySelectorAll('[data-mobile-route]').forEach(button => {
-        button.addEventListener('click', () => {
-          const target = button.dataset.mobileRoute;
-          if (target === 'more') {
-            toggleMoreSheet();
-            return;
-          }
-          setRoute(target);
-        });
-      });
-      moreSheet.querySelectorAll('[data-more-route]').forEach(button => {
-        button.addEventListener('click', () => setRoute(button.dataset.moreRoute));
-      });
-      const refreshMobile = moreSheet.querySelector('[data-refresh-mobile]');
-      if (refreshMobile) refreshMobile.addEventListener('click', () => {
-        closeMoreSheet();
-        refreshAll();
-      });
-    }
-
-    function toggleMoreSheet() {
-      const sheet = $('more-sheet');
-      const backdrop = $('sheet-backdrop');
-      if (!sheet || !backdrop) return;
-      const next = !sheet.classList.contains('open');
-      sheet.classList.toggle('open', next);
-      backdrop.classList.toggle('open', next);
-    }
-
-    function closeMoreSheet() {
-      const sheet = $('more-sheet');
-      const backdrop = $('sheet-backdrop');
-      if (sheet) sheet.classList.remove('open');
-      if (backdrop) backdrop.classList.remove('open');
     }
 
     async function api(key, path, fallback) {
@@ -827,712 +758,272 @@
       render();
     }
 
-    function statusStrip() {
-      const health = obj(state.data.health);
-      const status = obj(state.data.status);
-      const storage = obj(state.data.storage);
-      const system = obj(state.data.system);
-      const live = health.ok && health.status !== 'error';
-      const dbSafe = storage.db_storage === 'render_persistent_disk' && storage.db_file_exists && !storage.db_warning;
-      const renderKnown = Boolean(system.render_service);
-      return [
-        pill(live ? 'LIVE' : 'OFFLINE', live ? 'green' : 'red'),
-        pill(`Render ${renderKnown ? system.render_service : 'unknown'}`, live ? 'green' : 'yellow'),
-        pill(`DB ${dbSafe ? 'Persistent' : 'Warning'}`, dbSafe ? 'green' : 'yellow'),
-        pill(`Mode ${dash(status.system_mode || system.system_mode)}`, 'blue')
-      ].join('');
-    }
-
-    function pill(text, tone='') {
-      return `<span class="pill ${tone}"><span class="dot"></span>${esc(text)}</span>`;
-    }
-
-    function metric(label, value, note='', tone='') {
-      return `<div class="metric-card">
-        <div>
-          <div class="metric-label">${esc(label)}</div>
-          <div class="metric-value ${tone}">${value}</div>
-        </div>
-        <div class="metric-note">${esc(note || '')}</div>
-      </div>`;
-    }
-
-    function card(title, body, meta='', endpointKey='') {
-      return `<div class="card raised">
-        <div class="card-title"><h2>${esc(title)}</h2>${meta}</div>
-        ${endpointKey ? errorBlock(endpointKey) : ''}
-        ${body}
-      </div>`;
-    }
-
-    function empty(text) {
-      return `<div class="empty">${esc(text)}</div>`;
-    }
-
-    function errorBlock(key) {
-      return state.errors[key] ? `<div class="error endpoint-error">${esc(state.errors[key])}</div>` : '';
-    }
-
-    function loadingBlock() {
-      return '<div class="loading">Loading dashboard data...</div>';
-    }
-
     function account() { return obj(obj(state.data.account).account); }
     function positions() { return arr(obj(state.data.positions).positions); }
     function trades() { return arr(obj(state.data.trades).trades); }
     function stats() { return obj(obj(state.data.stats).stats); }
     function statsToday() { return obj(obj(state.data.statsToday).stats); }
     function pnl() { return obj(obj(state.data.pnl).pnl); }
-    function storage() { return obj(state.data.storage); }
+    function bots() { return arr(obj(state.data.bots).bots); }
     function lab() { return obj(state.data.lab); }
-    function bias() { return obj(obj(state.data.bias).bias); }
     function liveBias() { return obj(obj(state.data.biasLive).bias); }
     function liveBiasRows() { return arr(liveBias().symbols); }
     function liveBiasAccuracy() { return obj(state.data.biasLiveAccuracy); }
-    function liveBiasCalibration() { return obj(state.data.biasLiveCalibration); }
-    function signalRows() { return arr(obj(state.data.signals).signals); }
-    function signalSources() { return arr(obj(state.data.signalSources).sources); }
-    function signalAccuracy() { return obj(state.data.signalAccuracy); }
-    function events() { return arr(obj(state.data.events).events); }
-    function historySnapshots() { return arr(obj(state.data.accountHistory).snapshots); }
 
-    function topMetrics() {
-      const acc = account();
-      const p = pnl();
-      const s = stats();
-      const st = storage();
-      const l = lab();
-      return `<div class="grid metrics">
-        ${metric('Equity', money(acc.equity), dash(acc.currency))}
-        ${metric('Balance', money(acc.balance), dash(acc.account_server))}
-        ${metric('Today PnL', money(p.closed_pnl ?? p.net_pnl), `${dash(p.wins)}W / ${dash(p.losses)}L`, signedClass(p.closed_pnl ?? p.net_pnl))}
-        ${metric('Open PnL', money(p.floating_pnl), `${positions().length} open`, signedClass(p.floating_pnl))}
-        ${metric('Open Trades', positions().length, 'active positions')}
-        ${metric('Closed Today', dash(p.closed_trades_count ?? p.trades_count ?? statsToday().total_trades), 'closed trades')}
-        ${metric('Drawdown', money(obj(l.risk_damage_analytics).max_drawdown), 'strategy lab')}
-        ${metric('Free Margin', money(acc.free_margin), `Margin level ${pct(acc.margin_level)}`)}
-        ${metric('Storage', st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', st.db_file_exists ? 'SQLite online' : 'SQLite missing', st.db_storage === 'render_persistent_disk' ? 'green-text' : 'yellow-text')}
-      </div>`;
-    }
-
-    function equityPoints() {
-      const snapshots = historySnapshots()
-        .filter(row => num(row.equity) !== null)
-        .sort((a, b) => new Date(String(a.snapshot_at || a.created_at || '').replace(' ', 'T')) - new Date(String(b.snapshot_at || b.created_at || '').replace(' ', 'T')))
-        .map(row => ({label: dateTime(row.snapshot_at || row.created_at), value: num(row.equity)}));
-      if (snapshots.length >= 2) return snapshots;
-      let running = 0;
-      return trades()
-        .slice()
-        .sort((a, b) => new Date(String(a.closed_at || a.created_at || '').replace(' ', 'T')) - new Date(String(b.closed_at || b.created_at || '').replace(' ', 'T')))
-        .map(row => {
-          running += num(row.net_profit ?? row.profit ?? row.total_net) || 0;
-          return {label: dateTime(row.closed_at || row.created_at), value: running};
+    function renderNav() {
+      const groups = ['Обзор', 'Торговля', 'Анализ', 'Система'];
+      $('nav').innerHTML = groups.map(group => {
+        const links = ROUTES.filter(route => route.group === group).map(route => `
+          <a href="#${route.id}" class="nav-item ${state.route === route.id ? 'active' : ''}" data-route="${route.id}">
+            <span class="nav-icon">${esc(route.icon)}</span><span>${esc(route.label)}</span>
+          </a>`).join('');
+        return `<div class="nav-group"><div class="nav-group-title">${esc(group)}</div>${links}</div>`;
+      }).join('');
+      document.querySelectorAll('[data-route]').forEach(link => {
+        link.addEventListener('click', event => {
+          event.preventDefault();
+          setRoute(link.dataset.route);
         });
+      });
     }
 
-    function lineChart(points, title='Equity') {
-      if (!points || points.length < 2) return empty('Not enough equity history yet.');
-      const width = 860, height = 280, pad = 32;
-      const values = points.map(point => point.value);
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      const span = max - min || 1;
-      const coords = points.map((point, index) => {
-        const x = pad + index * ((width - pad * 2) / Math.max(points.length - 1, 1));
-        const y = height - pad - ((point.value - min) / span) * (height - pad * 2);
+    function renderBottomNav() {
+      const nav = $('bottom-nav');
+      nav.innerHTML = MOBILE_NAV.map(item => `
+        <button type="button" class="${state.route === item.id ? 'active' : ''}" data-mobile-route="${item.id}">
+          <span>${esc(item.icon)}</span><span>${esc(item.label)}</span>
+        </button>`).join('');
+      nav.querySelectorAll('[data-mobile-route]').forEach(button => {
+        button.addEventListener('click', () => setRoute(button.dataset.mobileRoute));
+      });
+    }
+
+    function errorBlock(key) {
+      return state.errors[key] ? `<div class="endpoint-error">${esc(state.errors[key])}</div>` : '';
+    }
+
+    function sparkline(values, tone='amber') {
+      const width = 120, height = 32, pad = 2;
+      const series = values.length ? values : [1, 1, 1, 1, 1, 1, 1, 1];
+      const min = Math.min(...series), max = Math.max(...series), span = max - min || 1;
+      const points = series.map((value, index) => {
+        const x = pad + index * ((width - pad * 2) / Math.max(series.length - 1, 1));
+        const y = height - pad - ((value - min) / span) * (height - pad * 2);
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       }).join(' ');
-      const last = points[points.length - 1];
-      return `<div class="chart">
-        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}">
-          <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"></rect>
-          <line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" stroke="#e4e8f0"></line>
-          <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height-pad}" stroke="#e4e8f0"></line>
-          <polyline points="${coords}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          <text x="${pad}" y="24" fill="#64748b" font-size="13">${esc(title)}</text>
-          <text x="${width-pad}" y="24" text-anchor="end" fill="#111827" font-size="13" font-weight="700">${esc(money(last.value))}</text>
-        </svg>
-      </div>`;
+      const area = `0,${height} ${points} ${width},${height}`;
+      const color = tone === 'green' ? '#059669' : tone === 'blue' ? '#2563EB' : tone === 'red' ? '#DC2626' : '#D97706';
+      const id = `g${tone}${Math.round(Math.random() * 100000)}`;
+      return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+        <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".22"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+        <polygon points="${area}" fill="url(#${id})"></polygon>
+        <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      </svg>`;
     }
 
-    function tpChecklist(item) {
-      const rows = [1,2,3].filter(index => item[`tp${index}`] !== null && item[`tp${index}`] !== undefined && item[`tp${index}`] !== '' || item[`tp${index}_done`])
-        .map(index => `<span class="tp ${item[`tp${index}_done`] ? 'done' : ''}">TP${index} ${item[`tp${index}_done`] ? '✓' : '□'}</span>`);
-      return rows.length ? `<div class="tp-list">${rows.join('')}</div>` : '<div class="muted">No TP levels.</div>';
+    function pseudoTrend(seedValue, tone='amber') {
+      const base = Math.abs(num(seedValue) ?? 1) || 1;
+      const points = Array.from({length: 12}, (_, index) => {
+        const wave = Math.sin((base + index * 17) / 13) * 0.06;
+        const drift = (index - 5) * 0.012;
+        return base * (1 + wave + drift);
+      });
+      return sparkline(points, tone);
     }
 
-    function positionCard(position) {
-      const closedPercent = [position.tp1_done, position.tp2_done, position.tp3_done].filter(Boolean).length * 33.33;
-      const duration = ageMinutes(position.opened_at);
-      return `<div class="position-card">
-        <div class="position-head">
-          <div><div class="symbol">${esc(position.symbol || '—')}</div><div class="side">${esc(position.side || '—')}</div></div>
-          <span class="pill ${num(position.profit) >= 0 ? 'green' : 'red'}">${money(position.profit)}</span>
+    function statCard(label, value, sub, badge, tone, seed) {
+      return `<div class="stat-card">
+        <div>
+          <div class="stat-label">${esc(label)}</div>
+          <div class="stat-value ${tone}">${value}</div>
+          <div class="stat-sub">${esc(sub || '—')}</div>
+          <div class="mini-badge ${tone || 'amber'}">${esc(badge || '—')}</div>
         </div>
-        <div class="mini-grid">
-          <div class="kv"><span>Entry</span><b>${price(position.entry_price ?? position.entry)}</b></div>
-          <div class="kv"><span>SL</span><b>${price(position.sl)}</b></div>
-          <div class="kv"><span>Current</span><b>${price(position.current_price)}</b></div>
-          <div class="kv"><span>Duration</span><b>${duration === null ? '—' : duration + 'm'}</b></div>
+        ${pseudoTrend(seed, tone || 'amber')}
+      </div>`;
+    }
+
+    function openTradesCount() {
+      const openFromTrades = trades().filter(row => String(row.status || row.state || '').toLowerCase().includes('open')).length;
+      return positions().length || openFromTrades;
+    }
+
+    function bestSymbol() {
+      const fromStats = first(stats().best_symbol, stats().best_asset, obj(lab().best_symbol).symbol);
+      if (fromStats) return fromStats;
+      const grouped = new Map();
+      trades().forEach(row => {
+        const symbol = row.symbol || '—';
+        grouped.set(symbol, (grouped.get(symbol) || 0) + (num(first(row.net_profit, row.profit, row.total_net)) || 0));
+      });
+      return [...grouped.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+    }
+
+    function worstSymbol() {
+      const grouped = new Map();
+      trades().forEach(row => {
+        const symbol = row.symbol || '—';
+        grouped.set(symbol, (grouped.get(symbol) || 0) + (num(first(row.net_profit, row.profit, row.total_net)) || 0));
+      });
+      return [...grouped.entries()].sort((a, b) => a[1] - b[1])[0]?.[0] || '—';
+    }
+
+    function statCards() {
+      const acc = account();
+      const s = stats();
+      const p = pnl();
+      const todayPnl = first(p.closed_pnl, p.net_pnl, statsToday().net_profit, 0);
+      const activeBots = bots().filter(bot => String(first(bot.status, bot.state, '')).toLowerCase() !== 'paused').length || bots().length;
+      const drawdown = first(s.max_drawdown, obj(lab().risk_damage_analytics).max_drawdown);
+      const winRate = first(s.win_rate, s.winrate, obj(lab().risk_damage_analytics).winrate);
+      const totalTrades = first(s.total_trades, trades().length);
+      const avgR = first(s.avg_r, s.average_r, obj(lab().risk_damage_analytics).expectancy_R);
+      return `<div class="stats-grid">
+        ${statCard('БАЛАНС', money(acc.balance), `Equity: ${money(acc.equity)}`, `↑ ${money(todayPnl)} сегодня`, 'amber', acc.balance || acc.equity)}
+        ${statCard('Win Rate', pct(winRate), `из ${dash(totalTrades)} сделок`, 'тренд по сделкам', 'green', winRate)}
+        ${statCard('Открыто', dash(openTradesCount()), `позиции / ${dash(activeBots)} ботов активны`, `Drawdown: ${pct(drawdown)}`, num(drawdown) > 10 ? 'red' : 'blue', openTradesCount())}
+        ${statCard('Avg R', avgR === undefined || avgR === null ? '—' : `${Number(avgR).toFixed(2)}R`, 'последние 30 сделок', `Best: ${bestSymbol()}`, 'green', avgR)}
+      </div>`;
+    }
+
+    function tpDots(row) {
+      return `<div class="tp-dots">${[1,2,3].map(index => `<span class="tp-dot ${row[`tp${index}_done`] || row[`tp${index}_hit`] ? 'done' : ''}"></span>`).join('')}</div>`;
+    }
+
+    function tradeRow(row) {
+      const sideRaw = String(first(row.side, row.direction, row.type, '—')).toUpperCase();
+      const side = sideRaw.includes('SELL') || sideRaw.includes('SHORT') ? 'SELL' : sideRaw.includes('BUY') || sideRaw.includes('LONG') ? 'BUY' : sideRaw;
+      const profit = first(row.net_profit, row.profit, row.total_net, row.pnl);
+      return `<div class="trade-row">
+        <div class="symbol">${esc(row.symbol || '—')}</div>
+        <div><span class="side-badge ${side === 'SELL' ? 'sell' : 'buy'}">${esc(side)}</span></div>
+        <div class="price-flow">${price(first(row.entry_price, row.entry))} → ${price(first(row.exit_price, row.close_price, row.price))}</div>
+        ${tpDots(row)}
+        <div class="pnl ${signedClass(profit)}">${money(profit)}</div>
+      </div>`;
+    }
+
+    function latestTradesPanel() {
+      const rows = trades().slice(0, 5);
+      const closedToday = first(pnl().closed_trades_count, pnl().trades_count, statsToday().total_trades, rows.length);
+      return `<div class="panel">
+        <div class="panel-header"><div class="panel-title">Последние сделки</div><span class="chip">Сегодня · ${dash(closedToday)} закрыто</span></div>
+        ${errorBlock('trades')}
+        ${rows.length ? `<div class="trade-list">${rows.map(tradeRow).join('')}</div>` : `<div class="empty">Сделок пока нет</div>`}
+      </div>`;
+    }
+
+    function mainBiasRow() {
+      const rows = liveBiasRows();
+      return rows.find(row => row.symbol === 'NAS100') || rows[0] || null;
+    }
+
+    function biasPanel() {
+      const row = mainBiasRow();
+      if (!row) {
+        return `<div class="panel">
+          <div class="panel-header"><div class="panel-title">Байес · Live</div><span class="chip">—</span></div>
+          ${errorBlock('biasLive')}
+          <div class="empty">Байес не рассчитан. Запустите расчёт.</div>
+        </div>`;
+      }
+      const confidence = Math.max(0, Math.min(100, num(row.confidence) || 0));
+      const reasons = arr(row.reasons).slice(0, 5);
+      const accuracy = obj(obj(liveBiasAccuracy().overall)['30m']).accuracy;
+      return `<div class="panel">
+        <div class="panel-header"><div class="panel-title">Байес · Live</div><span class="chip">${esc(row.symbol || '—')}</span></div>
+        ${errorBlock('biasLive')}
+        <div class="bias-hero">
+          <div class="bias-direction ${row.direction === 'SHORT' ? 'short' : ''}">${esc(row.direction || '—')}</div>
+          <div class="bias-confidence">${dash(row.confidence)}%</div>
         </div>
-        ${tpChecklist(position)}
-        <div class="progress"><span style="width:${Math.min(100, closedPercent)}%"></span></div>
-        <div class="metric-note">${position.be_done ? 'SL → BE protected' : 'BE not confirmed'}</div>
+        <div class="progress"><span style="width:${confidence}%"></span></div>
+        <div class="tag-list">
+          <span class="tag">${esc(row.strength || '—')}</span>
+          <span class="tag">Риск: ${esc(row.risk || '—')}</span>
+          ${reasons.map(reason => `<span class="tag">${esc(reason)}</span>`).join('')}
+        </div>
+        <div style="margin-top:12px;color:var(--text-muted);font-size:10px;">Точность 30д: ${accuracy === null || accuracy === undefined ? '—' : `${accuracy}%`}</div>
+        ${pseudoTrend(accuracy || confidence, 'amber')}
       </div>`;
     }
 
-    function positionsPanel(limit=3) {
-      const items = positions();
-      if (!items.length) return empty('No open positions.');
-      return `<div class="stack">${items.slice(0, limit).map(positionCard).join('')}</div>`;
-    }
-
-    function biasPanel(compactMode=false) {
-      const liveRows = liveBiasRows();
-      if (liveRows.length) return liveBiasPanel(compactMode);
-      return preMarketBiasPanel(compactMode);
-    }
-
-    function preMarketBiasPanel(compactMode=false) {
-      const b = bias();
-      const rows = arr(b.symbols);
-      if (!rows.length) return empty('No latest bias report yet.');
-      const visible = compactMode ? rows.slice(0, 6) : rows;
-      return `<div class="bias-grid">${visible.map(row => `
-        <div class="bias-item">
-          <div class="bias-head"><div class="symbol">${esc(row.symbol)}</div><span class="pill ${row.high_risk ? 'yellow' : 'blue'}">${esc(row.bias || 'UNKNOWN')}</span></div>
-          <div class="mini-grid">
-            <div class="kv"><span>Confidence</span><b>${pct(row.confidence)}</b></div>
-            <div class="kv"><span>Quality</span><b>${pct(row.data_quality_score)}</b></div>
-          </div>
-          <div class="metric-note">${esc(arr(row.reasons).slice(0, 2).join(' · ') || 'data limited')}</div>
-        </div>`).join('')}</div>`;
-    }
-
-    function liveBiasPanel(compactMode=false) {
-      const rows = compactMode ? liveBiasRows().slice(0, 6) : liveBiasRows();
-      if (!rows.length) return empty('No live bias snapshot yet.');
-      return `<div class="bias-grid">${rows.map(row => `
-        <div class="bias-item">
-          <div class="bias-head">
-            <div><div class="symbol">${esc(row.symbol || '—')}</div><div class="side">${dateTime(row.timestamp)}</div></div>
-            <span class="pill ${row.direction === 'LONG' ? 'green' : 'red'}">${esc(row.direction || '—')} ${dash(row.confidence)}%</span>
-          </div>
-          <div class="mini-grid">
-            <div class="kv"><span>Strength</span><b>${esc(row.strength || '—')}</b></div>
-            <div class="kv"><span>Risk</span><b>${esc(row.risk || '—')}</b></div>
-            <div class="kv"><span>Long</span><b>${dash(row.long_probability)}%</b></div>
-            <div class="kv"><span>Short</span><b>${dash(row.short_probability)}%</b></div>
-            <div class="kv"><span>Quality</span><b>${pct(row.data_quality_score)}</b></div>
-            <div class="kv"><span>Score</span><b>${dash(row.final_score)}</b></div>
-          </div>
-          <div class="metric-note">${esc(arr(row.reasons).slice(0, 3).join(' · ') || 'data limited')}</div>
-        </div>`).join('')}</div>`;
-    }
-
-    function liveFactorBreakdown() {
-      const rows = liveBiasRows();
-      if (!rows.length) return empty('No live factor breakdown yet.');
-      const factorLabels = {
-        market_structure: 'Market Structure',
-        trend: 'Trend',
-        vwap: 'VWAP',
-        momentum: 'Momentum',
-        volatility: 'Volatility',
-        intermarket: 'Intermarket',
-        macro_news: 'Macro/News'
-      };
-      return table(['symbol', ...Object.values(factorLabels)], rows.map(row => [
-        row.symbol || '—',
-        ...Object.keys(factorLabels).map(key => dash(obj(row.factor_scores)[key]))
-      ]));
-    }
-
-    function liveSourceAvailability() {
-      const rows = liveBiasRows();
-      const globalSources = obj(liveBias().source_availability);
-      const items = Object.keys(globalSources).length
-        ? Object.entries(globalSources)
-        : Object.entries(obj(rows[0] && rows[0].source_availability));
-      if (!items.length) return empty('No source availability reported.');
-      return `<div class="grid cols-3">${items.map(([key, value]) => `
-        <div class="info-block"><b>${esc(key)}</b><br><span class="muted">${esc(value)}</span></div>`).join('')}</div>`;
-    }
-
-    function accuracyPercent(stats) {
-      const value = obj(stats).accuracy;
-      return value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
-    }
-
-    function liveAccuracyBlock() {
-      const data = liveBiasAccuracy();
-      const overall = obj(data.overall);
-      const all = obj(overall.all);
-      const bySymbol = obj(data.by_symbol);
-      const ranked = Object.entries(bySymbol)
-        .map(([symbol, payload]) => ({symbol, stats: obj(obj(payload).all)}))
-        .filter(item => item.stats.accuracy !== null && item.stats.accuracy !== undefined)
-        .sort((a, b) => Number(b.stats.accuracy) - Number(a.stats.accuracy));
-      const best = ranked[0];
-      const worst = ranked[ranked.length - 1];
-      return `<div class="grid cols-4">
-        ${metric('30m accuracy', accuracyPercent(overall['30m']), `${dash(obj(overall['30m']).samples)} samples`)}
-        ${metric('1h accuracy', accuracyPercent(overall['1h']), `${dash(obj(overall['1h']).samples)} samples`)}
-        ${metric('2h accuracy', accuracyPercent(overall['2h']), `${dash(obj(overall['2h']).samples)} samples`)}
-        ${metric('4h accuracy', accuracyPercent(overall['4h']), `${dash(obj(overall['4h']).samples)} samples`)}
-      </div>
-      <div class="grid cols-3">
-        ${metric('Best symbol', best ? best.symbol : '—', best ? accuracyPercent(best.stats) : 'waiting for data')}
-        ${metric('Worst symbol', worst ? worst.symbol : '—', worst ? accuracyPercent(worst.stats) : 'waiting for data')}
-        ${metric('Evaluated snapshots', dash(data.evaluated_count), `${dash(data.not_enough_data_count)} not enough data`)}
-      </div>
-      ${Object.keys(obj(data.by_confidence_bucket)).length ? table(['bucket','accuracy','samples','correct','wrong','neutral'], Object.entries(obj(data.by_confidence_bucket)).map(([bucket, payload]) => {
-        const stats = obj(obj(payload).all);
-        return [bucket, accuracyPercent(stats), dash(stats.samples), dash(stats.correct), dash(stats.wrong), dash(stats.neutral)];
-      })) : empty('No confidence bucket accuracy yet.')}`;
-    }
-
-    function calibrationBlock() {
-      const data = liveBiasCalibration();
-      const suggestions = arr(data.recommended_weight_adjustments);
-      return `<div class="stack">
-        ${kvRow('Requires human approval', String(data.requires_human_approval !== false))}
-        ${kvRow('Best symbol', data.best_symbol ? `${data.best_symbol.name} ${data.best_symbol.accuracy}%` : '—')}
-        ${kvRow('Worst symbol', data.worst_symbol ? `${data.worst_symbol.name} ${data.worst_symbol.accuracy}%` : '—')}
-        ${suggestions.length ? table(['type','factor','suggested change','reason'], suggestions.map(item => [
-          compact(item.type), compact(item.factor), compact(item.suggested_change), compact(item.reason)
-        ])) : empty('No calibration suggestions yet.')}
-      </div>`;
-    }
-
-    function eventsPanel() {
-      const rows = events().slice(0, 9);
-      if (!rows.length) return empty('No MT5 events yet.');
-      return `<div class="stack">${rows.map(row => `
-        <div class="row">
-          <div class="kv"><span>${dateTime(row.time || row.created_at)}</span><b>${esc(row.symbol || '—')} · ${esc(row.event_type || row.normalized_type || 'event')}</b></div>
-          <div class="${signedClass(row.profit)}">${money(row.profit)}</div>
-        </div>`).join('')}</div>`;
-    }
-
-    function quickStats() {
+    function riskPanel() {
       const s = stats();
       const risk = obj(lab().risk_damage_analytics);
-      return `<div class="stack">
-        ${kvRow('Total trades', dash(s.total_trades ?? risk.trades))}
-        ${kvRow('Winrate', pct(s.win_rate ?? risk.winrate))}
-        ${kvRow('Profit factor', dash(s.profit_factor ?? risk.profit_factor))}
-        ${kvRow('Average R', dash(s.avg_r ?? risk.expectancy_R))}
-        ${kvRow('Best trade', money(s.best_trade ?? risk.biggest_win))}
-        ${kvRow('Worst trade', money(s.worst_trade ?? risk.biggest_loss))}
-        ${lab().sample_warning ? `<div class="info-block">LOW SAMPLE SIZE — import more MT5 history.</div>` : ''}
+      const drawdown = first(s.max_drawdown, risk.max_drawdown);
+      const pf = first(s.profit_factor, risk.profit_factor);
+      const avgR = first(s.avg_r, s.average_r, risk.expectancy_R);
+      const riskLevel = String(first(risk.risk_status, liveBias().risk, 'LOW')).toUpperCase();
+      const riskTone = riskLevel.includes('HIGH') || riskLevel.includes('CRITICAL') ? 'red-text' : riskLevel.includes('MEDIUM') || riskLevel.includes('WARNING') ? 'amber-text' : 'green-text';
+      return `<div class="panel">
+        <div class="panel-header"><div class="panel-title">Аналитика · Риск</div><span class="chip">30 дней</span></div>
+        ${errorBlock('stats')}
+        <div class="risk-list">
+          ${riskRow('Win Rate', pct(first(s.win_rate, s.winrate, risk.winrate)), 'green-text')}
+          ${riskRow('Profit Factor', dash(pf), 'green-text')}
+          ${riskRow('Avg R', avgR === null || avgR === undefined ? '—' : `${Number(avgR).toFixed(2)}R`, 'amber-text')}
+          ${riskRow('Max Drawdown', pct(drawdown), num(drawdown) > 10 ? 'red-text' : 'amber-text')}
+          ${riskRow('Лучший символ', bestSymbol(), 'green-text')}
+          ${riskRow('Худший символ', worstSymbol(), 'red-text')}
+          ${riskRow('Риск счёта', riskLevel, riskTone)}
+        </div>
       </div>`;
     }
 
-    function kvRow(label, value) {
-      return `<div class="row"><span class="muted">${esc(label)}</span><b>${renderCell(value)}</b></div>`;
+    function riskRow(label, value, klass) {
+      return `<div class="risk-row"><span>${esc(label)}</span><b class="${klass}">${esc(value)}</b></div>`;
     }
 
     function renderOverview() {
-      return `${topMetrics()}
-      <div class="grid cols-2">
-        ${card('Equity chart', lineChart(equityPoints()), '', 'accountHistory')}
-        ${card('Open Position', positionsPanel(1), '', 'positions')}
-      </div>
-      <div class="grid cols-3">
-        ${card('NY Bias', biasPanel(true), '', 'bias')}
-        ${card('Last Events', eventsPanel(), '', 'events')}
-        ${card('Quick Stats', quickStats(), '', 'stats')}
-      </div>`;
+      return `${statCards()}<div class="content-grid">${latestTradesPanel()}${biasPanel()}${riskPanel()}</div>`;
     }
 
-    function renderPortfolio() {
-      const acc = account();
-      const snapshots = historySnapshots();
-      const latestAge = ageMinutes(acc.snapshot_at || acc.created_at);
-      return `${topMetrics()}
-      <div class="grid cols-2">
-        ${card('Balance / Equity', `<div class="grid cols-2">
-          ${metric('Balance', money(acc.balance), dash(acc.currency))}
-          ${metric('Equity', money(acc.equity), dash(acc.account_login))}
-          ${metric('Free margin', money(acc.free_margin), 'available')}
-          ${metric('Margin level', pct(acc.margin_level), latestAge !== null && latestAge > 10 ? 'account data may be old' : 'latest snapshot')}
-        </div>`, '', 'account')}
-        ${card('Equity Curve', lineChart(equityPoints()), '', 'accountHistory')}
-      </div>
-      ${card('Account Snapshots', snapshots.length ? table(['time','balance','equity','free margin','source'], snapshots.slice(0, 80).map(row => [
-        dateTime(row.snapshot_at || row.created_at), money(row.balance), money(row.equity), money(row.free_margin), compact(row.source)
-      ])) : empty('No account snapshots yet.'), '', 'accountHistory')}`;
-    }
-
-    function renderPositions() {
-      const items = positions();
-      return `${card('Open Positions', items.length ? `<div class="grid cols-3">${items.map(positionCard).join('')}</div>` : empty('No open positions.'), '', 'positions')}`;
-    }
-
-    function symbolOptions(rows) {
-      const symbols = ['ALL', ...new Set(rows.map(row => row.symbol).filter(Boolean).sort())];
-      return symbols.map(symbol => `<option value="${esc(symbol)}" ${state.filters.symbol === symbol ? 'selected' : ''}>${esc(symbol)}</option>`).join('');
-    }
-
-    function filteredTrades() {
-      return trades().filter(row => {
-        const symbolOk = state.filters.symbol === 'ALL' || row.symbol === state.filters.symbol;
-        const profit = num(row.net_profit ?? row.profit ?? row.total_net);
-        const result = profit > 0 ? 'WIN' : profit < 0 ? 'LOSS' : 'FLAT';
-        const resultOk = state.filters.result === 'ALL' || state.filters.result === result;
-        return symbolOk && resultOk;
-      });
-    }
-
-    function tradesToolbar() {
-      return `<div class="toolbar">
-        <div class="toolbar-left">
-          <select id="symbol-filter">${symbolOptions(trades())}</select>
-          <select id="result-filter">
-            ${['ALL','WIN','LOSS','FLAT'].map(item => `<option value="${item}" ${state.filters.result === item ? 'selected' : ''}>${item}</option>`).join('')}
-          </select>
+    function skeletonPage() {
+      const route = routeById[state.route] || routeById.overview;
+      return `<div class="skeleton-page">
+        <div class="skeleton-box">
+          <div>
+            <h2>${esc(route.label)}</h2>
+            <p>Страница в разработке · Данные скоро появятся</p>
+          </div>
         </div>
       </div>`;
-    }
-
-    function tradeTable(rows) {
-      if (!rows.length) return empty('No trades found.');
-      const headers = ['time','symbol','side','entry','close','profit','R','status','source'];
-      const body = table(headers, rows.map(row => [
-        dateTime(row.closed_at || row.close_time || row.created_at),
-        row.symbol || '—',
-        String(row.side || '—').toUpperCase(),
-        price(row.entry_price ?? row.entry),
-        price(row.exit_price ?? row.close_price ?? row.price),
-        raw(`<span class="${signedClass(row.net_profit ?? row.profit ?? row.total_net)}">${money(row.net_profit ?? row.profit ?? row.total_net)}</span>`),
-        dash(row.r_multiple ?? row.result_R ?? row.profit_r),
-        row.status || row.reason || row.close_reason || '—',
-        row.source || row.comment || '—'
-      ]));
-      return `<div class="desktop-table">${body}</div><div class="mobile-cards"><div class="compact-list">${rows.map(tradeCompactCard).join('')}</div></div>`;
-    }
-
-    function tradeCompactCard(row) {
-      const profit = row.net_profit ?? row.profit ?? row.total_net;
-      return `<div class="compact-card">
-        <div class="compact-head">
-          <div><div class="symbol">${esc(row.symbol || '—')}</div><div class="side">${esc(String(row.side || '—').toUpperCase())}</div></div>
-          <div class="${signedClass(profit)}"><b>${money(profit)}</b></div>
-        </div>
-        <div class="mini-grid">
-          <div class="kv"><span>Time</span><b>${dateTime(row.closed_at || row.close_time || row.created_at)}</b></div>
-          <div class="kv"><span>Status</span><b>${esc(row.status || row.reason || row.close_reason || '—')}</b></div>
-          <div class="kv"><span>Entry</span><b>${price(row.entry_price ?? row.entry)}</b></div>
-          <div class="kv"><span>Close</span><b>${price(row.exit_price ?? row.close_price ?? row.price)}</b></div>
-        </div>
-        ${tpChecklist(row)}
-      </div>`;
-    }
-
-    function renderTrades() {
-      const rows = filteredTrades();
-      return `${tradesToolbar()}${card('Trades', tradeTable(rows), '', 'trades')}`;
-    }
-
-    function renderHistory() {
-      const st = storage();
-      return `<div class="grid cols-3">
-        ${metric('Imported / Native history', dash(st.native_history_total), 'history_deals')}
-        ${metric('Closed trades', dash(st.closed_trades_total), 'journal + closed + reports')}
-        ${metric('Latest trade', dateTime(st.latest_trade_time), 'persistent SQLite')}
-      </div>
-      <div class="grid cols-2">
-        ${card('History Health', `<div class="stack">
-          ${kvRow('Trades total', dash(st.trades_total))}
-          ${kvRow('Native history total', dash(st.native_history_total))}
-          ${kvRow('Account snapshots', dash(st.account_snapshots_total))}
-          ${kvRow('Warnings', arr(st.warnings).join(', ') || 'none')}
-        </div>`, '', 'storage')}
-        ${card('Import MT5 history', `<div class="info-block">
-          POST /api/history/import supports CSV/JSON dry-run preview. Write mode is protected by server secret. This dashboard does not perform write actions.
-        </div>`)}
-      </div>
-      ${card('Recent History Trades', tradeTable(trades().slice(0, 120)), '', 'trades')}`;
-    }
-
-    function renderSignals() {
-      const rows = signalRows();
-      const sources = signalSources();
-      const accuracy = signalAccuracy();
-      const overall = obj(obj(accuracy.overall).all);
-      return `<div class="grid cols-4">
-        ${metric('Signals processed', rows.length, 'latest loaded')}
-        ${metric('Valid', rows.filter(row => row.verdict === 'VALID_SIGNAL').length, 'score >= 70')}
-        ${metric('Watch', rows.filter(row => ['WATCH_ONLY','WAIT_CONFIRMATION'].includes(row.verdict)).length, 'needs confirmation')}
-        ${metric('Accuracy', overall.accuracy === null || overall.accuracy === undefined ? '—' : `${overall.accuracy}%`, `${dash(overall.samples)} samples`)}
-      </div>
-      ${card('Latest Signals', rows.length ? table(['time','symbol','direction','setup','entry','SL','TP1','score','verdict','source'], rows.slice(0, 80).map(row => [
-        dateTime(row.timestamp), row.symbol || '—', row.direction || '—', compact(row.setup), price(row.entry), price(row.sl), price(row.tp1), dash(row.score), row.verdict || '—', compact(row.source_name)
-      ])) : empty('No validated signals yet.'), '', 'signals')}
-      <div class="grid cols-2">
-        ${card('Signal Sources', sources.length ? table(['source','signals','accuracy','avg R','trust','best symbols'], sources.map(row => [
-          compact(row.source_name), dash(row.total_signals), row.winrate === null || row.winrate === undefined ? '—' : `${row.winrate}%`, dash(row.average_R), dash(row.trust_score), arr(row.best_symbols).map(item => item.symbol).join(', ') || '—'
-        ])) : empty('No signal sources connected yet.'), '', 'signalSources')}
-        ${card('Signal Accuracy', overall.samples ? `<div class="stack">
-          ${kvRow('Total evaluated', dash(accuracy.evaluated_count))}
-          ${kvRow('Correct', dash(overall.correct))}
-          ${kvRow('Wrong', dash(overall.wrong))}
-          ${kvRow('Neutral', dash(overall.neutral))}
-          ${kvRow('15m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['15m']) : '—')}
-          ${kvRow('30m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['30m']) : '—')}
-          ${kvRow('60m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['60m']) : '—')}
-          ${kvRow('120m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['120m']) : '—')}
-        </div>` : empty('No evaluated signals yet.'), '', 'signalAccuracy')}
-      </div>`;
-    }
-
-    function barsBySymbol() {
-      const grouped = new Map();
-      trades().forEach(row => {
-        const symbol = row.symbol || 'UNKNOWN';
-        grouped.set(symbol, (grouped.get(symbol) || 0) + (num(row.net_profit ?? row.profit ?? row.total_net) || 0));
-      });
-      const rows = [...grouped.entries()].map(([symbol, value]) => ({symbol, value})).sort((a,b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 10);
-      if (!rows.length) return empty('No symbol performance yet.');
-      const max = Math.max(...rows.map(row => Math.abs(row.value))) || 1;
-      return `<div class="bars">${rows.map(row => `
-        <div class="bar-row">
-          <b>${esc(row.symbol)}</b>
-          <div class="bar-track"><div class="bar-fill ${row.value < 0 ? 'negative' : ''}" style="width:${Math.max(4, Math.abs(row.value) / max * 100)}%"></div></div>
-          <span class="${signedClass(row.value)}">${money(row.value)}</span>
-        </div>`).join('')}</div>`;
-    }
-
-    function renderAnalytics() {
-      const s = stats();
-      const risk = obj(lab().risk_damage_analytics);
-      return `<div class="grid cols-4">
-        ${metric('Winrate', pct(s.win_rate ?? risk.winrate), 'all trades')}
-        ${metric('Profit factor', dash(s.profit_factor ?? risk.profit_factor), 'gross profit / loss')}
-        ${metric('Expectancy', money(risk.expectancy_money), 'money')}
-        ${metric('Expectancy R', dash(risk.expectancy_R), 'R multiple')}
-      </div>
-      <div class="grid cols-2">
-        ${card('Symbol Performance', barsBySymbol(), '', 'trades')}
-        ${card('Analytics Detail', `<div class="stack">
-          ${kvRow('Average win', money(risk.average_winning_trade))}
-          ${kvRow('Average loss', money(risk.average_losing_trade))}
-          ${kvRow('Best trade', money(s.best_trade ?? risk.biggest_win))}
-          ${kvRow('Worst trade', money(s.worst_trade ?? risk.biggest_loss))}
-          ${kvRow('Daily PnL', money(pnl().closed_pnl ?? pnl().net_pnl))}
-          ${kvRow('Monthly PnL', '—')}
-          ${lab().sample_warning ? '<div class="info-block">LOW SAMPLE SIZE — import more MT5 history.</div>' : ''}
-        </div>`)}
-      </div>`;
-    }
-
-    function renderRisk() {
-      const risk = obj(lab().risk_damage_analytics);
-      const rawStatus = String(risk.risk_status || 'UNKNOWN').toUpperCase();
-      const tone = rawStatus.includes('CRITICAL') || rawStatus.includes('BROKEN') ? 'red' : rawStatus.includes('DANGER') || rawStatus.includes('WARNING') ? 'yellow' : 'green';
-      return `<div class="grid cols-4">
-        ${metric('Risk status', rawStatus === 'OK' ? 'NORMAL' : rawStatus, 'Strategy Lab', tone === 'red' ? 'red-text' : tone === 'yellow' ? 'yellow-text' : 'green-text')}
-        ${metric('Today PnL', money(pnl().closed_pnl ?? pnl().net_pnl), 'realized + floating', signedClass(pnl().closed_pnl ?? pnl().net_pnl))}
-        ${metric('Max daily loss', money(risk.max_daily_loss), 'history')}
-        ${metric('Biggest loss', money(risk.biggest_loss), 'single trade')}
-      </div>
-      <div class="grid cols-2">
-        ${card('Risk Damage', `<div class="stack">
-          ${kvRow('SL damage days', dash(risk.single_loss_damage_days))}
-          ${kvRow('TP wins needed for one SL', dash(risk.tp1_wins_needed_to_recover_one_sl))}
-          ${kvRow('Open risk', '—')}
-          ${kvRow('Max drawdown', money(risk.max_drawdown))}
-        </div>`)}
-        ${card('Dangerous Symbols', arr(lab().dangerous_symbols).length ? `<div class="stack">${arr(lab().dangerous_symbols).map(item => kvRow(item, 'review')).join('')}</div>` : empty('No dangerous symbols reported.'))}
-      </div>`;
-    }
-
-    function renderBias() {
-      const b = bias();
-      const live = liveBias();
-      const availability = obj(b.source_availability);
-      const liveRows = liveBiasRows();
-      return `<div class="grid cols-3">
-        ${metric('Live risk', dash(live.risk || live.macro_risk), dateTime(live.timestamp))}
-        ${metric('Live data quality', pct(live.data_quality_score), 'source availability honest')}
-        ${metric('Live symbols', liveRows.length, 'LONG / SHORT only')}
-      </div>
-      ${card('Live Bias', liveRows.length ? liveBiasPanel(false) : empty('No live bias snapshot yet.'), '', 'biasLive')}
-      ${card('Live Bias Accuracy', liveAccuracyBlock(), '', 'biasLiveAccuracy')}
-      ${card('Calibration Suggestions', calibrationBlock(), '', 'biasLiveCalibration')}
-      ${card('Live Factor Breakdown', liveFactorBreakdown(), '', 'biasLive')}
-      ${card('Live Source Availability', liveSourceAvailability(), '', 'biasLive')}
-      <div class="grid cols-3">
-        ${metric('Pre-Market macro risk', dash(b.macro_risk), dateTime(b.run_at))}
-        ${metric('Pre-Market quality', pct(b.data_quality_score), '09:20 NY report')}
-        ${metric('Pre-Market symbols', arr(b.symbols).length, 'historical session report')}
-      </div>
-      ${card('Pre-Market Bias', arr(b.symbols).length ? preMarketBiasPanel(false) : empty('No pre-market bias report yet.'), '', 'bias')}
-      ${card('Pre-Market Source Availability', Object.keys(availability).length ? `<div class="grid cols-3">${Object.entries(availability).map(([key, value]) => `
-        <div class="info-block"><b>${esc(key)}</b><br><span class="muted">${esc(value)}</span></div>`).join('')}</div>` : empty('No source availability reported.'))}`;
-    }
-
-    function renderLab() {
-      const l = lab();
-      const h = obj(state.data.labHealth);
-      const recs = obj(state.data.labRecs);
-      if ((l.trade_count || h.trade_count || 0) === 0) {
-        return `${card('Strategy Lab', empty('No closed trade history found. Import MT5 history.'), '', 'lab')}${card('Data Health', labHealthBlock(), '', 'labHealth')}`;
-      }
-      return `<div class="grid cols-4">
-        ${metric('Trade count', dash(l.trade_count ?? h.trade_count), 'closed history')}
-        ${metric('Sample warning', dash(l.sample_warning ?? h.sample_warning), 'data health')}
-        ${metric('Human approval', recs.requires_human_approval ? 'required' : '—', 'optimizer')}
-        ${metric('Critical problems', arr(l.critical_problems).length, 'risk diagnostics')}
-      </div>
-      <div class="grid cols-2">
-        ${card('Data Health', labHealthBlock(), '', 'labHealth')}
-        ${card('Recommendations', recommendationsBlock(recs), '', 'labRecs')}
-      </div>`;
-    }
-
-    function labHealthBlock() {
-      const h = obj(state.data.labHealth);
-      const st = obj(h.storage_health || storage());
-      return `<div class="stack">
-        ${kvRow('Trade count', dash(h.trade_count ?? lab().trade_count))}
-        ${kvRow('Sample warning', dash(h.sample_warning ?? lab().sample_warning))}
-        ${kvRow('Data sources', arr(h.data_sources ?? lab().data_sources).join(', ') || '—')}
-        ${kvRow('Closed trades', dash(st.closed_trades_total))}
-        ${kvRow('Native history', dash(st.native_history_total))}
-      </div>`;
-    }
-
-    function recommendationsBlock(recs) {
-      const items = Object.values(obj(recs.best_candidate_settings_per_symbol));
-      if (!items.length) return empty('No candidate recommendation available.');
-      return `<div class="stack">${items.slice(0, 8).map(item => `
-        <div class="row">
-          <div class="kv"><span>${esc(item.symbol)}</span><b>Score ${dash(item.score)}</b></div>
-          <div class="muted">${esc(arr(item.reasons).join(', ') || 'candidate')}</div>
-        </div>`).join('')}</div>`;
-    }
-
-    function renderStorage() {
-      const st = storage();
-      const safe = st.db_storage === 'render_persistent_disk' && st.db_file_exists && !st.db_warning;
-      return `<div class="grid cols-3">
-        ${metric('Persistent DB', safe ? 'SAFE' : 'WARNING', dash(st.db_storage), safe ? 'green-text' : 'yellow-text')}
-        ${metric('DB size', st.db_file_size ? `${Math.round(Number(st.db_file_size)/1024)} KB` : '—', 'SQLite')}
-        ${metric('Warnings', arr(st.warnings).length || 'none', 'storage health')}
-      </div>
-      ${card('Storage Details', `<div class="stack">
-        ${kvRow('DB file', raw(`<span class="mono">${esc(st.db_file || '—')}</span>`))}
-        ${kvRow('db_storage', dash(st.db_storage))}
-        ${kvRow('db_file_exists', String(Boolean(st.db_file_exists)))}
-        ${kvRow('db_file_is_writable', dash(st.db_file_is_writable))}
-        ${kvRow('trades_total', dash(st.trades_total))}
-        ${kvRow('closed_trades_total', dash(st.closed_trades_total))}
-        ${kvRow('native_history_total', dash(st.native_history_total))}
-        ${kvRow('account_snapshots_total', dash(st.account_snapshots_total))}
-        ${kvRow('screenshots_total', dash(st.screenshots_total))}
-        ${kvRow('latest_account_time', dateTime(st.latest_account_time))}
-        ${kvRow('latest_trade_time', dateTime(st.latest_trade_time))}
-      </div>`)}
-      ${card('Tables Found', arr(st.tables_found).length ? `<div class="info-block mono">${esc(arr(st.tables_found).join(', '))}</div>` : empty('No table list available.'))}`;
-    }
-
-    function renderSettings() {
-      const sys = obj(state.data.system);
-      const status = obj(state.data.status);
-      return `<div class="grid cols-2">
-        ${card('System', `<div class="stack">
-          ${kvRow('system_mode', dash(sys.system_mode || status.system_mode))}
-          ${kvRow('app_version', dash(sys.app_version))}
-          ${kvRow('dashboard_version', dash(sys.dashboard_version || DASHBOARD_VERSION))}
-          ${kvRow('render_service', dash(sys.render_service))}
-          ${kvRow('git_branch', dash(sys.git_branch))}
-          ${kvRow('git_commit', raw(`<span class="mono">${esc(sys.git_commit || '—')}</span>`))}
-          ${kvRow('uptime', sys.uptime_seconds !== undefined ? `${sys.uptime_seconds}s` : '—')}
-          ${kvRow('server_time', dateTime(sys.server_time))}
-          ${kvRow('data_refresh_interval', `${REFRESH_MS / 1000}s`)}
-          ${kvRow('telegram_status', 'not exposed')}
-        </div>`)}
-        ${card('API Endpoints', `<div class="stack">${endpointList.map(path => kvRow(path, state.errors[path] || 'read-only')).join('')}</div>`)}
-      </div>`;
-    }
-
-    function table(headers, rows) {
-      return `<div class="table-wrap"><table>
-        <thead><tr>${headers.map(header => `<th>${esc(header)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(row => `<tr>${row.map((cell, index) => `<td data-label="${esc(headers[index] || '')}">${renderCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table></div>`;
     }
 
     function render() {
       state.route = routeById[state.route] ? state.route : initialRoute();
       const route = routeById[state.route];
       $('page-title').textContent = route.label;
-      $('page-subtitle').textContent = route.subtitle;
-      $('dash-version').textContent = obj(state.data.system).dashboard_version || DASHBOARD_VERSION;
-      $('status-strip').innerHTML = statusStrip();
+      $('topbar-bias').textContent = topbarBiasText();
+      const activeBots = bots().filter(bot => String(first(bot.status, bot.state, '')).toLowerCase() !== 'paused').length || bots().length;
+      $('sidebar-bots').textContent = `Боты: ${dash(activeBots)}`;
       renderNav();
       renderBottomNav();
       if (state.loading && !state.lastUpdate) {
-        $('content').innerHTML = loadingBlock();
+        $('content').innerHTML = '<div class="loading">Загрузка данных...</div>';
         return;
       }
-      const renderers = {
-        overview: renderOverview,
-        portfolio: renderPortfolio,
-        positions: renderPositions,
-        trades: renderTrades,
-        signals: renderSignals,
-        history: renderHistory,
-        analytics: renderAnalytics,
-        risk: renderRisk,
-        bias: renderBias,
-        lab: renderLab,
-        storage: renderStorage,
-        settings: renderSettings
-      };
-      $('content').innerHTML = (renderers[state.route] || renderOverview)();
-      bindPageControls();
+      $('content').innerHTML = state.route === 'overview' ? renderOverview() : skeletonPage();
     }
 
-    function bindPageControls() {
-      const symbol = $('symbol-filter');
-      if (symbol) symbol.addEventListener('change', event => {
-        state.filters.symbol = event.target.value;
-        render();
-      });
-      const result = $('result-filter');
-      if (result) result.addEventListener('change', event => {
-        state.filters.result = event.target.value;
-        render();
-      });
+    function topbarBiasText() {
+      const row = mainBiasRow();
+      return row ? `Байес: ${row.direction || '—'} ${dash(row.confidence)}%` : 'Байес: —';
     }
 
     function tickClock() {
-      $('clock').textContent = new Date().toLocaleString([], {weekday:'short', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'});
-      $('last-update').textContent = state.lastUpdate ? state.lastUpdate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '—';
-    }
-
-    function closeSidebar() {
-      $('sidebar').classList.remove('open');
+      const now = new Date();
+      $('clock').textContent = now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      $('sidebar-time').textContent = now.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
     }
 
     window.addEventListener('hashchange', () => {
       const next = window.location.hash.replace('#', '').replace('/', '');
       state.route = routeById[next] ? next : 'overview';
-      closeMoreSheet();
       render();
     });
-    $('menu-toggle').addEventListener('click', () => $('sidebar').classList.toggle('open'));
-    $('sheet-backdrop').addEventListener('click', closeMoreSheet);
-    $('refresh-button').addEventListener('click', refreshAll);
-    window.addEventListener('resize', () => {
-      if (window.innerWidth >= 768) closeMoreSheet();
-      if (window.innerWidth >= 1024) closeSidebar();
-    });
-    $('refresh-interval').textContent = `${REFRESH_MS / 1000}s`;
+
     state.route = initialRoute();
     tickClock();
     setInterval(tickClock, 1000);

@@ -112,7 +112,12 @@ MARKET_SYMBOLS = {
     "VIX": "^VIX",
 }
 DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://tv-smob-server-1.onrender.com/dashboard")
-SITE_BUTTON_TEXT = "🌐 Сайт"
+ACCOUNT_POSITIONS_BUTTON_TEXT = "📊 Счёт и позиции"
+BIAS_BUTTON_TEXT = "📈 Байес"
+SIGNALS_BUTTON_TEXT = "⚡ Сигналы"
+TRADES_BUTTON_TEXT = "🧾 Сделки"
+ANALYTICS_BUTTON_TEXT = "📉 Аналитика"
+SITE_BUTTON_TEXT = "🌐 Открыть SMOB"
 
 
 def _keyboard_button_payload(text: str):
@@ -131,10 +136,10 @@ def _reply_keyboard_button(text: str):
 
 
 MAIN_KEYBOARD_ROWS = [
-    ["🎛 Пульт", "📈 Bias"],
-    ["⚡ Сигналы", "🧾 Сделки"],
-    ["📊 Статистика", "🛡 Риск"],
-    ["🧠 Sources", SITE_BUTTON_TEXT],
+    [ACCOUNT_POSITIONS_BUTTON_TEXT],
+    [BIAS_BUTTON_TEXT, SIGNALS_BUTTON_TEXT],
+    [TRADES_BUTTON_TEXT, ANALYTICS_BUTTON_TEXT],
+    [SITE_BUTTON_TEXT],
 ]
 if ReplyKeyboardMarkup and KeyboardButton:
     MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -149,18 +154,11 @@ else:
         "is_persistent": True,
     }
 MENU_BUTTON_CALLBACKS = {
-    "🎛 Пульт": "refresh_center",
-    "📈 Bias": "refresh_bias",
-    "⚡ Сигналы": "refresh_signals",
-    "📊 Статистика": "refresh_stats",
-    "🛡 Риск": "refresh_risk",
-    "🧠 Sources": "refresh_sources",
-    "🧾 Сделки": "refresh_processed_trades",
-    "📊 Статус": "menu_status",
-    "🧾 Сделки": "refresh_processed_trades",
-    "📋 Сделки": "menu_trades",
-    "📈 Статистика": "menu_stats",
-    "📉 Риск": "menu_risk",
+    ACCOUNT_POSITIONS_BUTTON_TEXT: "refresh_account_positions",
+    BIAS_BUTTON_TEXT: "refresh_bias",
+    SIGNALS_BUTTON_TEXT: "refresh_signals",
+    TRADES_BUTTON_TEXT: "refresh_processed_trades",
+    ANALYTICS_BUTTON_TEXT: "refresh_analytics",
 }
 user_state = {}
 
@@ -939,19 +937,17 @@ async def show_site(update, context):
 
 async def handle_menu_button(update, context):
     text = update.message.text
-    if text == "📊 Статус":
-        await show_status(update, context)
-    elif text in ("🧾 Сделки", "📋 Сделки"):
-        await show_trades_menu(update, context)
-    elif text == "📈 Статистика":
-        await show_stats_menu(update, context)
-    elif text == "📉 Риск":
-        await show_risk(update, context)
+    if text in MENU_BUTTON_CALLBACKS:
+        chat_id = getattr(update.message, "chat_id", None)
+        if chat_id is None and getattr(update, "effective_chat", None):
+            chat_id = update.effective_chat.id
+        rendered_text, keyboard = render_menu_callback(MENU_BUTTON_CALLBACKS[text], str(chat_id or ""))
+        await update.message.reply_text(rendered_text, reply_markup=ptb_reply_markup(keyboard))
     elif text in (SITE_BUTTON_TEXT, "Сайт"):
         await show_site(update, context)
 
 
-MENU_BUTTON_PATTERN = r"^(🎛 Пульт|📈 Bias|⚡ Сигналы|🧾 Сделки|📊 Статистика|🛡 Риск|🧠 Sources|🌐 Сайт|Сайт)$"
+MENU_BUTTON_PATTERN = r"^(📊 Счёт и позиции|📈 Байес|⚡ Сигналы|🧾 Сделки|📉 Аналитика|🌐 Открыть SMOB|Сайт)$"
 menu_message_handler = (
     MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
     if MessageHandler and filters
@@ -1063,13 +1059,13 @@ def inline_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
 
 def site_inline_keyboard() -> dict:
     if InlineKeyboardButton and InlineKeyboardMarkup:
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🌐 Открыть сайт", url=DASHBOARD_URL)]])
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton(SITE_BUTTON_TEXT, url=DASHBOARD_URL)]])
         return markup.to_dict()
-    return {"inline_keyboard": [[{"text": "🌐 Открыть сайт", "url": DASHBOARD_URL}]]}
+    return {"inline_keyboard": [[{"text": SITE_BUTTON_TEXT, "url": DASHBOARD_URL}]]}
 
 
 def site_message() -> str:
-    return "Открыть торговую панель MT5:"
+    return "Открыть SMOB:"
 
 
 def main_menu_keyboard() -> dict:
@@ -1100,6 +1096,17 @@ def dashboard_url_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
     return {"inline_keyboard": inline_rows}
 
 
+def smob_inline_menu() -> dict:
+    return dashboard_url_keyboard(
+        [
+            [(ACCOUNT_POSITIONS_BUTTON_TEXT, "refresh_account_positions")],
+            [(BIAS_BUTTON_TEXT, "refresh_bias"), (SIGNALS_BUTTON_TEXT, "refresh_signals")],
+            [(TRADES_BUTTON_TEXT, "refresh_processed_trades"), (ANALYTICS_BUTTON_TEXT, "refresh_analytics")],
+            [(SITE_BUTTON_TEXT, "dashboard_url")],
+        ]
+    )
+
+
 def render_command_center() -> tuple[str, dict]:
     pnl = safe_call(acct.native_pnl_today, {})
     storage = safe_call(acct.storage_health, {})
@@ -1110,28 +1117,68 @@ def render_command_center() -> tuple[str, dict]:
     rejected = sum(1 for item in signals if item.get("verdict") in {"REJECTED", "DUPLICATE"})
     storage_ok = storage.get("db_storage") == "render_persistent_disk" and storage.get("db_file_exists")
     text = "\n".join([
-        "🎛 MT5 COMMAND CENTER",
+        "🎛 ПАНЕЛЬ SMOB",
         "",
-        "System: 🟢 ONLINE",
-        f"MT5 Feed: {'🟢 ACTIVE' if acct.native_data_available() else '🟡 WAITING'}",
-        f"Storage: {'🟢 PERSISTENT' if storage_ok else '🟡 WARNING'}",
-        f"Live Bias: {'🟢 ACTIVE' if live_bias else '🟡 WAITING'}",
-        "Signal Engine: 🟢 ACTIVE",
+        "Система: 🟢 онлайн",
+        f"MT5 поток: {'🟢 активен' if acct.native_data_available() else '🟡 ожидание'}",
+        f"Хранилище: {'🟢 persistent' if storage_ok else '🟡 внимание'}",
+        f"Байес Live: {'🟢 активен' if live_bias else '🟡 нет снимка'}",
+        "Сигналы: 🟢 активны",
         "",
-        "Today:",
+        "Сегодня:",
         f"PnL: {fmt_signal_money(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), 0))}",
-        f"Open Trades: {len(acct.current_native_positions())}",
-        f"Closed Today: {first_present(pnl.get('trades_count'), pnl.get('closed_trades_count'), 0)}",
-        "Risk: NORMAL",
+        f"Открыто позиций: {len(acct.current_native_positions())}",
+        f"Закрыто сегодня: {first_present(pnl.get('trades_count'), pnl.get('closed_trades_count'), 0)}",
+        "Риск: NORMAL",
         "",
-        "Signals:",
-        f"Valid Today: {valid}",
-        f"Watch Only: {watch}",
-        f"Rejected: {rejected}",
+        "Сигналы:",
+        f"Валидные: {valid}",
+        f"Наблюдение: {watch}",
+        f"Отклонено: {rejected}",
         "",
-        f"Updated: {short_now()}",
+        f"Обновлено: {short_now()}",
     ])
-    return text, dashboard_url_keyboard([[("🔄 Обновить", "refresh_center"), ("📈 Bias", "refresh_bias")], [("⚡ Сигналы", "refresh_signals"), ("📊 Статистика", "refresh_stats")], [("🛡 Риск", "refresh_risk"), ("🌐 Dashboard", "dashboard_url")]])
+    return text, smob_inline_menu()
+
+
+def render_account_positions_screen() -> tuple[str, dict]:
+    account = acct.get_latest_native_account() or {}
+    positions = acct.current_native_positions()
+    lines = [
+        "📊 СЧЁТ И ПОЗИЦИИ",
+        "",
+        "Счёт:",
+        f"Баланс: {fmt_signal_money(account.get('balance'))}",
+        f"Equity: {fmt_signal_money(account.get('equity'))}",
+        f"Свободная маржа: {fmt_signal_money(account.get('free_margin'))}",
+        f"Margin level: {dash_text(account.get('margin_level'))}%",
+        "",
+        "Открытые позиции:",
+    ]
+    if positions:
+        for position in positions[:6]:
+            profit = fmt_signal_money(position.get("profit"))
+            tp_state = " ".join(
+                [
+                    f"TP1 {'✅' if position.get('tp1_done') else '⬜'}",
+                    f"TP2 {'✅' if position.get('tp2_done') else '⬜'}",
+                    f"TP3 {'✅' if position.get('tp3_done') else '⬜'}",
+                ]
+            )
+            lines.extend(
+                [
+                    "",
+                    f"{dash_text(position.get('symbol'))} | {dash_text(position.get('side'))}",
+                    f"Вход: {dash_text(position.get('entry_price') or position.get('entry'))}",
+                    f"SL: {dash_text(position.get('sl'))}",
+                    f"PnL: {profit}",
+                    tp_state,
+                ]
+            )
+    else:
+        lines.append("Нет открытых позиций.")
+    lines.extend(["", f"Обновлено: {short_now()}"])
+    return "\n".join(lines), smob_inline_menu()
 
 
 def render_live_bias_screen() -> tuple[str, dict]:
@@ -1139,10 +1186,15 @@ def render_live_bias_screen() -> tuple[str, dict]:
     if rows:
         quality = round(sum(float(row.get("data_quality_score") or 0) for row in rows) / len(rows))
         risk = "HIGH" if any(row.get("risk") == "HIGH" for row in rows) else "MEDIUM" if any(row.get("risk") == "MEDIUM" for row in rows) else "LOW"
-        text = format_live_bias_telegram_message({"symbols": rows, "risk": risk, "data_quality_score": quality, "timestamp": rows[0].get("timestamp")})
+        lines = ["📈 БАЙЕС LIVE", ""]
+        for row in rows:
+            suffix = " ⚠️ слабый" if str(row.get("strength") or "").upper() == "WEAK" else ""
+            lines.append(f"{dash_text(row.get('symbol')):<7} {dash_text(row.get('direction')):<5} {dash_text(row.get('confidence'))}% {dash_text(row.get('strength'))}{suffix}")
+        lines.extend(["", f"Риск: {risk}", f"Качество данных: {quality}%", f"Обновлено: {short_now()}"])
+        text = "\n".join(lines)
     else:
-        text = "📈 LIVE MARKET BIAS\n\nNo live bias snapshot yet."
-    return text, dashboard_url_keyboard([[("🔄 Обновить", "refresh_bias"), ("📊 Accuracy", "bias_accuracy")], [("🧠 Calibration", "bias_calibration"), ("🌐 Dashboard", "dashboard_url")]])
+        text = "📈 БАЙЕС LIVE\n\nСнимка байеса пока нет."
+    return text, smob_inline_menu()
 
 
 def render_signal_board() -> tuple[str, dict]:
@@ -1150,40 +1202,40 @@ def render_signal_board() -> tuple[str, dict]:
     valid = [s for s in signals if s.get("verdict") == "VALID_SIGNAL"][:4]
     watch = [s for s in signals if s.get("verdict") in {"WATCH_ONLY", "WAIT_CONFIRMATION"}][:4]
     rejected = [s for s in signals if s.get("verdict") in {"REJECTED", "DUPLICATE", "EXPIRED"}][:4]
-    lines = ["⚡ SIGNAL BOARD", "", "Valid:"]
+    lines = ["⚡ СИГНАЛЫ", "", "Валидные:"]
     lines.extend(signal_line(item) for item in valid)
     if not valid:
-        lines.append("No validated signals yet.")
-    lines.extend(["", "Watch:"])
+        lines.append("Валидных сигналов пока нет.")
+    lines.extend(["", "Наблюдение:"])
     lines.extend(signal_line(item) for item in watch)
     if not watch:
-        lines.append("No watch signals yet.")
-    lines.extend(["", "Rejected:"])
+        lines.append("Сигналов в наблюдении пока нет.")
+    lines.extend(["", "Отклонённые:"])
     lines.extend(rejected_line(item) for item in rejected)
     if not rejected:
-        lines.append("No rejected signals yet.")
-    lines.extend(["", f"Updated: {short_now()}"])
-    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Scan", "refresh_signals"), ("✅ Valid", "signals_valid")], [("👀 Watch", "signals_watch"), ("❌ Rejected", "signals_rejected")], [("📊 Accuracy", "signal_accuracy"), ("🌐 Dashboard", "dashboard_url")]])
+        lines.append("Отклонённых сигналов пока нет.")
+    lines.extend(["", f"Обновлено: {short_now()}"])
+    return "\n".join(lines), smob_inline_menu()
 
 
 def render_processed_trades_signals() -> tuple[str, dict]:
     mt5 = acct.native_trade_events(limit=5)
     signals = signal_store.latest_signals(limit=5)
     evals = {item.get("signal_id"): item for item in signal_store.signal_evaluations(limit=100)}
-    lines = ["🧾 PROCESSED TRADES / SIGNALS", "", "MT5:"]
+    lines = ["🧾 СДЕЛКИ И СИГНАЛЫ", "", "MT5:"]
     if mt5:
         for event in mt5[:3]:
             lines.extend([f"{dash_text(event.get('symbol'))} {dash_text(event.get('side') or event.get('event_type'))}", f"PnL: {fmt_signal_money(event.get('profit'))}", ""])
     else:
-        lines.append("No MT5 events yet.")
-    lines.append("Signals:")
+        lines.append("MT5 событий пока нет.")
+    lines.append("Сигналы:")
     if signals:
         for signal in signals[:4]:
             ev = evals.get(signal.get("signal_id")) or {}
-            lines.extend([f"{dash_text(signal.get('symbol'))} {dash_text(signal.get('direction'))}", f"Score: {dash_text(signal.get('score'))}%", f"Status: {dash_text(signal.get('verdict'))}", f"Result: {dash_text(ev.get('result') or 'pending')}", ""])
+            lines.extend([f"{dash_text(signal.get('symbol'))} {dash_text(signal.get('direction'))}", f"Оценка: {dash_text(signal.get('score'))}%", f"Статус: {dash_text(signal.get('verdict'))}", f"Результат: {dash_text(ev.get('result') or 'ожидание')}", ""])
     else:
-        lines.append("No processed signals yet.")
-    return "\n".join(lines).strip(), dashboard_url_keyboard([[("🔄 Обновить", "refresh_processed_trades"), ("🟢 MT5", "menu_trades")], [("⚡ Signals", "refresh_signals"), ("📊 Results", "signal_accuracy")], [("🌐 Dashboard", "dashboard_url")]])
+        lines.append("Обработанных сигналов пока нет.")
+    return "\n".join(lines).strip(), smob_inline_menu()
 
 
 def render_system_statistics_screen() -> tuple[str, dict]:
@@ -1193,28 +1245,28 @@ def render_system_statistics_screen() -> tuple[str, dict]:
     bias_accuracy = safe_bias_accuracy_summary()
     signals = signal_store.latest_signals(limit=500)
     overall = accuracy.get("overall", {}).get("all", {})
-    lines = ["📊 SYSTEM STATISTICS", "", "Trading:", "Trades: —", "Winrate: —", "PF: —", "Avg R: —", "", "Signals:", f"Processed: {accuracy.get('signal_count', 0)}", f"Valid: {sum(1 for s in signals if s.get('verdict') == 'VALID_SIGNAL')}", f"Correct: {overall.get('correct', 0)}", f"Wrong: {overall.get('wrong', 0)}", f"Accuracy: {dash_text(overall.get('accuracy'))}%", "", "Bias:", f"30m accuracy: {bias_accuracy.get('30m')}", f"1h accuracy: {bias_accuracy.get('1h')}", f"Best symbol: {bias_accuracy.get('best_symbol')}", f"Worst symbol: {bias_accuracy.get('worst_symbol')}", "", "Sources:", f"Best source: {dash_text(best_source.get('source_name'))}", f"Trust: {dash_text(best_source.get('trust_score'))}/100"]
-    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "refresh_stats"), ("📈 Bias Stats", "bias_accuracy")], [("⚡ Signal Stats", "signal_accuracy"), ("🧠 Sources", "refresh_sources")], [("🌐 Dashboard", "dashboard_url")]])
+    lines = ["📉 АНАЛИТИКА", "", "Торговля:", "Сделки: —", "Winrate: —", "PF: —", "Avg R: —", "", "Сигналы:", f"Обработано: {accuracy.get('signal_count', 0)}", f"Валидные: {sum(1 for s in signals if s.get('verdict') == 'VALID_SIGNAL')}", f"Верно: {overall.get('correct', 0)}", f"Ошибки: {overall.get('wrong', 0)}", f"Точность: {dash_text(overall.get('accuracy'))}%", "", "Байес:", f"30m точность: {bias_accuracy.get('30m')}", f"1h точность: {bias_accuracy.get('1h')}", f"Лучший символ: {bias_accuracy.get('best_symbol')}", f"Худший символ: {bias_accuracy.get('worst_symbol')}", "", "Источники:", f"Лучший источник: {dash_text(best_source.get('source_name'))}", f"Trust: {dash_text(best_source.get('trust_score'))}/100"]
+    return "\n".join(lines), smob_inline_menu()
 
 
 def render_signal_risk_screen() -> tuple[str, dict]:
     pnl = safe_call(acct.native_pnl_today, {})
     storage = safe_call(acct.storage_health, {})
     risky = [s for s in signal_store.latest_signals(limit=100) if s.get("risk_level") == "HIGH"]
-    lines = ["🛡 RISK CONTROL", "", "Status: NORMAL", "", f"Today PnL: {fmt_signal_money(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), 0))}", "Open Risk: —", "Worst SL Damage: —", f"High Risk Signals: {len(risky)}", "", "Warnings:"]
+    lines = ["🛡 КОНТРОЛЬ РИСКА", "", "Статус: NORMAL", "", f"PnL сегодня: {fmt_signal_money(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), 0))}", "Открытый риск: —", "Worst SL Damage: —", f"High Risk Signals: {len(risky)}", "", "Предупреждения:"]
     lines.extend([f"⚠️ {item.get('symbol')} signal {item.get('risk_level')}" for item in risky[:4]] or ["—"])
-    lines.extend(["", f"Storage: {'SAFE' if storage.get('db_storage') == 'render_persistent_disk' else 'WARNING'}", "History: OK"])
-    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "refresh_risk"), ("⚡ Risky Signals", "signals_risky")], [("🧠 Lab", "menu_stats"), ("🌐 Dashboard", "dashboard_url")]])
+    lines.extend(["", f"Хранилище: {'SAFE' if storage.get('db_storage') == 'render_persistent_disk' else 'WARNING'}", "История: OK"])
+    return "\n".join(lines), smob_inline_menu()
 
 
 def render_signal_sources_screen() -> tuple[str, dict]:
     sources = signal_store.source_reliability()
-    lines = ["🧠 SIGNAL SOURCES", ""]
+    lines = ["🧠 ИСТОЧНИКИ СИГНАЛОВ", ""]
     if not sources:
-        lines.append("No signal sources connected yet.")
+        lines.append("Источники сигналов пока не подключены.")
     for source in sources[:8]:
         lines.extend([dash_text(source.get("source_name")), f"Trust: {dash_text(source.get('trust_score'))}/100", f"Signals: {source.get('total_signals', 0)}", f"Accuracy: {dash_text(source.get('winrate'))}%", f"Avg R: {dash_text(source.get('average_R'))}", ""])
-    return "\n".join(lines).strip(), dashboard_url_keyboard([[("🔄 Обновить", "refresh_sources"), ("📊 Accuracy", "signal_accuracy")], [("⚡ Last Signals", "refresh_signals"), ("🌐 Dashboard", "dashboard_url")]])
+    return "\n".join(lines).strip(), smob_inline_menu()
 
 
 def render_bias_accuracy_screen() -> tuple[str, dict]:
@@ -1222,15 +1274,15 @@ def render_bias_accuracy_screen() -> tuple[str, dict]:
 
     data = live_bias_accuracy(limit=1000)
     overall = data.get("overall", {})
-    lines = ["📊 LIVE BIAS ACCURACY", "", f"30m: {dash_text((overall.get('30m') or {}).get('accuracy'))}%", f"1h: {dash_text((overall.get('1h') or {}).get('accuracy'))}%", f"2h: {dash_text((overall.get('2h') or {}).get('accuracy'))}%", f"4h: {dash_text((overall.get('4h') or {}).get('accuracy'))}%", f"Evaluated: {data.get('evaluated_count', 0)}"]
-    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "bias_accuracy"), ("📈 Bias", "refresh_bias")], [("🌐 Dashboard", "dashboard_url")]])
+    lines = ["📊 ТОЧНОСТЬ БАЙЕСА", "", f"30m: {dash_text((overall.get('30m') or {}).get('accuracy'))}%", f"1h: {dash_text((overall.get('1h') or {}).get('accuracy'))}%", f"2h: {dash_text((overall.get('2h') or {}).get('accuracy'))}%", f"4h: {dash_text((overall.get('4h') or {}).get('accuracy'))}%", f"Оценено: {data.get('evaluated_count', 0)}"]
+    return "\n".join(lines), smob_inline_menu()
 
 
 def render_signal_accuracy_screen() -> tuple[str, dict]:
     data = evaluate_signal_accuracy(limit=1000)
     overall = data.get("overall", {}).get("all", {})
-    lines = ["📊 SIGNAL ACCURACY", "", f"Signals: {data.get('signal_count', 0)}", f"Correct: {overall.get('correct', 0)}", f"Wrong: {overall.get('wrong', 0)}", f"Neutral: {overall.get('neutral', 0)}", f"Accuracy: {dash_text(overall.get('accuracy'))}%"]
-    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "signal_accuracy"), ("⚡ Signals", "refresh_signals")], [("🌐 Dashboard", "dashboard_url")]])
+    lines = ["📊 ТОЧНОСТЬ СИГНАЛОВ", "", f"Сигналы: {data.get('signal_count', 0)}", f"Верно: {overall.get('correct', 0)}", f"Ошибки: {overall.get('wrong', 0)}", f"Нейтрально: {overall.get('neutral', 0)}", f"Точность: {dash_text(overall.get('accuracy'))}%"]
+    return "\n".join(lines), smob_inline_menu()
 
 
 def menu_send(chat_id: str, text: str, reply_markup: Optional[dict] = None, edit_message_id: Optional[int] = None) -> bool:
@@ -1340,12 +1392,16 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
         if data in {"refresh_center", "menu_main"}:
             user_state[chat_id] = {"screen": "center"}
             return render_command_center()
+        if data == "refresh_account_positions":
+            return render_account_positions_screen()
         if data == "refresh_bias":
             return render_live_bias_screen()
         if data == "refresh_signals":
             return render_signal_board()
         if data in {"refresh_processed_trades", "menu_processed_trades"}:
             return render_processed_trades_signals()
+        if data == "refresh_analytics":
+            return render_system_statistics_screen()
         if data == "refresh_stats":
             return render_system_statistics_screen()
         if data == "refresh_risk":
@@ -1355,8 +1411,8 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
         if data == "bias_accuracy":
             return render_bias_accuracy_screen()
         if data == "bias_calibration":
-            text = "🧠 LIVE BIAS CALIBRATION\n\nOpen dashboard for full calibration suggestions.\nRequires human approval: true"
-            return text, dashboard_url_keyboard([[("📈 Bias", "refresh_bias"), ("🌐 Dashboard", "dashboard_url")]])
+            text = "🧠 КАЛИБРОВКА БАЙЕСА\n\nПолные рекомендации доступны в SMOB.\nТребуется ручное подтверждение: true"
+            return text, smob_inline_menu()
         if data == "signal_accuracy":
             return render_signal_accuracy_screen()
         if data in {"signals_valid", "signals_watch", "signals_rejected", "signals_risky"}:
@@ -2138,15 +2194,13 @@ def dashboard_keyboard() -> dict:
     return MAIN_KEYBOARD.to_dict()
 def normalize_dashboard_button(text: str) -> str:
     mapping = {
-        "🎛 Пульт": "/status",
-        "📈 Bias": "/bias",
-        "⚡ Сигналы": "/signals",
-        "📊 Статистика": "/stats",
-        "🛡 Риск": "/risk",
-        "🧠 Sources": "/sources",
+        ACCOUNT_POSITIONS_BUTTON_TEXT: "/status",
+        BIAS_BUTTON_TEXT: "/bias",
+        SIGNALS_BUTTON_TEXT: "/signals",
+        TRADES_BUTTON_TEXT: "/trades_today",
+        ANALYTICS_BUTTON_TEXT: "/stats",
         "Core Status": "/status",
         "Trade Center": "/trades",
-        "🧾 Сделки": "/trades_today",
         "Market Intel": "/market_today",
         "Control Panel": "/settings",
         "Statistics": "/performance",
@@ -3023,48 +3077,47 @@ def format_live_bias_latest() -> str:
     except Exception:
         rows = []
     if not rows:
-        return "📈 LIVE MARKET BIAS\n\nNo live bias snapshot yet."
+        return "📈 БАЙЕС LIVE\n\nСнимка байеса пока нет."
     quality_values = [float(row.get("data_quality_score") or 0) for row in rows]
     risks = [row.get("risk") for row in rows]
     risk = "HIGH" if "HIGH" in risks else "MEDIUM" if "MEDIUM" in risks else "LOW"
-    report = {
-        "symbols": rows,
-        "risk": risk,
-        "data_quality_score": round(sum(quality_values) / len(quality_values), 1) if quality_values else 0,
-        "timestamp": rows[0].get("timestamp"),
-    }
-    return format_live_bias_telegram_message(report)
+    quality = round(sum(quality_values) / len(quality_values), 1) if quality_values else 0
+    lines = ["📈 БАЙЕС LIVE", ""]
+    for row in rows:
+        lines.append(f"{dash_text(row.get('symbol')):<7} {dash_text(row.get('direction')):<5} {dash_text(row.get('confidence'))}% {dash_text(row.get('strength'))}")
+    lines.extend(["", f"Риск: {risk}", f"Качество данных: {quality}%", f"Обновлено: {short_now()}"])
+    return "\n".join(lines)
 
 
 def format_signal_notification(signal: dict) -> str:
     verdict = signal.get("verdict")
     if verdict == "VALID_SIGNAL":
-        title = "⚡ SCALP SIGNAL"
+        title = "⚡ СКАЛЬП-СИГНАЛ"
     else:
-        title = "👀 SIGNAL WATCH"
+        title = "👀 СИГНАЛ В НАБЛЮДЕНИИ"
     entry = format_entry_zone(signal)
     confirmations = signal.get("reasons") or []
     lines = [
         title,
         "",
         f"{dash_text(signal.get('symbol'))} | {dash_text(signal.get('direction'))} {dash_text(signal.get('score'))}%",
-        f"Setup: {dash_text(signal.get('setup'))}",
+        f"Сетап: {dash_text(signal.get('setup'))}",
         "",
-        f"Entry: {entry}",
+        f"Вход: {entry}",
         f"SL: {dash_text(signal.get('sl'))}",
         f"TP1: {dash_text(signal.get('tp1'))}",
         f"TP2: {dash_text(signal.get('tp2'))}",
         "",
-        f"Risk: {dash_text(signal.get('risk_level'))}",
-        f"Valid: {dash_text(signal.get('expiry_minutes'))} min",
+        f"Риск: {dash_text(signal.get('risk_level'))}",
+        f"Действует: {dash_text(signal.get('expiry_minutes'))} мин",
         "",
-        "Confirmations:" if verdict == "VALID_SIGNAL" else "Need:",
+        "Подтверждения:" if verdict == "VALID_SIGNAL" else "Нужно:",
     ]
     if confirmations:
         lines.extend(f"✅ {dash_text(item)}" for item in confirmations[:6])
     else:
-        lines.append("⬜ confirmation pending")
-    lines.extend(["", f"Source: {dash_text(signal.get('source_name'))}"])
+        lines.append("⬜ подтверждение ожидается")
+    lines.extend(["", f"Источник: {dash_text(signal.get('source_name'))}"])
     return "\n".join(lines)
 
 
@@ -3073,17 +3126,17 @@ def format_signal_result_notification(signal: dict, evaluation: dict, source: di
     icon = "✅" if result == "CORRECT" else "❌" if result == "WRONG" else "—"
     return "\n".join(
         [
-            "📊 SIGNAL RESULT",
+            "📊 РЕЗУЛЬТАТ СИГНАЛА",
             "",
             f"{dash_text(signal.get('symbol'))} | {dash_text(signal.get('direction'))}",
-            f"Setup: {dash_text(signal.get('setup'))}",
+            f"Сетап: {dash_text(signal.get('setup'))}",
             "",
-            f"Score: {dash_text(signal.get('score'))}%",
-            f"Result {dash_text(evaluation.get('horizon'))}: {icon} {result}",
-            f"Move: {dash_text(evaluation.get('r_multiple'))}R",
+            f"Оценка: {dash_text(signal.get('score'))}%",
+            f"Результат {dash_text(evaluation.get('horizon'))}: {icon} {result}",
+            f"Движение: {dash_text(evaluation.get('r_multiple'))}R",
             "",
-            f"Source: {dash_text(signal.get('source_name'))}",
-            f"Trust updated: {dash_text((source or {}).get('trust_score'))}/100",
+            f"Источник: {dash_text(signal.get('source_name'))}",
+            f"Trust обновлён: {dash_text((source or {}).get('trust_score'))}/100",
         ]
     )
 
@@ -3100,23 +3153,23 @@ def rejected_line(signal: dict) -> str:
 def render_signal_detail_screen(signal_id: str) -> tuple[str, dict]:
     signal = signal_store.get_signal(signal_id, include_raw=False)
     if not signal:
-        return "Signal not found.", dashboard_url_keyboard([[("⚡ Signals", "refresh_signals")]])
-    return format_signal_notification(signal), dashboard_url_keyboard([[("⚡ Signals", "refresh_signals"), ("🌐 Dashboard", "dashboard_url")]])
+        return "Сигнал не найден.", smob_inline_menu()
+    return format_signal_notification(signal), smob_inline_menu()
 
 
 def render_source_detail_screen(source_name: str) -> tuple[str, dict]:
     source = next((item for item in signal_store.source_reliability() if item.get("source_name") == source_name), None)
     if not source:
-        return "Source not found.", dashboard_url_keyboard([[("🧠 Sources", "refresh_sources")]])
+        return "Источник не найден.", smob_inline_menu()
     text = "\n".join([
         f"🧠 {dash_text(source.get('source_name'))}",
         "",
         f"Trust: {dash_text(source.get('trust_score'))}/100",
-        f"Signals: {source.get('total_signals', 0)}",
-        f"Accuracy: {dash_text(source.get('winrate'))}%",
+        f"Сигналы: {source.get('total_signals', 0)}",
+        f"Точность: {dash_text(source.get('winrate'))}%",
         f"Avg R: {dash_text(source.get('average_R'))}",
     ])
-    return text, dashboard_url_keyboard([[("🧠 Sources", "refresh_sources"), ("🌐 Dashboard", "dashboard_url")]])
+    return text, smob_inline_menu()
 
 
 def safe_call(func, fallback, *args):
