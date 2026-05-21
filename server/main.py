@@ -298,6 +298,7 @@ async def startup() -> None:
     load_symbols()
     _daily_report_task = asyncio.create_task(daily_report_loop())
     _bias_report_task = asyncio.create_task(bias_report_loop())
+    # Keep Live Bias fresh for dashboard/on-demand Telegram screens, but never auto-push it.
     _live_bias_task = asyncio.create_task(live_bias_loop())
 
 
@@ -1407,7 +1408,7 @@ async def live_bias_loop() -> None:
     await asyncio.sleep(10)
     while True:
         try:
-            run_live_bias_cycle(allow_network=True, send=True, force_send=False)
+            run_live_bias_cycle(allow_network=True, send=False, force_send=False)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1428,11 +1429,8 @@ def send_bias_report_if_due(force: bool = False) -> tuple[bool, str, str]:
             return False, "already_sent", today_key
     report = calculate_bias_report(allow_network=True)
     bias_store.save_bias_report(report)
-    sent = send_telegram_message(report["telegram_text"])
-    if sent:
-        acct.state_set(state_key, today_key)
-        return True, "sent", today_key
-    return False, "telegram_send_failed", today_key
+    acct.state_set(state_key, today_key)
+    return False, "auto_bias_telegram_disabled", today_key
 
 
 def run_live_bias_cycle(
