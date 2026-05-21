@@ -30,6 +30,10 @@ def main():
         "Bias",
         "Strategy Lab",
         "Storage",
+        "Signals",
+        "/api/dashboard/signals",
+        "/api/dashboard/signals/sources",
+        "/api/dashboard/signals/accuracy",
         "Настройки",
         "/api/dashboard/storage-health",
         "/api/dashboard/system",
@@ -65,7 +69,7 @@ def main():
     forbidden = ["black-hole", "particle-canvas", "Orbit Command", "radial-gradient(circle at"]
     present = [item for item in forbidden if item in html]
     assert not present, present
-    for route in ["overview", "portfolio", "positions", "trades", "history", "analytics", "risk", "bias", "lab", "storage", "settings"]:
+    for route in ["overview", "portfolio", "positions", "trades", "signals", "history", "analytics", "risk", "bias", "lab", "storage", "settings"]:
         assert f"id:'{route}'" in html, route
     subprocess.run(
         [

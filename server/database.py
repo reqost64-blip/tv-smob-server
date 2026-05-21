@@ -477,6 +477,89 @@ def init_db() -> None:
                 created_at           TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS signal_events (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id           TEXT UNIQUE NOT NULL,
+                timestamp           TEXT NOT NULL,
+                source_type         TEXT NOT NULL,
+                source_name         TEXT NOT NULL,
+                symbol              TEXT,
+                direction           TEXT,
+                setup               TEXT,
+                entry               REAL,
+                entry_zone_low      REAL,
+                entry_zone_high     REAL,
+                sl                  REAL,
+                tp1                 REAL,
+                tp2                 REAL,
+                tp3                 REAL,
+                timeframe           TEXT,
+                parse_status        TEXT NOT NULL,
+                status              TEXT NOT NULL,
+                verdict             TEXT NOT NULL,
+                score               REAL NOT NULL DEFAULT 0,
+                confidence          REAL NOT NULL DEFAULT 0,
+                risk_level          TEXT NOT NULL DEFAULT 'HIGH',
+                expiry_minutes      INTEGER NOT NULL DEFAULT 20,
+                raw_text            TEXT,
+                reasons             TEXT NOT NULL DEFAULT '[]',
+                rejection_reasons   TEXT NOT NULL DEFAULT '[]',
+                payload             TEXT NOT NULL,
+                telegram_sent       INTEGER NOT NULL DEFAULT 0,
+                send_reason         TEXT,
+                dedupe_key          TEXT,
+                created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS signal_sources (
+                source_name         TEXT PRIMARY KEY,
+                source_type         TEXT,
+                total_signals       INTEGER NOT NULL DEFAULT 0,
+                parsed_count        INTEGER NOT NULL DEFAULT 0,
+                valid_count         INTEGER NOT NULL DEFAULT 0,
+                watch_count         INTEGER NOT NULL DEFAULT 0,
+                rejected_count      INTEGER NOT NULL DEFAULT 0,
+                expired_count       INTEGER NOT NULL DEFAULT 0,
+                triggered_count     INTEGER NOT NULL DEFAULT 0,
+                evaluated_count     INTEGER NOT NULL DEFAULT 0,
+                correct_count       INTEGER NOT NULL DEFAULT 0,
+                wrong_count         INTEGER NOT NULL DEFAULT 0,
+                neutral_count       INTEGER NOT NULL DEFAULT 0,
+                winrate             REAL,
+                average_R           REAL,
+                average_delay       REAL,
+                best_symbols        TEXT NOT NULL DEFAULT '[]',
+                worst_symbols       TEXT NOT NULL DEFAULT '[]',
+                trust_score         REAL,
+                last_signal_at      TEXT,
+                payload             TEXT NOT NULL DEFAULT '{}',
+                updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS signal_evaluations (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id           TEXT NOT NULL,
+                horizon             TEXT NOT NULL,
+                result              TEXT NOT NULL,
+                move_pct            REAL,
+                r_multiple          REAL,
+                evaluated_at        TEXT NOT NULL,
+                payload             TEXT NOT NULL,
+                created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(signal_id, horizon)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS signal_dedupe (
+                dedupe_key          TEXT PRIMARY KEY,
+                signal_id           TEXT,
+                created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         _ensure_columns(
             conn,
             "native_account_snapshots",
@@ -707,6 +790,22 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_live_bias_history_time
             ON bias_snapshots_history (timestamp, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signal_events_time
+            ON signal_events (timestamp, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signal_events_symbol
+            ON signal_events (symbol, verdict, status)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signal_events_source
+            ON signal_events (source_name, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signal_evaluations_signal
+            ON signal_evaluations (signal_id, horizon)
         """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),

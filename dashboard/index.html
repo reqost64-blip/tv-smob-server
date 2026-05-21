@@ -570,6 +570,7 @@
       {id:'portfolio', path:'portfolio', label:'Портфель', subtitle:'Balance, equity, margin и история account snapshots.', icon:'PF'},
       {id:'positions', path:'positions', label:'Позиции', subtitle:'Открытые позиции, SL, BE и TP checklist.', icon:'PO'},
       {id:'trades', path:'trades', label:'Сделки', subtitle:'Сегодняшние и последние сделки с фильтрами.', icon:'TR'},
+      {id:'signals', path:'signals', label:'Signals', subtitle:'Signal Intelligence, source reliability and signal accuracy.', icon:'SG'},
       {id:'history', path:'history', label:'История', subtitle:'Native history, импорт MT5 и состояние trade storage.', icon:'HI'},
       {id:'analytics', path:'analytics', label:'Аналитика', subtitle:'Winrate, profit factor, expectancy и symbol performance.', icon:'AN'},
       {id:'risk', path:'risk', label:'Риск', subtitle:'Daily risk, SL damage и risk status.', icon:'RK'},
@@ -585,7 +586,7 @@
       {id:'risk', label:'Риск'},
       {id:'more', label:'Ещё'}
     ];
-    const MORE_ROUTES = ['portfolio', 'history', 'analytics', 'bias', 'lab', 'storage', 'settings'];
+    const MORE_ROUTES = ['portfolio', 'signals', 'history', 'analytics', 'bias', 'lab', 'storage', 'settings'];
     const routeById = Object.fromEntries(ROUTES.map(route => [route.id, route]));
     const endpointList = [
       '/api/health',
@@ -595,6 +596,9 @@
       '/api/dashboard/account-history',
       '/api/dashboard/positions',
       '/api/dashboard/trades',
+      '/api/dashboard/signals',
+      '/api/dashboard/signals/sources',
+      '/api/dashboard/signals/accuracy',
       '/api/dashboard/stats',
       '/api/dashboard/bots',
       '/api/dashboard/bias',
@@ -615,6 +619,9 @@
       accountHistory: '/api/dashboard/account-history?limit=500',
       positions: '/api/dashboard/positions',
       trades: '/api/dashboard/trades?source=bot&period=all&asset=ALL&limit=500',
+      signals: '/api/dashboard/signals?limit=200',
+      signalSources: '/api/dashboard/signals/sources',
+      signalAccuracy: '/api/dashboard/signals/accuracy?limit=1000',
       stats: '/api/dashboard/stats?source=bot&period=all&asset=ALL',
       statsToday: '/api/dashboard/stats?source=bot&period=today&asset=ALL',
       pnl: '/api/dashboard/pnl?period=today',
@@ -792,6 +799,9 @@
         api('accountHistory', endpoints.accountHistory, {ok:true, snapshots:[]}),
         api('positions', endpoints.positions, {ok:true, positions:[]}),
         api('trades', endpoints.trades, {ok:true, trades:[], total:0}),
+        api('signals', endpoints.signals, {ok:true, signals:[]}),
+        api('signalSources', endpoints.signalSources, {ok:true, sources:[]}),
+        api('signalAccuracy', endpoints.signalAccuracy, {ok:true, overall:{}, by_symbol:{}, by_source:{}, by_setup:{}}),
         api('stats', endpoints.stats, {ok:true, stats:{}}),
         api('statsToday', endpoints.statsToday, {ok:true, stats:{}}),
         api('pnl', endpoints.pnl, {ok:true, pnl:{}}),
@@ -809,7 +819,7 @@
         api('performance', endpoints.performance, {ok:true, items:[], totals:{}})
       ]);
       [
-        'health','status','system','account','accountHistory','positions','trades','stats','statsToday','pnl','bots',
+        'health','status','system','account','accountHistory','positions','trades','signals','signalSources','signalAccuracy','stats','statsToday','pnl','bots',
         'bias','biasLive','biasLiveHistory','biasLiveAccuracy','biasLiveCalibration','lab','labRecs','labHealth','storage','events','performance'
       ].forEach((key, index) => state.data[key] = results[index]);
       state.loading = false;
@@ -880,6 +890,9 @@
     function liveBiasRows() { return arr(liveBias().symbols); }
     function liveBiasAccuracy() { return obj(state.data.biasLiveAccuracy); }
     function liveBiasCalibration() { return obj(state.data.biasLiveCalibration); }
+    function signalRows() { return arr(obj(state.data.signals).signals); }
+    function signalSources() { return arr(obj(state.data.signalSources).sources); }
+    function signalAccuracy() { return obj(state.data.signalAccuracy); }
     function events() { return arr(obj(state.data.events).events); }
     function historySnapshots() { return arr(obj(state.data.accountHistory).snapshots); }
 
@@ -1244,6 +1257,37 @@
       ${card('Recent History Trades', tradeTable(trades().slice(0, 120)), '', 'trades')}`;
     }
 
+    function renderSignals() {
+      const rows = signalRows();
+      const sources = signalSources();
+      const accuracy = signalAccuracy();
+      const overall = obj(obj(accuracy.overall).all);
+      return `<div class="grid cols-4">
+        ${metric('Signals processed', rows.length, 'latest loaded')}
+        ${metric('Valid', rows.filter(row => row.verdict === 'VALID_SIGNAL').length, 'score >= 70')}
+        ${metric('Watch', rows.filter(row => ['WATCH_ONLY','WAIT_CONFIRMATION'].includes(row.verdict)).length, 'needs confirmation')}
+        ${metric('Accuracy', overall.accuracy === null || overall.accuracy === undefined ? '—' : `${overall.accuracy}%`, `${dash(overall.samples)} samples`)}
+      </div>
+      ${card('Latest Signals', rows.length ? table(['time','symbol','direction','setup','entry','SL','TP1','score','verdict','source'], rows.slice(0, 80).map(row => [
+        dateTime(row.timestamp), row.symbol || '—', row.direction || '—', compact(row.setup), price(row.entry), price(row.sl), price(row.tp1), dash(row.score), row.verdict || '—', compact(row.source_name)
+      ])) : empty('No validated signals yet.'), '', 'signals')}
+      <div class="grid cols-2">
+        ${card('Signal Sources', sources.length ? table(['source','signals','accuracy','avg R','trust','best symbols'], sources.map(row => [
+          compact(row.source_name), dash(row.total_signals), row.winrate === null || row.winrate === undefined ? '—' : `${row.winrate}%`, dash(row.average_R), dash(row.trust_score), arr(row.best_symbols).map(item => item.symbol).join(', ') || '—'
+        ])) : empty('No signal sources connected yet.'), '', 'signalSources')}
+        ${card('Signal Accuracy', overall.samples ? `<div class="stack">
+          ${kvRow('Total evaluated', dash(accuracy.evaluated_count))}
+          ${kvRow('Correct', dash(overall.correct))}
+          ${kvRow('Wrong', dash(overall.wrong))}
+          ${kvRow('Neutral', dash(overall.neutral))}
+          ${kvRow('15m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['15m']) : '—')}
+          ${kvRow('30m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['30m']) : '—')}
+          ${kvRow('60m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['60m']) : '—')}
+          ${kvRow('120m', accuracy.by_horizon ? accuracyPercent(accuracy.by_horizon['120m']) : '—')}
+        </div>` : empty('No evaluated signals yet.'), '', 'signalAccuracy')}
+      </div>`;
+    }
+
     function barsBySymbol() {
       const grouped = new Map();
       trades().forEach(row => {
@@ -1440,6 +1484,7 @@
         portfolio: renderPortfolio,
         positions: renderPositions,
         trades: renderTrades,
+        signals: renderSignals,
         history: renderHistory,
         analytics: renderAnalytics,
         risk: renderRisk,

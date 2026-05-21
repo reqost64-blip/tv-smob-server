@@ -28,9 +28,10 @@ def _keyboard_text_rows(markup):
 
 def test_main_keyboard_has_exact_rows():
     assert _keyboard_text_rows(telegram_bot.dashboard_keyboard()) == [
-        ["📊 Статус", "🧾 Сделки"],
-        ["📈 Статистика", "📉 Риск"],
-        ["🌐 Сайт"],
+        ["🎛 Пульт", "📈 Bias"],
+        ["⚡ Сигналы", "🧾 Сделки"],
+        ["📊 Статистика", "🛡 Риск"],
+        ["🧠 Sources", "🌐 Сайт"],
     ]
 
 
@@ -53,7 +54,8 @@ def test_site_inline_keyboard_uses_dashboard_url():
 def test_site_aliases_and_commands():
     assert telegram_bot.normalize_dashboard_button("🌐 Сайт") == "/site"
     assert telegram_bot.normalize_dashboard_button("Сайт") == "/site"
-    assert telegram_bot.normalize_dashboard_button("🧾 Сделки") == "/trades_today"
+    assert telegram_bot.normalize_dashboard_button("⚡ Сигналы") == "/signals"
+    assert telegram_bot.normalize_dashboard_button("🧠 Sources") == "/sources"
     assert telegram_bot.handle_command("/site") == "Открыть торговую панель MT5:"
     assert telegram_bot.handle_command("/dashboard") == "Открыть торговую панель MT5:"
 

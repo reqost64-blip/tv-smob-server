@@ -43,6 +43,9 @@ from .models import (
 )
 from .settings_store import audit_log, get_setting, list_settings, parse_value, record_audit_event, set_setting
 from .history_import import import_history_rows, parse_history_payload
+from . import signal_store
+from .signal_accuracy import evaluate_signal_accuracy
+from .signal_engine import process_manual_signal, process_tradingview_signal, scan_signals
 from .strategy_optimizer import recommendations_payload, run_strategy_lab
 from .strategy_test_lab import build_strategy_lab_report
 from .validators import validate_signal
@@ -61,6 +64,7 @@ from .telegram_bot import (
     send_telegram_photo,
     send_telegram_message,
     should_notify_execution,
+    format_signal_notification,
     validate_change,
 )
 from .native_trade_notifications import (
@@ -741,6 +745,79 @@ async def api_live_bias_run(body: dict, request: Request):
     return {"ok": True, "sent": sent, "send_reason": send_reason, "report": _live_bias_public_payload(report)}
 
 
+@app.post("/api/signals/tradingview")
+async def api_signals_tradingview(body: dict, request: Request):
+    payload = body or {}
+    dry_run = bool_param(payload.get("dry_run"), False)
+    send = bool_param(payload.get("send"), False)
+    if (not dry_run or send) and not task_secret_matches(str(payload.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    result = process_tradingview_signal(payload, dry_run=dry_run)
+    sent = False
+    send_reason = "send_disabled"
+    if send and result.get("should_send"):
+        sent = send_telegram_message(format_signal_notification(result["signal"]))
+        send_reason = "sent" if sent else "telegram_send_failed"
+        if not dry_run and result.get("signal", {}).get("signal_id"):
+            signal = dict(result["signal"])
+            signal_store.save_signal(signal, telegram_sent=sent, send_reason=send_reason)
+    elif send:
+        send_reason = "not_valid_for_telegram"
+    result.update({"sent": sent, "send_reason": send_reason})
+    return result
+
+
+@app.post("/api/signals/manual")
+async def api_signals_manual(body: dict, request: Request):
+    payload = body or {}
+    dry_run = bool_param(payload.get("dry_run"), True)
+    send = bool_param(payload.get("send"), False)
+    if (not dry_run or send) and not task_secret_matches(str(payload.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    result = process_manual_signal(payload, dry_run=dry_run)
+    sent = False
+    send_reason = "send_disabled"
+    if send and result.get("should_send"):
+        sent = send_telegram_message(format_signal_notification(result["signal"]))
+        send_reason = "sent" if sent else "telegram_send_failed"
+        if not dry_run and result.get("signal", {}).get("signal_id"):
+            signal_store.save_signal(result["signal"], telegram_sent=sent, send_reason=send_reason)
+    elif send:
+        send_reason = "not_valid_for_telegram"
+    result.update({"sent": sent, "send_reason": send_reason})
+    return result
+
+
+@app.post("/api/signals/scan")
+async def api_signals_scan(body: dict, request: Request):
+    payload = body or {}
+    dry_run = bool_param(payload.get("dry_run"), True)
+    send = bool_param(payload.get("send"), False)
+    allow_network = bool_param(payload.get("allow_network"), False)
+    if (not dry_run or send) and not task_secret_matches(str(payload.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    result = scan_signals(allow_network=allow_network, dry_run=dry_run, symbol=payload.get("symbol"))
+    sent = False
+    send_reason = "send_disabled"
+    if send:
+        sent_count = 0
+        for signal in result.get("signals") or []:
+            if signal and signal.get("verdict") == "VALID_SIGNAL" and signal.get("risk_level") != "HIGH":
+                message_sent = send_telegram_message(format_signal_notification(signal))
+                if message_sent:
+                    sent_count += 1
+                if not dry_run and signal.get("signal_id"):
+                    signal_store.save_signal(
+                        signal,
+                        telegram_sent=message_sent,
+                        send_reason="sent" if message_sent else "telegram_send_failed",
+                    )
+        sent = sent_count > 0
+        send_reason = f"sent_{sent_count}" if sent_count else "no_valid_signal"
+    result.update({"sent": sent, "send_reason": send_reason})
+    return result
+
+
 @app.get("/api/settings")
 async def api_get_settings():
     return {"ok": True, "settings": list_settings()}
@@ -1099,6 +1176,36 @@ async def dashboard_live_bias_calibration(symbol: str | None = None, limit: int 
     except Exception as exc:
         logger.exception("Failed to calculate live bias calibration")
         return {"ok": False, "error": f"live_bias_calibration_unavailable: {exc}"}
+    return result
+
+
+@app.get("/api/dashboard/signals")
+async def dashboard_signals(limit: int = 100, verdict: str | None = None):
+    try:
+        signals = signal_store.latest_signals(limit=limit, verdict=verdict, include_raw=False)
+    except Exception as exc:
+        logger.exception("Failed to load signals")
+        return {"ok": False, "error": f"signals_unavailable: {exc}", "signals": []}
+    return {"ok": True, "signals": signals, "count": len(signals)}
+
+
+@app.get("/api/dashboard/signals/sources")
+async def dashboard_signal_sources():
+    try:
+        sources = signal_store.source_reliability()
+    except Exception as exc:
+        logger.exception("Failed to load signal sources")
+        return {"ok": False, "error": f"signal_sources_unavailable: {exc}", "sources": []}
+    return {"ok": True, "sources": sources, "count": len(sources)}
+
+
+@app.get("/api/dashboard/signals/accuracy")
+async def dashboard_signal_accuracy(limit: int = 1000):
+    try:
+        result = evaluate_signal_accuracy(limit=limit)
+    except Exception as exc:
+        logger.exception("Failed to calculate signal accuracy")
+        return {"ok": False, "error": f"signal_accuracy_unavailable: {exc}"}
     return result
 
 

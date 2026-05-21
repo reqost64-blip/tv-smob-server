@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from . import account_store as acct
 from . import bias_store
+from . import signal_store
 from . import config
 from . import queue as q
 from .ai_command_parser import SYMBOLS, parse_natural_language_command
@@ -22,6 +23,7 @@ from .ai_web_research import (
 from .models import NativeMT5Event, WebhookPayload
 from .native_trade_notifications import clean_mode_enabled, format_clean_trade_message, normalizeNativeTradeEvent
 from .live_bias_engine import format_live_bias_telegram_message
+from .signal_accuracy import evaluate_signal_accuracy
 from .settings_store import (
     approve_pending_approval,
     create_pending_approval,
@@ -129,9 +131,10 @@ def _reply_keyboard_button(text: str):
 
 
 MAIN_KEYBOARD_ROWS = [
-    ["📊 Статус", "🧾 Сделки"],
-    ["📈 Статистика", "📉 Риск"],
-    [SITE_BUTTON_TEXT],
+    ["🎛 Пульт", "📈 Bias"],
+    ["⚡ Сигналы", "🧾 Сделки"],
+    ["📊 Статистика", "🛡 Риск"],
+    ["🧠 Sources", SITE_BUTTON_TEXT],
 ]
 if ReplyKeyboardMarkup and KeyboardButton:
     MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -146,8 +149,15 @@ else:
         "is_persistent": True,
     }
 MENU_BUTTON_CALLBACKS = {
+    "🎛 Пульт": "refresh_center",
+    "📈 Bias": "refresh_bias",
+    "⚡ Сигналы": "refresh_signals",
+    "📊 Статистика": "refresh_stats",
+    "🛡 Риск": "refresh_risk",
+    "🧠 Sources": "refresh_sources",
+    "🧾 Сделки": "refresh_processed_trades",
     "📊 Статус": "menu_status",
-    "🧾 Сделки": "menu_trades",
+    "🧾 Сделки": "refresh_processed_trades",
     "📋 Сделки": "menu_trades",
     "📈 Статистика": "menu_stats",
     "📉 Риск": "menu_risk",
@@ -941,7 +951,7 @@ async def handle_menu_button(update, context):
         await show_site(update, context)
 
 
-MENU_BUTTON_PATTERN = r"^(📊 Статус|🧾 Сделки|📈 Статистика|📉 Риск|🌐 Сайт|Сайт)$"
+MENU_BUTTON_PATTERN = r"^(🎛 Пульт|📈 Bias|⚡ Сигналы|🧾 Сделки|📊 Статистика|🛡 Риск|🧠 Sources|🌐 Сайт|Сайт)$"
 menu_message_handler = (
     MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
     if MessageHandler and filters
@@ -1077,6 +1087,152 @@ def menu_main_text() -> str:
     return "\n".join([" TRADING CONTROL", "", "Система управления торговыми ботами", menu_timestamp()])
 
 
+def dashboard_url_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
+    inline_rows = []
+    for row in rows:
+        inline_row = []
+        for text, target in row:
+            if target == "dashboard_url":
+                inline_row.append({"text": text, "url": DASHBOARD_URL})
+            else:
+                inline_row.append({"text": text, "callback_data": target})
+        inline_rows.append(inline_row)
+    return {"inline_keyboard": inline_rows}
+
+
+def render_command_center() -> tuple[str, dict]:
+    pnl = safe_call(acct.native_pnl_today, {})
+    storage = safe_call(acct.storage_health, {})
+    live_bias = bias_store.latest_live_bias()
+    signals = signal_store.latest_signals(limit=200)
+    valid = sum(1 for item in signals if item.get("verdict") == "VALID_SIGNAL")
+    watch = sum(1 for item in signals if item.get("verdict") in {"WATCH_ONLY", "WAIT_CONFIRMATION"})
+    rejected = sum(1 for item in signals if item.get("verdict") in {"REJECTED", "DUPLICATE"})
+    storage_ok = storage.get("db_storage") == "render_persistent_disk" and storage.get("db_file_exists")
+    text = "\n".join([
+        "🎛 MT5 COMMAND CENTER",
+        "",
+        "System: 🟢 ONLINE",
+        f"MT5 Feed: {'🟢 ACTIVE' if acct.native_data_available() else '🟡 WAITING'}",
+        f"Storage: {'🟢 PERSISTENT' if storage_ok else '🟡 WARNING'}",
+        f"Live Bias: {'🟢 ACTIVE' if live_bias else '🟡 WAITING'}",
+        "Signal Engine: 🟢 ACTIVE",
+        "",
+        "Today:",
+        f"PnL: {fmt_signal_money(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), 0))}",
+        f"Open Trades: {len(acct.current_native_positions())}",
+        f"Closed Today: {first_present(pnl.get('trades_count'), pnl.get('closed_trades_count'), 0)}",
+        "Risk: NORMAL",
+        "",
+        "Signals:",
+        f"Valid Today: {valid}",
+        f"Watch Only: {watch}",
+        f"Rejected: {rejected}",
+        "",
+        f"Updated: {short_now()}",
+    ])
+    return text, dashboard_url_keyboard([[("🔄 Обновить", "refresh_center"), ("📈 Bias", "refresh_bias")], [("⚡ Сигналы", "refresh_signals"), ("📊 Статистика", "refresh_stats")], [("🛡 Риск", "refresh_risk"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_live_bias_screen() -> tuple[str, dict]:
+    rows = bias_store.latest_live_bias()
+    if rows:
+        quality = round(sum(float(row.get("data_quality_score") or 0) for row in rows) / len(rows))
+        risk = "HIGH" if any(row.get("risk") == "HIGH" for row in rows) else "MEDIUM" if any(row.get("risk") == "MEDIUM" for row in rows) else "LOW"
+        text = format_live_bias_telegram_message({"symbols": rows, "risk": risk, "data_quality_score": quality, "timestamp": rows[0].get("timestamp")})
+    else:
+        text = "📈 LIVE MARKET BIAS\n\nNo live bias snapshot yet."
+    return text, dashboard_url_keyboard([[("🔄 Обновить", "refresh_bias"), ("📊 Accuracy", "bias_accuracy")], [("🧠 Calibration", "bias_calibration"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_signal_board() -> tuple[str, dict]:
+    signals = signal_store.latest_signals(limit=50)
+    valid = [s for s in signals if s.get("verdict") == "VALID_SIGNAL"][:4]
+    watch = [s for s in signals if s.get("verdict") in {"WATCH_ONLY", "WAIT_CONFIRMATION"}][:4]
+    rejected = [s for s in signals if s.get("verdict") in {"REJECTED", "DUPLICATE", "EXPIRED"}][:4]
+    lines = ["⚡ SIGNAL BOARD", "", "Valid:"]
+    lines.extend(signal_line(item) for item in valid)
+    if not valid:
+        lines.append("No validated signals yet.")
+    lines.extend(["", "Watch:"])
+    lines.extend(signal_line(item) for item in watch)
+    if not watch:
+        lines.append("No watch signals yet.")
+    lines.extend(["", "Rejected:"])
+    lines.extend(rejected_line(item) for item in rejected)
+    if not rejected:
+        lines.append("No rejected signals yet.")
+    lines.extend(["", f"Updated: {short_now()}"])
+    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Scan", "refresh_signals"), ("✅ Valid", "signals_valid")], [("👀 Watch", "signals_watch"), ("❌ Rejected", "signals_rejected")], [("📊 Accuracy", "signal_accuracy"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_processed_trades_signals() -> tuple[str, dict]:
+    mt5 = acct.native_trade_events(limit=5)
+    signals = signal_store.latest_signals(limit=5)
+    evals = {item.get("signal_id"): item for item in signal_store.signal_evaluations(limit=100)}
+    lines = ["🧾 PROCESSED TRADES / SIGNALS", "", "MT5:"]
+    if mt5:
+        for event in mt5[:3]:
+            lines.extend([f"{dash_text(event.get('symbol'))} {dash_text(event.get('side') or event.get('event_type'))}", f"PnL: {fmt_signal_money(event.get('profit'))}", ""])
+    else:
+        lines.append("No MT5 events yet.")
+    lines.append("Signals:")
+    if signals:
+        for signal in signals[:4]:
+            ev = evals.get(signal.get("signal_id")) or {}
+            lines.extend([f"{dash_text(signal.get('symbol'))} {dash_text(signal.get('direction'))}", f"Score: {dash_text(signal.get('score'))}%", f"Status: {dash_text(signal.get('verdict'))}", f"Result: {dash_text(ev.get('result') or 'pending')}", ""])
+    else:
+        lines.append("No processed signals yet.")
+    return "\n".join(lines).strip(), dashboard_url_keyboard([[("🔄 Обновить", "refresh_processed_trades"), ("🟢 MT5", "menu_trades")], [("⚡ Signals", "refresh_signals"), ("📊 Results", "signal_accuracy")], [("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_system_statistics_screen() -> tuple[str, dict]:
+    accuracy = evaluate_signal_accuracy(limit=1000)
+    sources = signal_store.source_reliability()
+    best_source = sources[0] if sources else {}
+    bias_accuracy = safe_bias_accuracy_summary()
+    signals = signal_store.latest_signals(limit=500)
+    overall = accuracy.get("overall", {}).get("all", {})
+    lines = ["📊 SYSTEM STATISTICS", "", "Trading:", "Trades: —", "Winrate: —", "PF: —", "Avg R: —", "", "Signals:", f"Processed: {accuracy.get('signal_count', 0)}", f"Valid: {sum(1 for s in signals if s.get('verdict') == 'VALID_SIGNAL')}", f"Correct: {overall.get('correct', 0)}", f"Wrong: {overall.get('wrong', 0)}", f"Accuracy: {dash_text(overall.get('accuracy'))}%", "", "Bias:", f"30m accuracy: {bias_accuracy.get('30m')}", f"1h accuracy: {bias_accuracy.get('1h')}", f"Best symbol: {bias_accuracy.get('best_symbol')}", f"Worst symbol: {bias_accuracy.get('worst_symbol')}", "", "Sources:", f"Best source: {dash_text(best_source.get('source_name'))}", f"Trust: {dash_text(best_source.get('trust_score'))}/100"]
+    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "refresh_stats"), ("📈 Bias Stats", "bias_accuracy")], [("⚡ Signal Stats", "signal_accuracy"), ("🧠 Sources", "refresh_sources")], [("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_signal_risk_screen() -> tuple[str, dict]:
+    pnl = safe_call(acct.native_pnl_today, {})
+    storage = safe_call(acct.storage_health, {})
+    risky = [s for s in signal_store.latest_signals(limit=100) if s.get("risk_level") == "HIGH"]
+    lines = ["🛡 RISK CONTROL", "", "Status: NORMAL", "", f"Today PnL: {fmt_signal_money(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), 0))}", "Open Risk: —", "Worst SL Damage: —", f"High Risk Signals: {len(risky)}", "", "Warnings:"]
+    lines.extend([f"⚠️ {item.get('symbol')} signal {item.get('risk_level')}" for item in risky[:4]] or ["—"])
+    lines.extend(["", f"Storage: {'SAFE' if storage.get('db_storage') == 'render_persistent_disk' else 'WARNING'}", "History: OK"])
+    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "refresh_risk"), ("⚡ Risky Signals", "signals_risky")], [("🧠 Lab", "menu_stats"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_signal_sources_screen() -> tuple[str, dict]:
+    sources = signal_store.source_reliability()
+    lines = ["🧠 SIGNAL SOURCES", ""]
+    if not sources:
+        lines.append("No signal sources connected yet.")
+    for source in sources[:8]:
+        lines.extend([dash_text(source.get("source_name")), f"Trust: {dash_text(source.get('trust_score'))}/100", f"Signals: {source.get('total_signals', 0)}", f"Accuracy: {dash_text(source.get('winrate'))}%", f"Avg R: {dash_text(source.get('average_R'))}", ""])
+    return "\n".join(lines).strip(), dashboard_url_keyboard([[("🔄 Обновить", "refresh_sources"), ("📊 Accuracy", "signal_accuracy")], [("⚡ Last Signals", "refresh_signals"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_bias_accuracy_screen() -> tuple[str, dict]:
+    from .live_bias_accuracy import live_bias_accuracy
+
+    data = live_bias_accuracy(limit=1000)
+    overall = data.get("overall", {})
+    lines = ["📊 LIVE BIAS ACCURACY", "", f"30m: {dash_text((overall.get('30m') or {}).get('accuracy'))}%", f"1h: {dash_text((overall.get('1h') or {}).get('accuracy'))}%", f"2h: {dash_text((overall.get('2h') or {}).get('accuracy'))}%", f"4h: {dash_text((overall.get('4h') or {}).get('accuracy'))}%", f"Evaluated: {data.get('evaluated_count', 0)}"]
+    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "bias_accuracy"), ("📈 Bias", "refresh_bias")], [("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_signal_accuracy_screen() -> tuple[str, dict]:
+    data = evaluate_signal_accuracy(limit=1000)
+    overall = data.get("overall", {}).get("all", {})
+    lines = ["📊 SIGNAL ACCURACY", "", f"Signals: {data.get('signal_count', 0)}", f"Correct: {overall.get('correct', 0)}", f"Wrong: {overall.get('wrong', 0)}", f"Neutral: {overall.get('neutral', 0)}", f"Accuracy: {dash_text(overall.get('accuracy'))}%"]
+    return "\n".join(lines), dashboard_url_keyboard([[("🔄 Обновить", "signal_accuracy"), ("⚡ Signals", "refresh_signals")], [("🌐 Dashboard", "dashboard_url")]])
+
+
 def menu_send(chat_id: str, text: str, reply_markup: Optional[dict] = None, edit_message_id: Optional[int] = None) -> bool:
     if not config.TELEGRAM_BOT_TOKEN or not chat_id:
         return False
@@ -1149,8 +1305,9 @@ def handle_telegram_update(update: dict) -> bool:
         if config.TELEGRAM_ADMIN_CHAT_ID and chat_id != config.TELEGRAM_ADMIN_CHAT_ID:
             return True
         if text.split()[0].lower() in ("/start", "/menu"):
-            user_state[chat_id] = {"screen": "main"}
-            menu_send(chat_id, menu_main_text(), main_menu_keyboard())
+            user_state[chat_id] = {"screen": "center"}
+            text_out, keyboard = render_command_center()
+            menu_send(chat_id, text_out, keyboard)
             return True
         if text in (SITE_BUTTON_TEXT, "Сайт") or text.split()[0].lower() in ("/site", "/dashboard"):
             menu_send(chat_id, site_message(), site_inline_keyboard())
@@ -1180,6 +1337,34 @@ def handle_telegram_update(update: dict) -> bool:
 
 def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
     try:
+        if data in {"refresh_center", "menu_main"}:
+            user_state[chat_id] = {"screen": "center"}
+            return render_command_center()
+        if data == "refresh_bias":
+            return render_live_bias_screen()
+        if data == "refresh_signals":
+            return render_signal_board()
+        if data in {"refresh_processed_trades", "menu_processed_trades"}:
+            return render_processed_trades_signals()
+        if data == "refresh_stats":
+            return render_system_statistics_screen()
+        if data == "refresh_risk":
+            return render_signal_risk_screen()
+        if data == "refresh_sources":
+            return render_signal_sources_screen()
+        if data == "bias_accuracy":
+            return render_bias_accuracy_screen()
+        if data == "bias_calibration":
+            text = "🧠 LIVE BIAS CALIBRATION\n\nOpen dashboard for full calibration suggestions.\nRequires human approval: true"
+            return text, dashboard_url_keyboard([[("📈 Bias", "refresh_bias"), ("🌐 Dashboard", "dashboard_url")]])
+        if data == "signal_accuracy":
+            return render_signal_accuracy_screen()
+        if data in {"signals_valid", "signals_watch", "signals_rejected", "signals_risky"}:
+            return render_signal_board()
+        if data.startswith("signal_details:"):
+            return render_signal_detail_screen(data.split(":", 1)[1])
+        if data.startswith("source_details:"):
+            return render_source_detail_screen(data.split(":", 1)[1])
         if data == "menu_main":
             user_state[chat_id] = {"screen": "main"}
             return menu_main_text(), main_menu_keyboard()
@@ -1832,11 +2017,11 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
     command = parts[0].lower()
 
     if command in ("/start", "/menu"):
-        return menu_main_text()
+        return render_command_center()[0]
     if command in ("/site", "/dashboard"):
         return site_message()
     if command == "/status":
-        return format_status()
+        return render_command_center()[0]
     if command == "/last_trade":
         return format_execution_report(q.last_execution_report())
     if command == "/today":
@@ -1896,7 +2081,13 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
     if command in ("/daily_report", "/daily_report_now"):
         return format_daily_report()
     if command in ("/bias", "/live_bias"):
-        return format_live_bias_latest()
+        return render_live_bias_screen()[0]
+    if command == "/signals":
+        return render_signal_board()[0]
+    if command == "/stats":
+        return render_system_statistics_screen()[0]
+    if command == "/sources":
+        return render_signal_sources_screen()[0]
     if command == "/news":
         return attach_ai_risk_action_approval(format_market_research(get_market_news_today()), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
     if command == "/calendar":
@@ -1911,7 +2102,7 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
     if command == "/settings":
         return format_settings(chat_id or config.TELEGRAM_ADMIN_CHAT_ID)
     if command == "/risk":
-        return format_risk()
+        return render_signal_risk_screen()[0]
     if command == "/approvals":
         return format_approvals(chat_id or config.TELEGRAM_ADMIN_CHAT_ID)
     if command == "/confirm":
@@ -1947,6 +2138,12 @@ def dashboard_keyboard() -> dict:
     return MAIN_KEYBOARD.to_dict()
 def normalize_dashboard_button(text: str) -> str:
     mapping = {
+        "🎛 Пульт": "/status",
+        "📈 Bias": "/bias",
+        "⚡ Сигналы": "/signals",
+        "📊 Статистика": "/stats",
+        "🛡 Риск": "/risk",
+        "🧠 Sources": "/sources",
         "Core Status": "/status",
         "Trade Center": "/trades",
         "🧾 Сделки": "/trades_today",
@@ -2837,6 +3034,146 @@ def format_live_bias_latest() -> str:
         "timestamp": rows[0].get("timestamp"),
     }
     return format_live_bias_telegram_message(report)
+
+
+def format_signal_notification(signal: dict) -> str:
+    verdict = signal.get("verdict")
+    if verdict == "VALID_SIGNAL":
+        title = "⚡ SCALP SIGNAL"
+    else:
+        title = "👀 SIGNAL WATCH"
+    entry = format_entry_zone(signal)
+    confirmations = signal.get("reasons") or []
+    lines = [
+        title,
+        "",
+        f"{dash_text(signal.get('symbol'))} | {dash_text(signal.get('direction'))} {dash_text(signal.get('score'))}%",
+        f"Setup: {dash_text(signal.get('setup'))}",
+        "",
+        f"Entry: {entry}",
+        f"SL: {dash_text(signal.get('sl'))}",
+        f"TP1: {dash_text(signal.get('tp1'))}",
+        f"TP2: {dash_text(signal.get('tp2'))}",
+        "",
+        f"Risk: {dash_text(signal.get('risk_level'))}",
+        f"Valid: {dash_text(signal.get('expiry_minutes'))} min",
+        "",
+        "Confirmations:" if verdict == "VALID_SIGNAL" else "Need:",
+    ]
+    if confirmations:
+        lines.extend(f"✅ {dash_text(item)}" for item in confirmations[:6])
+    else:
+        lines.append("⬜ confirmation pending")
+    lines.extend(["", f"Source: {dash_text(signal.get('source_name'))}"])
+    return "\n".join(lines)
+
+
+def format_signal_result_notification(signal: dict, evaluation: dict, source: dict | None = None) -> str:
+    result = str(evaluation.get("result") or "pending").upper()
+    icon = "✅" if result == "CORRECT" else "❌" if result == "WRONG" else "—"
+    return "\n".join(
+        [
+            "📊 SIGNAL RESULT",
+            "",
+            f"{dash_text(signal.get('symbol'))} | {dash_text(signal.get('direction'))}",
+            f"Setup: {dash_text(signal.get('setup'))}",
+            "",
+            f"Score: {dash_text(signal.get('score'))}%",
+            f"Result {dash_text(evaluation.get('horizon'))}: {icon} {result}",
+            f"Move: {dash_text(evaluation.get('r_multiple'))}R",
+            "",
+            f"Source: {dash_text(signal.get('source_name'))}",
+            f"Trust updated: {dash_text((source or {}).get('trust_score'))}/100",
+        ]
+    )
+
+
+def signal_line(signal: dict) -> str:
+    return f"{dash_text(signal.get('symbol'))} {dash_text(signal.get('direction'))} {dash_text(signal.get('score'))}% | {dash_text(signal.get('setup'))}"
+
+
+def rejected_line(signal: dict) -> str:
+    reason = ", ".join(signal.get("rejection_reasons") or []) or signal.get("verdict")
+    return f"{dash_text(signal.get('symbol'))} {dash_text(signal.get('direction'))} | {dash_text(reason)}"
+
+
+def render_signal_detail_screen(signal_id: str) -> tuple[str, dict]:
+    signal = signal_store.get_signal(signal_id, include_raw=False)
+    if not signal:
+        return "Signal not found.", dashboard_url_keyboard([[("⚡ Signals", "refresh_signals")]])
+    return format_signal_notification(signal), dashboard_url_keyboard([[("⚡ Signals", "refresh_signals"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def render_source_detail_screen(source_name: str) -> tuple[str, dict]:
+    source = next((item for item in signal_store.source_reliability() if item.get("source_name") == source_name), None)
+    if not source:
+        return "Source not found.", dashboard_url_keyboard([[("🧠 Sources", "refresh_sources")]])
+    text = "\n".join([
+        f"🧠 {dash_text(source.get('source_name'))}",
+        "",
+        f"Trust: {dash_text(source.get('trust_score'))}/100",
+        f"Signals: {source.get('total_signals', 0)}",
+        f"Accuracy: {dash_text(source.get('winrate'))}%",
+        f"Avg R: {dash_text(source.get('average_R'))}",
+    ])
+    return text, dashboard_url_keyboard([[("🧠 Sources", "refresh_sources"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def safe_call(func, fallback, *args):
+    try:
+        return func(*args)
+    except Exception:
+        return fallback
+
+
+def safe_bias_accuracy_summary() -> dict:
+    try:
+        from .live_bias_accuracy import live_bias_accuracy
+
+        data = live_bias_accuracy(limit=1000)
+        overall = data.get("overall", {})
+        by_symbol = data.get("by_symbol", {})
+        ranked = []
+        for symbol, payload in by_symbol.items():
+            stats = (payload.get("all") or {})
+            if stats.get("accuracy") is not None:
+                ranked.append((symbol, stats["accuracy"]))
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        return {
+            "30m": f"{dash_text((overall.get('30m') or {}).get('accuracy'))}%",
+            "1h": f"{dash_text((overall.get('1h') or {}).get('accuracy'))}%",
+            "best_symbol": ranked[0][0] if ranked else "—",
+            "worst_symbol": ranked[-1][0] if ranked else "—",
+        }
+    except Exception:
+        return {"30m": "—", "1h": "—", "best_symbol": "—", "worst_symbol": "—"}
+
+
+def format_entry_zone(signal: dict) -> str:
+    low = signal.get("entry_zone_low")
+    high = signal.get("entry_zone_high")
+    if low is not None and high is not None and low != high:
+        return f"{dash_text(low)}–{dash_text(high)}"
+    return dash_text(signal.get("entry"))
+
+
+def fmt_signal_money(value) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    sign = "+" if number > 0 else "-" if number < 0 else ""
+    return f"{sign}€{abs(number):.2f}"
+
+
+def dash_text(value) -> str:
+    if value is None or value == "":
+        return "—"
+    return str(value)
+
+
+def short_now() -> str:
+    return datetime.now(BERLIN_TZ).strftime("%H:%M")
 def format_history_today() -> str:
     if config.is_native_mt5_only() and not acct.native_data_available():
         return NATIVE_NO_DATA_MESSAGE
