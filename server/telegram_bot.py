@@ -192,14 +192,14 @@ def send_telegram_message(text: str, reply_markup: Optional[dict] = None) -> boo
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ADMIN_CHAT_ID:
         return False
     url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = urllib.parse.urlencode(
-        {
-            "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
-            "text": text,
-            "reply_markup": json.dumps(reply_markup or dashboard_keyboard(), ensure_ascii=False),
-            "disable_web_page_preview": True,
-        }
-    ).encode("utf-8")
+    payload = {
+        "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
+        "text": text,
+        "disable_web_page_preview": True,
+    }
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+    data = urllib.parse.urlencode(payload).encode("utf-8")
     try:
         request = urllib.request.Request(url, data=data, method="POST")
         with urllib.request.urlopen(request, timeout=5):
@@ -216,7 +216,6 @@ def send_telegram_photo(photo_path, caption: str = "") -> bool:
     fields = {
         "chat_id": config.TELEGRAM_ADMIN_CHAT_ID,
         "caption": str(caption or "")[:1024],
-        "reply_markup": json.dumps(dashboard_keyboard(), ensure_ascii=False),
     }
     body = bytearray()
     for name, value in fields.items():
@@ -3838,3 +3837,888 @@ def parse_telegram_update(update: dict) -> tuple[Optional[str], Optional[str]]:
     chat_id = chat.get("id")
     text = message.get("text")
     return (str(chat_id) if chat_id is not None else None, text)
+
+
+# Russian command-center UI v2.  This block intentionally overrides the older
+# menu renderers above while keeping all storage, signal, bias and MT5 logic
+# untouched.
+CONTROL_BUTTON_TEXT = "🎛 Пульт"
+BIAS_BUTTON_TEXT = "📈 Bias"
+SIGNALS_BUTTON_TEXT = "⚡ Сигналы"
+TRADES_BUTTON_TEXT = "🧾 Сделки"
+STATS_BUTTON_TEXT = "📊 Статистика"
+RISK_BUTTON_TEXT = "🛡 Риск"
+SOURCES_BUTTON_TEXT = "🧠 Sources"
+SITE_BUTTON_TEXT = "🌐 Сайт"
+
+MAIN_KEYBOARD_ROWS = [
+    [CONTROL_BUTTON_TEXT, BIAS_BUTTON_TEXT],
+    [SIGNALS_BUTTON_TEXT, TRADES_BUTTON_TEXT],
+    [STATS_BUTTON_TEXT, RISK_BUTTON_TEXT],
+    [SOURCES_BUTTON_TEXT, SITE_BUTTON_TEXT],
+]
+if ReplyKeyboardMarkup and KeyboardButton:
+    MAIN_KEYBOARD = ReplyKeyboardMarkup(
+        [[_reply_keyboard_button(text) for text in row] for row in MAIN_KEYBOARD_ROWS],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+else:
+    MAIN_KEYBOARD = {
+        "keyboard": [[_keyboard_button_payload(text) for text in row] for row in MAIN_KEYBOARD_ROWS],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
+
+MENU_BUTTON_CALLBACKS = {
+    CONTROL_BUTTON_TEXT: "refresh_center",
+    BIAS_BUTTON_TEXT: "refresh_bias",
+    SIGNALS_BUTTON_TEXT: "refresh_signals",
+    TRADES_BUTTON_TEXT: "refresh_trades",
+    STATS_BUTTON_TEXT: "refresh_stats",
+    RISK_BUTTON_TEXT: "refresh_risk",
+    SOURCES_BUTTON_TEXT: "refresh_sources",
+    ACCOUNT_POSITIONS_BUTTON_TEXT: "refresh_center",
+    ANALYTICS_BUTTON_TEXT: "refresh_stats",
+}
+MENU_BUTTON_PATTERN = (
+    r"^(🎛 Пульт|📈 Bias|⚡ Сигналы|🧾 Сделки|📊 Статистика|🛡 Риск|🧠 Sources|🌐 Сайт|"
+    r"📊 Счёт и позиции|📈 Байес|📉 Аналитика)$"
+)
+menu_message_handler = (
+    MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
+    if MessageHandler and filters
+    else None
+)
+
+
+def _dash(value=None) -> str:
+    return "—" if value is None or value == "" else str(value)
+
+
+def _pct(value) -> str:
+    number = safe_float(value)
+    return "—" if number is None else f"{round(number)}%"
+
+
+def _money_ru(value) -> str:
+    number = safe_float(value)
+    if number is None:
+        return "—"
+    sign = "+" if number > 0 else "-" if number < 0 else ""
+    return f"{sign}€{abs(number):.2f}"
+
+
+def _int_ru(value) -> str:
+    number = safe_float(value)
+    return "—" if number is None else str(int(number))
+
+
+def _period_key(period: str) -> str:
+    return {"today": "day", "day": "day", "week": "week", "month": "month", "all": "all"}.get(
+        str(period or "day").lower(),
+        "day",
+    )
+
+
+def period_to_store(period: str) -> str:
+    return {"day": "today", "today": "today", "week": "7d", "month": "30d", "all": "all"}.get(
+        str(period or "day").lower(),
+        "today",
+    )
+
+
+def period_title(period: str) -> str:
+    return {"day": "СЕГОДНЯ", "today": "СЕГОДНЯ", "week": "НЕДЕЛЯ", "month": "МЕСЯЦ", "all": "ВСЁ ВРЕМЯ"}.get(
+        str(period or "day").lower(),
+        str(period or "day").upper(),
+    )
+
+
+def _period_start_for_filter(period: str) -> Optional[datetime]:
+    key = _period_key(period)
+    now = datetime.now(BERLIN_TZ)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if key == "day":
+        return today
+    if key == "week":
+        return now - timedelta(days=7)
+    if key == "month":
+        return now - timedelta(days=30)
+    return None
+
+
+def _row_time(row: dict):
+    return first_present(
+        row.get("timestamp"),
+        row.get("close_time"),
+        row.get("closed_at"),
+        row.get("open_time"),
+        row.get("opened_at"),
+        row.get("time"),
+        row.get("created_at"),
+    )
+
+
+def _row_in_ui_period(row: dict, period: str) -> bool:
+    start = _period_start_for_filter(period)
+    if start is None:
+        return True
+    parsed = parse_datetime(_row_time(row))
+    if not parsed:
+        return False
+    return parsed.astimezone(BERLIN_TZ) >= start
+
+
+def _status_ru(value) -> str:
+    mapping = {
+        "VALID_SIGNAL": "Подтверждён",
+        "WATCH_ONLY": "Наблюдать",
+        "WAIT_CONFIRMATION": "Наблюдать",
+        "REJECTED": "Отклонён",
+        "DUPLICATE": "Отклонён",
+        "EXPIRED": "Истёк",
+        "CORRECT": "Правильно",
+        "WRONG": "Ошибка",
+        "NEUTRAL": "Нейтрально",
+        "LOW_SAMPLE_SIZE": "Мало данных",
+        "not_enough_data": "Недостаточно данных",
+        "pending": "ожидает",
+        "correct": "правильно",
+        "wrong": "ошибка",
+        "neutral": "нейтрально",
+        "open": "открыта",
+        "win": "плюс",
+        "loss": "минус",
+        "breakeven": "BE",
+        "SAFE": "SAFE",
+        "WARNING": "WARNING",
+        "NORMAL": "НОРМА",
+    }
+    return mapping.get(str(value or "").strip(), _dash(value))
+
+
+def _strength_ru(value) -> str:
+    return {"WEAK": "слабый", "MEDIUM": "средний", "STRONG": "сильный"}.get(str(value or "").upper(), _dash(value))
+
+
+def _risk_ru(value) -> str:
+    return {"LOW": "LOW", "MEDIUM": "MEDIUM", "HIGH": "HIGH"}.get(str(value or "").upper(), _dash(value))
+
+
+def _side_ru(value) -> str:
+    text = str(value or "").upper()
+    if text in {"BUY", "LONG"}:
+        return "LONG"
+    if text in {"SELL", "SHORT"}:
+        return "SHORT"
+    return _dash(text)
+
+
+def _signal_direction(signal: dict) -> str:
+    return _side_ru(first_present(signal.get("direction"), signal.get("side")))
+
+
+def _bias_direction(row: dict) -> str:
+    direction = str(row.get("direction") or "").upper()
+    if direction in {"LONG", "SHORT"}:
+        return direction
+    long_prob = safe_float(first_present(row.get("long_probability"), row.get("long_prob")))
+    short_prob = safe_float(first_present(row.get("short_probability"), row.get("short_prob")))
+    if long_prob is not None or short_prob is not None:
+        return "LONG" if (long_prob or 0) >= (short_prob or 0) else "SHORT"
+    return "LONG" if safe_float(row.get("confidence")) and safe_float(row.get("confidence")) >= 50 else "SHORT"
+
+
+def _signal_line(signal: dict) -> str:
+    setup = first_present(signal.get("setup"), signal.get("reason"), signal.get("comment"))
+    return f"{_dash(signal.get('symbol'))} {_signal_direction(signal)} {_pct(signal.get('score'))} | {_dash(setup)}"
+
+
+def _trade_time(row: dict) -> str:
+    parsed = parse_datetime(_row_time(row))
+    return parsed.astimezone(BERLIN_TZ).strftime("%H:%M") if parsed else "—"
+
+
+def _period_buttons(prefix: str, active: str) -> list[list[tuple[str, str]]]:
+    active = _period_key(active)
+    labels = [("Сегодня", "day"), ("Неделя", "week"), ("Месяц", "month"), ("Всё время", "all")]
+    row = []
+    for label, key in labels:
+        text = f"• {label}" if key == active else label
+        row.append((text, f"{prefix}_period:{key}"))
+    return [row]
+
+
+def _dashboard_button_row() -> list[tuple[str, str]]:
+    return [("🌐 Dashboard", "dashboard_url")]
+
+
+def _inline_url_keyboard(rows: list[list[tuple[str, str]]]) -> dict:
+    return dashboard_url_keyboard(rows)
+
+
+def _screen_keyboard(refresh: str, rows: Optional[list[list[tuple[str, str]]]] = None) -> dict:
+    base = rows[:] if rows else []
+    base.append([("🔄 Обновить", refresh), ("🌐 Dashboard", "dashboard_url")])
+    return _inline_url_keyboard(base)
+
+
+def smob_inline_menu() -> dict:
+    return _inline_url_keyboard(
+        [
+            [("🔄 Обновить", "refresh_center"), ("📈 Bias", "refresh_bias")],
+            [("⚡ Сигналы", "refresh_signals"), ("🛡 Риск", "refresh_risk")],
+            [("🌐 Dashboard", "dashboard_url")],
+        ]
+    )
+
+
+def site_message() -> str:
+    return f"🌐 Dashboard\n{DASHBOARD_URL}"
+
+
+def site_inline_keyboard() -> dict:
+    return _inline_url_keyboard([[("🌐 Открыть Dashboard", "dashboard_url")]])
+
+
+def menu_main_text() -> str:
+    return "\n".join(["🎛 ЦЕНТР УПРАВЛЕНИЯ MT5", "", "Меню открыто. Выбери раздел ниже.", f"Обновлено: {short_now()}"])
+
+
+def dashboard_keyboard() -> dict:
+    if isinstance(MAIN_KEYBOARD, dict):
+        return MAIN_KEYBOARD
+    return MAIN_KEYBOARD.to_dict()
+
+
+def _latest_event_text() -> str:
+    events = safe_call(lambda: acct.native_trade_events(limit=1), [])
+    if not events:
+        return "—"
+    event = events[0]
+    return f"{_trade_time(event)} {_dash(event.get('event_type'))} {_dash(event.get('symbol'))}"
+
+
+def render_command_center() -> tuple[str, dict]:
+    pnl = safe_call(acct.native_pnl_today, {})
+    storage = safe_call(acct.storage_health, {})
+    account = safe_call(acct.latest_account_snapshot, None) or {}
+    positions = safe_call(acct.current_native_positions, [])
+    live_bias = safe_call(bias_store.latest_live_bias, [])
+    signals = safe_call(lambda: signal_store.latest_signals(limit=300), [])
+    native_available = safe_call(acct.native_data_available, False)
+    valid = sum(1 for item in signals if item.get("verdict") == "VALID_SIGNAL")
+    watch = sum(1 for item in signals if item.get("verdict") in {"WATCH_ONLY", "WAIT_CONFIRMATION"})
+    rejected = sum(1 for item in signals if item.get("verdict") in {"REJECTED", "DUPLICATE", "EXPIRED"})
+    storage_ok = bool(storage.get("db_file_exists") or storage.get("db_storage") == "render_persistent_disk")
+    trade_count = first_present(pnl.get("trades_count"), pnl.get("closed_trades_count"), 0)
+    lines = [
+        "🎛 ЦЕНТР УПРАВЛЕНИЯ MT5",
+        "",
+        "Система: 🟢 Онлайн",
+        f"MT5 Feed: {'🟢 Активен' if native_available else '🟡 Тихо'}",
+        f"База: {'🟢 Persistent' if storage_ok else '🟡 Проверить'}",
+        f"Живой Bias: {'🟢 Активен' if live_bias else '🟡 Нет снимка'}",
+        f"Сигналы: {'🟢 Активны' if signals else '🟡 Нет данных'}",
+        "",
+        "Счёт:",
+        f"Баланс: {_money_ru(account.get('balance'))}",
+        f"Эквити: {_money_ru(account.get('equity'))}",
+        f"PnL сегодня: {_money_ru(first_present(pnl.get('closed_pnl'), pnl.get('net_pnl'), 0))}",
+        f"Открытый PnL: {_money_ru(sum(float_or_zero(p.get('profit')) for p in positions))}",
+        "",
+        "Торговля:",
+        f"Открытые сделки: {len(positions)}",
+        f"Закрыто сегодня: {trade_count}",
+        f"Последнее событие: {_latest_event_text()}",
+        "",
+        "Сигналы:",
+        f"Подтверждённые: {valid}",
+        f"Наблюдать: {watch}",
+        f"Отклонённые: {rejected}",
+        "",
+        "Риск: НОРМА",
+        f"Обновлено: {short_now()}",
+    ]
+    return "\n".join(lines), _screen_keyboard(
+        "refresh_center",
+        [[("📈 Bias", "refresh_bias"), ("⚡ Сигналы", "refresh_signals")], [("🛡 Риск", "refresh_risk")]],
+    )
+
+
+def safe_bias_accuracy_summary() -> dict:
+    try:
+        from .live_bias_accuracy import live_bias_accuracy, live_bias_calibration
+
+        data = live_bias_accuracy(limit=1000)
+        calibration = live_bias_calibration(limit=1000)
+        overall = data.get("overall", {})
+        return {
+            "30m": _pct((overall.get("30m") or {}).get("accuracy")),
+            "1h": _pct((overall.get("1h") or {}).get("accuracy")),
+            "2h": _pct((overall.get("2h") or {}).get("accuracy")),
+            "4h": _pct((overall.get("4h") or {}).get("accuracy")),
+            "best_symbol": _dash((calibration.get("best_symbol") or {}).get("group")),
+            "worst_symbol": _dash((calibration.get("worst_symbol") or {}).get("group")),
+        }
+    except Exception:
+        return {"30m": "—", "1h": "—", "2h": "—", "4h": "—", "best_symbol": "—", "worst_symbol": "—"}
+
+
+def render_live_bias_screen() -> tuple[str, dict]:
+    rows = safe_call(bias_store.latest_live_bias, [])
+    if not rows:
+        return "📈 ЖИВОЙ BIAS\n\nДанных Live Bias пока нет.", _screen_keyboard(
+            "refresh_bias",
+            [[("📊 Точность", "bias_accuracy"), ("🧠 Калибровка", "bias_calibration")]],
+        )
+    quality = round(sum(float_or_zero(row.get("data_quality_score")) for row in rows) / max(len(rows), 1))
+    risk = "HIGH" if any(str(row.get("risk")).upper() == "HIGH" for row in rows) else "MEDIUM" if any(str(row.get("risk")).upper() == "MEDIUM" for row in rows) else "LOW"
+    lines = ["📈 ЖИВОЙ BIAS", ""]
+    for row in rows[:8]:
+        lines.append(
+            f"{_dash(row.get('symbol')):<7} {_bias_direction(row):<5} {_pct(row.get('confidence')):<4} {_strength_ru(row.get('strength'))}"
+        )
+    accuracy = safe_bias_accuracy_summary()
+    lines.extend(
+        [
+            "",
+            f"Риск: {_risk_ru(risk)}",
+            f"Качество данных: {_pct(quality)}",
+            f"Обновлено: {short_now()}",
+            "",
+            "Точность:",
+            f"30м: {accuracy.get('30m')}",
+            f"1ч: {accuracy.get('1h')}",
+            f"2ч: {accuracy.get('2h')}",
+            f"4ч: {accuracy.get('4h')}",
+            "",
+            f"Лучший: {accuracy.get('best_symbol')}",
+            f"Худший: {accuracy.get('worst_symbol')}",
+        ]
+    )
+    return "\n".join(lines), _screen_keyboard(
+        "refresh_bias",
+        [[("📊 Точность", "bias_accuracy"), ("🧠 Калибровка", "bias_calibration")]],
+    )
+
+
+def render_signal_board(period: str = "day") -> tuple[str, dict]:
+    period = _period_key(period)
+    signals = [s for s in safe_call(lambda: signal_store.latest_signals(limit=500), []) if _row_in_ui_period(s, period)]
+    valid = [s for s in signals if s.get("verdict") == "VALID_SIGNAL"][:5]
+    watch = [s for s in signals if s.get("verdict") in {"WATCH_ONLY", "WAIT_CONFIRMATION"}][:5]
+    rejected = [s for s in signals if s.get("verdict") in {"REJECTED", "DUPLICATE", "EXPIRED"}][:5]
+    accuracy = safe_call(lambda: evaluate_signal_accuracy(limit=1000), {})
+    horizons = accuracy.get("by_horizon", {})
+    lines = [f"⚡ СИГНАЛЫ · {period_title(period)}", ""]
+    if not signals:
+        lines.append("Сигналы ещё не обработаны." if period == "day" else "За выбранный период данных нет.")
+    else:
+        lines.append("Подтверждённые:")
+        lines.extend([_signal_line(item) for item in valid] or ["—"])
+        lines.extend(["", "Наблюдать:"])
+        lines.extend([_signal_line(item) for item in watch] or ["—"])
+        lines.extend(["", "Отклонённые:"])
+        lines.extend(
+            [
+                f"{_dash(item.get('symbol'))} {_signal_direction(item)} | {_dash(first_present(item.get('reason'), item.get('setup'), item.get('verdict')))}"
+                for item in rejected
+            ]
+            or ["—"]
+        )
+        lines.extend(
+            [
+                "",
+                "Точность:",
+                f"15м: {_pct((horizons.get('15m') or {}).get('accuracy'))}",
+                f"30м: {_pct((horizons.get('30m') or {}).get('accuracy'))}",
+                f"60м: {_pct((horizons.get('60m') or {}).get('accuracy'))}",
+                "",
+                f"Обновлено: {short_now()}",
+            ]
+        )
+    return "\n".join(lines), _screen_keyboard(
+        "refresh_signals",
+        _period_buttons("signals", period)
+        + [
+            [("✅ Подтверждённые", "signals_valid"), ("👀 Наблюдать", "signals_watch")],
+            [("❌ Отклонённые", "signals_rejected"), ("📊 Точность", "signal_accuracy")],
+        ],
+    )
+
+
+def _event_label(event_type) -> str:
+    text = str(event_type or "").lower()
+    mapping = {
+        "opened": "OPEN",
+        "tp1_closed": "TP1",
+        "tp2_closed": "TP2",
+        "tp3_closed": "TP3",
+        "position_closed": "CLOSE",
+        "closed_by_signal": "FULL CLOSE",
+        "be_moved": "BE",
+        "open_failed": "OPEN ERROR",
+        "close_failed": "CLOSE ERROR",
+    }
+    return mapping.get(text, _dash(event_type).upper())
+
+
+def render_processed_trades_signals(period: str = "day") -> tuple[str, dict]:
+    period = _period_key(period)
+    rows = safe_call(lambda: acct.get_trades_filtered(source="all", period=period_to_store(period), asset="ALL", limit=500), [])
+    stats = safe_call(lambda: acct.get_stats_filtered(source="all", period=period_to_store(period), asset="ALL"), {})
+    positions = safe_call(acct.current_native_positions, [])
+    events = [e for e in safe_call(lambda: acct.native_trade_events(limit=100), []) if _row_in_ui_period(e, period)]
+    signals = [s for s in safe_call(lambda: signal_store.latest_signals(limit=200), []) if _row_in_ui_period(s, period)]
+    lines = [f"🧾 СДЕЛКИ · {period_title(period)}", "", "Итог:"]
+    lines.extend(
+        [
+            f"PnL: {_money_ru(stats.get('total_pnl'))}",
+            f"Сделок: {_int_ru(stats.get('total_trades'))}",
+            f"Winrate: {_pct(stats.get('win_rate'))}",
+            f"Открыто: {len(positions)}",
+            "",
+            "Открытые:",
+        ]
+    )
+    if positions:
+        for row in positions[:5]:
+            tp = " ".join(
+                [
+                    f"TP1 {'✅' if row.get('tp1_done') else '⬜'}",
+                    f"TP2 {'✅' if row.get('tp2_done') else '⬜'}",
+                    f"TP3 {'✅' if row.get('tp3_done') else '⬜'}",
+                ]
+            )
+            lines.extend([f"{_dash(row.get('symbol'))} {_side_ru(row.get('side'))}", tp, f"PnL: {_money_ru(row.get('profit'))}", ""])
+    else:
+        lines.append("Открытых сделок нет.")
+        lines.append("")
+    lines.append("Последние:")
+    if events:
+        for event in events[:6]:
+            lines.append(f"{_trade_time(event)} {_event_label(event.get('event_type'))} {_dash(event.get('symbol'))} {_money_ru(event.get('profit'))}")
+    elif rows:
+        for row in rows[:6]:
+            lines.append(f"{_trade_time(row)} {_dash(row.get('symbol'))} {_side_ru(row.get('side'))} {_money_ru(first_present(row.get('profit_money'), row.get('profit')))}")
+    else:
+        lines.append("За выбранный период сделок нет.")
+    lines.extend(["", "Сигналы:"])
+    if signals:
+        for signal in signals[:4]:
+            lines.extend(
+                [
+                    f"{_dash(signal.get('symbol'))} {_signal_direction(signal)}",
+                    f"Score: {_pct(signal.get('score'))}",
+                    f"Статус: {_status_ru(signal.get('verdict'))}",
+                    f"Результат: {_status_ru('pending')}",
+                    "",
+                ]
+            )
+    else:
+        lines.append("—")
+    return "\n".join(lines).strip(), _screen_keyboard(
+        "refresh_trades",
+        _period_buttons("trades", period) + [[("🟢 MT5", "refresh_trades"), ("⚡ Сигналы", "refresh_signals")], [("📊 Результаты", "refresh_stats")]],
+    )
+
+
+def _event_counts(period: str) -> dict:
+    events = [e for e in safe_call(lambda: acct.native_trade_events(limit=500), []) if _row_in_ui_period(e, period)]
+    counts = {"TP1": 0, "TP2": 0, "SL": 0, "BE": 0}
+    for event in events:
+        label = _event_label(event.get("event_type"))
+        if label in counts:
+            counts[label] += 1
+        if "SL" in label:
+            counts["SL"] += 1
+    return counts
+
+
+def render_system_statistics_screen(period: str = "day") -> tuple[str, dict]:
+    period = _period_key(period)
+    stats = safe_call(lambda: acct.get_stats_filtered(source="all", period=period_to_store(period), asset="ALL"), {})
+    rows = safe_call(lambda: acct.get_trades_filtered(source="all", period=period_to_store(period), asset="ALL", limit=500), [])
+    accuracy = safe_call(lambda: evaluate_signal_accuracy(limit=1000), {})
+    signals = [s for s in safe_call(lambda: signal_store.latest_signals(limit=500), []) if _row_in_ui_period(s, period)]
+    sources = safe_call(signal_store.source_reliability, [])
+    best_source = sources[0] if sources else {}
+    bias_accuracy = safe_bias_accuracy_summary()
+    horizons = accuracy.get("by_horizon", {})
+    events = _event_counts(period)
+    if not rows and not signals:
+        body = ["За выбранный период статистики нет.", "Мало данных — импортируй историю MT5."]
+    else:
+        body = [
+            "Торговля:",
+            f"Сделок: {_int_ru(stats.get('total_trades'))}",
+            f"Winrate: {_pct(stats.get('win_rate'))}",
+            f"PnL: {_money_ru(stats.get('total_pnl'))}",
+            f"PF: {_dash(stats.get('profit_factor'))}",
+            f"Средний R: {_dash(stats.get('avg_r'))}R" if stats.get("avg_r") is not None else "Средний R: —",
+            f"Лучшая: {_money_ru(stats.get('best_trade'))}",
+            f"Худшая: {_money_ru(stats.get('worst_trade'))}",
+            "",
+            "События:",
+            f"TP1: {events.get('TP1', 0)}",
+            f"TP2: {events.get('TP2', 0)}",
+            f"SL: {events.get('SL', 0)}",
+            f"BE: {events.get('BE', 0)}",
+            "",
+            "Сигналы:",
+            f"Обработано: {len(signals)}",
+            f"Подтверждено: {sum(1 for s in signals if s.get('verdict') == 'VALID_SIGNAL')}",
+            f"Наблюдать: {sum(1 for s in signals if s.get('verdict') in {'WATCH_ONLY', 'WAIT_CONFIRMATION'})}",
+            f"Отклонено: {sum(1 for s in signals if s.get('verdict') in {'REJECTED', 'DUPLICATE', 'EXPIRED'})}",
+            f"Точность 30м: {_pct((horizons.get('30m') or {}).get('accuracy'))}",
+            "",
+            "Bias:",
+            f"Точность 30м: {bias_accuracy.get('30m')}",
+            f"Точность 1ч: {bias_accuracy.get('1h')}",
+            f"Лучший символ: {bias_accuracy.get('best_symbol')}",
+            f"Худший символ: {bias_accuracy.get('worst_symbol')}",
+            "",
+            "Источники:",
+            f"Лучший источник: {_dash(best_source.get('source_name'))}",
+            f"Доверие: {_dash(best_source.get('trust_score'))}/100",
+        ]
+    return "\n".join([f"📊 СТАТИСТИКА · {period_title(period)}", "", *body]), _screen_keyboard(
+        "refresh_stats",
+        _period_buttons("stats", period)
+        + [[("📈 Bias статистика", "bias_accuracy"), ("⚡ Сигналы", "refresh_signals")], [("🧠 Источники", "refresh_sources")]],
+    )
+
+
+def render_signal_risk_screen(period: str = "day") -> tuple[str, dict]:
+    period = _period_key(period)
+    stats = safe_call(lambda: acct.get_stats_filtered(source="all", period=period_to_store(period), asset="ALL"), {})
+    storage = safe_call(acct.storage_health, {})
+    risky = [s for s in safe_call(lambda: signal_store.latest_signals(limit=200), []) if s.get("risk_level") == "HIGH" and _row_in_ui_period(s, period)]
+    storage_state = "SAFE" if storage.get("db_file_exists") else "WARNING"
+    warnings = [f"⚠️ {_dash(item.get('symbol'))} сигнал {_risk_ru(item.get('risk_level'))}" for item in risky[:5]]
+    if not safe_call(lambda: acct.get_trades_filtered(source="all", period=period_to_store(period), asset="ALL", limit=1), []):
+        warnings.append("⚠️ История сделок пустая")
+    lines = [
+        f"🛡 КОНТРОЛЬ РИСКА · {period_title(period)}",
+        "",
+        "Статус: НОРМА" if not risky else "Статус: ВНИМАНИЕ",
+        "",
+        f"PnL сегодня: {_money_ru(stats.get('total_pnl'))}",
+        "Открытый риск: —",
+        "Худший SL damage: — дней",
+        f"High-risk signals: {len(risky)}",
+        "Риск Bias/Macro: —",
+        "",
+        "Предупреждения:",
+        *(warnings or ["—"]),
+        "",
+        f"База: {storage_state}",
+        f"История: {'OK' if storage.get('native_trade_journal', storage.get('counts', {}).get('native_trade_journal', 0)) else 'EMPTY'}",
+    ]
+    return "\n".join(lines), _screen_keyboard(
+        "refresh_risk",
+        _period_buttons("risk", period) + [[("⚡ Рискованные сигналы", "signals_risky"), ("🧠 Lab", "refresh_lab")]],
+    )
+
+
+def render_signal_sources_screen() -> tuple[str, dict]:
+    sources = safe_call(signal_store.source_reliability, [])
+    lines = ["🧠 ИСТОЧНИКИ СИГНАЛОВ", ""]
+    if not sources:
+        lines.append("Источники сигналов ещё не подключены.")
+    for source in sources[:8]:
+        lines.extend(
+            [
+                _dash(source.get("source_name")),
+                f"Доверие: {_dash(source.get('trust_score'))}/100",
+                f"Сигналов: {_dash(source.get('total_signals'))}",
+                f"Точность: {_pct(source.get('winrate'))}",
+                f"Средний R: {_dash(source.get('average_R'))}",
+                "",
+            ]
+        )
+    return "\n".join(lines).strip(), _screen_keyboard(
+        "refresh_sources",
+        [[("📊 Точность", "signal_accuracy"), ("⚡ Последние сигналы", "refresh_signals")]],
+    )
+
+
+def render_storage_screen() -> tuple[str, dict]:
+    storage = safe_call(acct.storage_health, {})
+    counts = storage.get("counts") or storage
+    warnings = storage.get("warnings") or []
+    path = first_present(storage.get("db_file_path"), storage.get("db_file"), "/var/data/bridge.db")
+    size = first_present(storage.get("db_file_size_kb"), storage.get("db_size_kb"))
+    lines = [
+        "💾 СОСТОЯНИЕ БАЗЫ",
+        "",
+        f"DB: {'PERSISTENT 🟢' if storage.get('db_file_exists') or storage.get('db_storage') == 'render_persistent_disk' else 'WARNING 🟡'}",
+        f"Путь: {_dash(path)}",
+        f"Запись: {'да' if storage.get('db_file_writable', True) else 'нет'}",
+        f"Размер: {_dash(size)} KB",
+        "",
+        "Данные:",
+        f"Сделки: {_dash(counts.get('native_trade_journal'))}",
+        f"Закрытые: {_dash(counts.get('native_mt5_closed_trades'))}",
+        f"Native History: {_dash(counts.get('history_deals'))}",
+        f"Account Snapshots: {_dash(counts.get('native_account_snapshots'))}",
+        f"Screenshots: {_dash(counts.get('native_screenshots'))}",
+        "",
+        "Предупреждения:",
+        ", ".join(warnings) if warnings else "none",
+        "",
+        f"Обновлено: {short_now()}",
+    ]
+    return "\n".join(lines), _screen_keyboard("refresh_storage")
+
+
+def render_lab_screen() -> tuple[str, dict]:
+    try:
+        from .strategy_test_lab import build_strategy_lab_report
+
+        report = build_strategy_lab_report(include_bias_filter=True)
+    except Exception:
+        report = {}
+    risk = report.get("risk_damage_analytics") or {}
+    trade_count = int(report.get("trade_count") or 0)
+    lines = [
+        "🧪 ЛАБОРАТОРИЯ СТРАТЕГИИ",
+        "",
+        f"Сделок: {trade_count}",
+        f"Закрытых: {trade_count}",
+        f"Sample: {_status_ru(report.get('sample_warning') or 'OK')}",
+        f"Рекомендации: {'есть' if report.get('critical_problems') else 'недостаточно данных'}",
+        "",
+        "Риск:",
+        f"SL damage: {_dash(risk.get('single_loss_damage_days'))}",
+        f"PF: {_dash(risk.get('profit_factor'))}",
+        f"Expectancy R: {_dash(risk.get('expectancy_R'))}",
+        "",
+        "Статус:",
+        "requires_human_approval: да",
+    ]
+    if trade_count == 0:
+        lines.extend(["", "Нет закрытой истории сделок. Импортируй историю MT5."])
+    return "\n".join(lines), _screen_keyboard("refresh_lab", [[("📊 Данные", "refresh_storage")]])
+
+
+def render_bias_accuracy_screen() -> tuple[str, dict]:
+    accuracy = safe_bias_accuracy_summary()
+    lines = [
+        "📊 ТОЧНОСТЬ BIAS",
+        "",
+        f"30м: {accuracy.get('30m')}",
+        f"1ч: {accuracy.get('1h')}",
+        f"2ч: {accuracy.get('2h')}",
+        f"4ч: {accuracy.get('4h')}",
+        f"Лучший: {accuracy.get('best_symbol')}",
+        f"Худший: {accuracy.get('worst_symbol')}",
+    ]
+    return "\n".join(lines), _screen_keyboard("bias_accuracy", [[("📈 Bias", "refresh_bias")]])
+
+
+def render_signal_accuracy_screen() -> tuple[str, dict]:
+    data = safe_call(lambda: evaluate_signal_accuracy(limit=1000), {})
+    overall = data.get("overall", {}).get("all", {})
+    lines = [
+        "📊 ТОЧНОСТЬ СИГНАЛОВ",
+        "",
+        f"Сигналы: {data.get('signal_count', 0)}",
+        f"Правильно: {overall.get('correct', 0)}",
+        f"Ошибка: {overall.get('wrong', 0)}",
+        f"Нейтрально: {overall.get('neutral', 0)}",
+        f"Точность: {_pct(overall.get('accuracy'))}",
+    ]
+    return "\n".join(lines), _screen_keyboard("signal_accuracy", [[("⚡ Сигналы", "refresh_signals")]])
+
+
+def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
+    try:
+        if data in {"refresh_center", "menu_main", "refresh_account_positions"}:
+            return render_command_center()
+        if data == "refresh_bias":
+            return render_live_bias_screen()
+        if data == "refresh_signals":
+            return render_signal_board("day")
+        if data.startswith("signals_period:"):
+            return render_signal_board(data.split(":", 1)[1])
+        if data in {"signals_valid", "signals_watch", "signals_rejected", "signals_risky"}:
+            return render_signal_board("day")
+        if data in {"refresh_trades", "refresh_processed_trades", "menu_processed_trades"}:
+            return render_processed_trades_signals("day")
+        if data.startswith("trades_period:"):
+            return render_processed_trades_signals(data.split(":", 1)[1])
+        if data.startswith("trades_p_"):
+            return render_processed_trades_signals(data.replace("trades_p_", "", 1))
+        if data in {"refresh_stats", "refresh_analytics"}:
+            return render_system_statistics_screen("day")
+        if data.startswith("stats_period:"):
+            return render_system_statistics_screen(data.split(":", 1)[1])
+        if data.startswith("stats_p_"):
+            return render_system_statistics_screen(data.replace("stats_p_", "", 1))
+        if data == "refresh_risk":
+            return render_signal_risk_screen("day")
+        if data.startswith("risk_period:"):
+            return render_signal_risk_screen(data.split(":", 1)[1])
+        if data == "refresh_sources":
+            return render_signal_sources_screen()
+        if data == "refresh_storage":
+            return render_storage_screen()
+        if data == "refresh_lab":
+            return render_lab_screen()
+        if data == "bias_accuracy":
+            return render_bias_accuracy_screen()
+        if data == "bias_calibration":
+            return "🧠 КАЛИБРОВКА BIAS\n\nРекомендации доступны в Dashboard.\nТребуется ручное подтверждение: да", _screen_keyboard("refresh_bias")
+        if data == "signal_accuracy":
+            return render_signal_accuracy_screen()
+        if data.startswith("signal_details:"):
+            return render_signal_detail_screen(data.split(":", 1)[1])
+        if data.startswith("source_details:"):
+            return render_source_detail_screen(data.split(":", 1)[1])
+        if data == "dashboard_url":
+            return site_message(), site_inline_keyboard()
+        return render_command_center()
+    except Exception:
+        return "🔴 ОШИБКА\n\nДанные временно недоступны.", _screen_keyboard("refresh_center")
+
+
+def _command_to_callback(command: str) -> Optional[str]:
+    return {
+        "/status": "refresh_center",
+        "/bias": "refresh_bias",
+        "/live_bias": "refresh_bias",
+        "/signals": "refresh_signals",
+        "/trades": "refresh_trades",
+        "/stats": "refresh_stats",
+        "/risk": "refresh_risk",
+        "/sources": "refresh_sources",
+        "/storage": "refresh_storage",
+        "/lab": "refresh_lab",
+    }.get(command)
+
+
+async def start(update, context):
+    if getattr(update, "message", None):
+        await update.message.reply_text(menu_main_text(), reply_markup=ptb_reply_markup(MAIN_KEYBOARD))
+
+
+async def _reply_menu_section(update, callback_data: str) -> None:
+    if not getattr(update, "message", None):
+        return
+    chat_id = str(update.message.chat_id)
+    text, keyboard = render_menu_callback(callback_data, chat_id)
+    await update.message.reply_text(text, reply_markup=ptb_reply_markup(keyboard))
+
+
+async def handle_menu_button(update, context):
+    text = update.message.text
+    if text in (SITE_BUTTON_TEXT, "Сайт"):
+        await show_site(update, context)
+        return
+    callback_data = MENU_BUTTON_CALLBACKS.get(text)
+    if callback_data:
+        chat_id = getattr(update.message, "chat_id", None)
+        rendered_text, keyboard = render_menu_callback(callback_data, str(chat_id or ""))
+        await update.message.reply_text(rendered_text, reply_markup=ptb_reply_markup(keyboard))
+
+
+def handle_telegram_update(update: dict) -> bool:
+    try:
+        callback = update.get("callback_query") or {}
+        if callback:
+            answer_callback_query(str(callback.get("id") or ""))
+            message = callback.get("message") or {}
+            chat = message.get("chat") or {}
+            chat_id = str(chat.get("id")) if chat.get("id") is not None else None
+            if config.TELEGRAM_ADMIN_CHAT_ID and chat_id != config.TELEGRAM_ADMIN_CHAT_ID:
+                return True
+            text, keyboard = render_menu_callback(str(callback.get("data") or ""), chat_id or "")
+            menu_send(chat_id or config.TELEGRAM_ADMIN_CHAT_ID, text, keyboard, message.get("message_id"))
+            return True
+
+        message = update.get("message") or update.get("edited_message") or {}
+        chat = message.get("chat") or {}
+        chat_id = str(chat.get("id")) if chat.get("id") is not None else None
+        text = str(message.get("text") or "").strip()
+        if not chat_id or not text:
+            return False
+        if config.TELEGRAM_ADMIN_CHAT_ID and chat_id != config.TELEGRAM_ADMIN_CHAT_ID:
+            return True
+
+        command = text.split()[0].lower()
+        if command in ("/start", "/menu") or text.lower() == "меню":
+            user_state[chat_id] = {"screen": "center"}
+            menu_send(chat_id, menu_main_text(), dashboard_keyboard())
+            return True
+        if text in (SITE_BUTTON_TEXT, "Сайт") or command in ("/site", "/dashboard"):
+            menu_send(chat_id, site_message(), site_inline_keyboard())
+            return True
+        callback_data = _command_to_callback(command) or MENU_BUTTON_CALLBACKS.get(text)
+        if callback_data:
+            text_out, keyboard = render_menu_callback(callback_data, chat_id)
+            menu_send(chat_id, text_out, keyboard)
+            return True
+        if command == "/backtest":
+            if len(text.split()) > 1:
+                text_out, keyboard = render_backtest_result(text.split()[1].upper())
+            else:
+                text_out, keyboard = render_backtest_selector()
+            menu_send(chat_id, text_out, keyboard)
+            return True
+        return False
+    except Exception:
+        try:
+            menu_send(config.TELEGRAM_ADMIN_CHAT_ID, "🔴 ОШИБКА\n\nНе удалось обработать запрос.", _screen_keyboard("refresh_center"))
+        except Exception:
+            pass
+        return True
+
+
+def handle_command(text: str, chat_id: Optional[str] = None) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return "Пустая команда."
+    stripped = normalize_dashboard_button(stripped)
+    if not stripped.startswith("/"):
+        return handle_natural_language_command(stripped, chat_id or config.TELEGRAM_ADMIN_CHAT_ID)
+    command = stripped.split()[0].lower()
+    if command in ("/start", "/menu"):
+        return menu_main_text()
+    if command in ("/site", "/dashboard"):
+        return site_message()
+    callback_data = _command_to_callback(command)
+    if callback_data:
+        return render_menu_callback(callback_data, chat_id or "")[0]
+    if command == "/backtest":
+        parts = stripped.split()
+        return format_backtest_result(parts[1].upper() if len(parts) > 1 else "ALL")
+    return "Команда не распознана. Используй /menu."
+
+
+def normalize_dashboard_button(text: str) -> str:
+    mapping = {
+        CONTROL_BUTTON_TEXT: "/status",
+        BIAS_BUTTON_TEXT: "/bias",
+        SIGNALS_BUTTON_TEXT: "/signals",
+        TRADES_BUTTON_TEXT: "/trades",
+        STATS_BUTTON_TEXT: "/stats",
+        RISK_BUTTON_TEXT: "/risk",
+        SOURCES_BUTTON_TEXT: "/sources",
+        SITE_BUTTON_TEXT: "/dashboard",
+        ACCOUNT_POSITIONS_BUTTON_TEXT: "/status",
+        ANALYTICS_BUTTON_TEXT: "/stats",
+        "Сайт": "/dashboard",
+        "Статистика": "/stats",
+        "Сделки": "/trades",
+    }
+    return mapping.get(text, text)
+
+
+menu_message_handler = (
+    MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
+    if MessageHandler and filters
+    else None
+)

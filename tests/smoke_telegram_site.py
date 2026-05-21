@@ -28,34 +28,34 @@ def _keyboard_text_rows(markup):
 
 def test_main_keyboard_has_exact_rows():
     assert _keyboard_text_rows(telegram_bot.dashboard_keyboard()) == [
-        ["📊 Счёт и позиции"],
-        ["📈 Байес", "⚡ Сигналы"],
-        ["🧾 Сделки", "📉 Аналитика"],
-        ["🌐 Открыть SMOB"],
+        ["🎛 Пульт", "📈 Bias"],
+        ["⚡ Сигналы", "🧾 Сделки"],
+        ["📊 Статистика", "🛡 Риск"],
+        ["🧠 Sources", "🌐 Сайт"],
     ]
 
 
 def test_removed_buttons_not_in_main_keyboard():
     labels = set(_flatten_keyboard_texts(telegram_bot.dashboard_keyboard()))
-    for old in ("🌍 Рынок", "Действия", "🏆 Рекорды", "🤖 Боты", "🎛 Пульт", "📊 Статистика", "🛡 Риск", "🧠 Sources", "🌐 Сайт"):
+    for old in ("🌍 Рынок", "Действия", "🏆 Рекорды", "🤖 Боты", "🌐 Открыть SMOB"):
         assert old not in labels
 
 
 def test_site_inline_keyboard_uses_dashboard_url():
     markup = telegram_bot.site_inline_keyboard()
     button = markup["inline_keyboard"][0][0]
-    assert button["text"] == "🌐 Открыть SMOB"
+    assert button["text"] == "🌐 Открыть Dashboard"
     assert button["url"] == telegram_bot.DASHBOARD_URL
 
 
 def test_site_aliases_and_commands():
-    assert telegram_bot.normalize_dashboard_button("🌐 Открыть SMOB") == "/site"
-    assert telegram_bot.normalize_dashboard_button("Сайт") == "/site"
-    assert telegram_bot.normalize_dashboard_button("📈 Байес") == "/bias"
+    assert telegram_bot.normalize_dashboard_button("🌐 Сайт") == "/dashboard"
+    assert telegram_bot.normalize_dashboard_button("Сайт") == "/dashboard"
+    assert telegram_bot.normalize_dashboard_button("📈 Bias") == "/bias"
     assert telegram_bot.normalize_dashboard_button("⚡ Сигналы") == "/signals"
-    assert telegram_bot.normalize_dashboard_button("📉 Аналитика") == "/stats"
-    assert telegram_bot.handle_command("/site") == "Открыть SMOB:"
-    assert telegram_bot.handle_command("/dashboard") == "Открыть SMOB:"
+    assert telegram_bot.normalize_dashboard_button("📊 Статистика") == "/stats"
+    assert telegram_bot.handle_command("/site").startswith("🌐 Dashboard")
+    assert telegram_bot.handle_command("/dashboard").startswith("🌐 Dashboard")
 
 
 def test_site_response_does_not_leak_secret():

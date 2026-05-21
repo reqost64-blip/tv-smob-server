@@ -4,22 +4,22 @@ from pathlib import Path
 
 os.environ.setdefault("WEBHOOK_SECRET", "smoke-test-secret")
 os.environ.setdefault("MT5_NATIVE_SECRET", "do-not-leak-smoke-secret")
-os.environ.setdefault("DB_FILE", str(Path(__file__).with_name("telegram_stats_screen.sqlite3")))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from server.telegram_bot import handle_command, render_system_statistics_screen
-from server.database import init_db
+from server import telegram_bot as bot
 
 
-def main():
-    init_db()
-    text, keyboard = render_system_statistics_screen()
-    assert "АНАЛИТИКА" in text, text
-    assert "Сигналы:" in text and "Байес:" in text and "Источники:" in text, text
-    assert "АНАЛИТИКА" in handle_command("/stats")
-    assert keyboard.get("inline_keyboard"), keyboard
-    print({"telegram_stats_screen": "ok"})
+def test_stats_default_today():
+    text, markup = bot.render_menu_callback("refresh_stats", "smoke")
+    assert "СТАТИСТИКА · СЕГОДНЯ" in text
+    assert "keyboard" not in (markup or {})
+    raw = str(markup)
+    assert "stats_period:day" in raw
+    assert "stats_period:week" in raw
+    assert "stats_period:month" in raw
+    assert "stats_period:all" in raw
 
 
 if __name__ == "__main__":
-    main()
+    test_stats_default_today()
+    print("ok")

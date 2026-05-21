@@ -602,6 +602,27 @@
       gap: 8px;
       margin-bottom: 12px;
     }
+    .period-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .period-button {
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      color: var(--text-muted);
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .period-button.active {
+      background: var(--text);
+      color: var(--white);
+      border-color: var(--text);
+    }
     select {
       min-height: 38px;
       border: 1px solid var(--border);
@@ -741,7 +762,7 @@
       {id:'bias', path:'bias', label:'Байес', group:'Анализ', icon:'↗'},
       {id:'analytics', path:'analytics', label:'Статистика', group:'Анализ', icon:'▦'},
       {id:'risk', path:'risk', label:'Риск', group:'Анализ', icon:'!'},
-      {id:'lab', path:'lab', label:'Strategy Lab', group:'Анализ', icon:'◌'},
+      {id:'lab', path:'lab', label:'Лаборатория стратегии', group:'Анализ', icon:'◌'},
       {id:'sources', path:'sources', label:'Источники', group:'Система', icon:'◎'},
       {id:'storage', path:'storage', label:'Хранилище', group:'Система', icon:'▣'},
       {id:'settings', path:'settings', label:'Система', group:'Система', icon:'⚙'}
@@ -810,7 +831,7 @@
       errors: {},
       loading: true,
       lastUpdate: null,
-      filters: {symbol:'ALL', result:'ALL', source:'ALL'}
+      filters: {symbol:'ALL', result:'ALL', source:'ALL', period:'day'}
     };
 
     const $ = id => document.getElementById(id);
@@ -847,6 +868,48 @@
       return parsed.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
     };
     const first = (...values) => values.find(value => value !== null && value !== undefined && value !== '');
+    const periodLabels = {day:'Сегодня', week:'Неделя', month:'Месяц', all:'Всё время'};
+    const statusLabels = {
+      VALID_SIGNAL:'Подтверждён',
+      WATCH_ONLY:'Наблюдать',
+      WAIT_CONFIRMATION:'Наблюдать',
+      REJECTED:'Отклонён',
+      DUPLICATE:'Отклонён',
+      EXPIRED:'Истёк',
+      correct:'Правильно',
+      wrong:'Ошибка',
+      neutral:'Нейтрально',
+      not_enough_data:'Недостаточно данных',
+      pending:'Ожидает',
+      win:'Плюс',
+      loss:'Минус',
+      breakeven:'BE',
+      open:'Открыта'
+    };
+    const statusRu = value => statusLabels[String(value ?? '')] || dash(value);
+    function rowTimestamp(row) {
+      return first(row.timestamp, row.closed_at, row.close_time, row.opened_at, row.open_time, row.time, row.created_at);
+    }
+    function periodStart(period) {
+      const now = new Date();
+      if (period === 'day') return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === 'week') return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (period === 'month') return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return null;
+    }
+    function inSelectedPeriod(row) {
+      const start = periodStart(state.filters.period);
+      if (!start) return true;
+      const stamp = rowTimestamp(row);
+      if (!stamp) return false;
+      const parsed = new Date(String(stamp).replace(' ', 'T'));
+      return !Number.isNaN(parsed.getTime()) && parsed >= start;
+    }
+    function periodSwitcher() {
+      return `<div class="period-switcher">${Object.entries(periodLabels).map(([key, label]) => `
+        <button type="button" class="period-button ${state.filters.period === key ? 'active' : ''}" data-period="${key}">${label}</button>
+      `).join('')}</div>`;
+    }
 
     function initialRoute() {
       const hash = window.location.hash.replace('#', '').replace('/', '');
@@ -1243,11 +1306,12 @@
 
     function filteredTrades() {
       return trades().filter(row => {
+        const periodOk = inSelectedPeriod(row);
         const symbolOk = state.filters.symbol === 'ALL' || row.symbol === state.filters.symbol;
         const resultOk = state.filters.result === 'ALL' || tradeResult(row) === state.filters.result;
         const source = String(first(row.source, row.comment, '—'));
         const sourceOk = state.filters.source === 'ALL' || source === state.filters.source;
-        return symbolOk && resultOk && sourceOk;
+        return periodOk && symbolOk && resultOk && sourceOk;
       });
     }
 
@@ -1258,7 +1322,7 @@
     function tradeFilters() {
       const symbols = ['ALL', ...new Set(trades().map(row => row.symbol).filter(Boolean).sort())];
       const sources = ['ALL', ...new Set(trades().map(row => String(first(row.source, row.comment, '—'))).filter(Boolean).sort())];
-      return `<div class="filter-bar">
+      return `${periodSwitcher()}<div class="filter-bar">
         <select id="symbol-filter">${filterOptions(symbols, state.filters.symbol)}</select>
         <select id="result-filter">${filterOptions(['ALL','WIN','LOSS','FLAT'], state.filters.result)}</select>
         <select id="source-filter">${filterOptions(sources, state.filters.source)}</select>
@@ -1272,14 +1336,14 @@
           esc(dateTime(first(row.closed_at, row.close_time, row.created_at, row.time))),
           `<span class="symbol">${esc(row.symbol || '—')}</span>`,
           esc(String(first(row.side, row.direction, row.type, '—')).toUpperCase()),
-          esc(first(row.status, row.reason, row.close_reason, '—')),
+          esc(statusRu(first(row.status, row.reason, row.close_reason, '—'))),
           `<span class="${signedClass(profit)}">${money(profit)}</span>`,
           esc(dash(first(row.r_multiple, row.result_R, row.profit_r))),
           esc(first(row.source, row.comment, '—')),
           tpDots(row)
         ];
       });
-      return `<div class="desktop-table">${table(['Время','Символ','Side','Статус','Profit','R','Source','TP'], tableRows)}</div>
+      return `<div class="desktop-table">${table(['Время','Символ','Направление','Статус','PnL','R','Источник','TP'], tableRows)}</div>
         <div class="mobile-cards"><div class="compact-list">${rows.length ? rows.map(tradeCompactCard).join('') : '<div class="empty">Сделок пока нет.</div>'}</div></div>`;
     }
 
@@ -1289,9 +1353,9 @@
         <div class="compact-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(String(first(row.side, row.direction, row.type, '—')).toUpperCase())}</div></div><div class="pnl ${signedClass(profit)}">${money(profit)}</div></div>
         <div class="kv-grid">
           ${kv('Время', dateTime(first(row.closed_at, row.close_time, row.created_at, row.time)))}
-          ${kv('Статус', esc(first(row.status, row.reason, row.close_reason, '—')))}
+          ${kv('Статус', esc(statusRu(first(row.status, row.reason, row.close_reason, '—'))))}
           ${kv('R', dash(first(row.r_multiple, row.result_R, row.profit_r)))}
-          ${kv('Source', esc(first(row.source, row.comment, '—')))}
+          ${kv('Источник', esc(first(row.source, row.comment, '—')))}
         </div>
         <div style="margin-top:10px">${tpDots(row)}</div>
       </div>`;
@@ -1306,23 +1370,23 @@
       const warning = isDataOld(latestTime) ? '<div class="endpoint-error">Данные счёта могут быть устаревшими.</div>' : '';
       return `<div class="page-grid">
         ${metricStrip([
-          {label:'Balance', value:money(acc.balance), sub:dash(acc.currency), badge:'счёт', tone:'amber', seed:acc.balance},
-          {label:'Equity', value:money(acc.equity), sub:'текущая equity', badge:`PnL: ${money(first(p.closed_pnl, p.net_pnl, 0))}`, tone:'green', seed:acc.equity},
-          {label:'Free Margin', value:money(acc.free_margin), sub:`Margin: ${money(acc.margin)}`, badge:`Level: ${pct(acc.margin_level)}`, tone:'blue', seed:acc.free_margin},
-          {label:'Storage', value:st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:dateTime(latestTime), tone:st.db_storage === 'render_persistent_disk' ? 'green' : 'red', seed:1}
+          {label:'Баланс', value:money(acc.balance), sub:dash(acc.currency), badge:'счёт', tone:'amber', seed:acc.balance},
+          {label:'Эквити', value:money(acc.equity), sub:'текущее equity', badge:`PnL: ${money(first(p.closed_pnl, p.net_pnl, 0))}`, tone:'green', seed:acc.equity},
+          {label:'Свободная маржа', value:money(acc.free_margin), sub:`Маржа: ${money(acc.margin)}`, badge:`Уровень: ${pct(acc.margin_level)}`, tone:'blue', seed:acc.free_margin},
+          {label:'Хранилище', value:st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:dateTime(latestTime), tone:st.db_storage === 'render_persistent_disk' ? 'green' : 'red', seed:1}
         ])}
         <div class="page-grid wide-grid">
           ${panel('Баланс / Equity', `${warning}${lineChart(accountChartPoints(), 'Balance / Equity')}`, '', 'accountHistory')}
           ${panel('Детали счёта', `<div class="kv-grid">
-            ${kv('Balance', money(acc.balance))}
-            ${kv('Equity', money(acc.equity))}
-            ${kv('Margin', money(acc.margin))}
-            ${kv('Free Margin', money(acc.free_margin))}
-            ${kv('Margin Level', pct(acc.margin_level))}
+            ${kv('Баланс', money(acc.balance))}
+            ${kv('Эквити', money(acc.equity))}
+            ${kv('Маржа', money(acc.margin))}
+            ${kv('Свободная маржа', money(acc.free_margin))}
+            ${kv('Уровень маржи', pct(acc.margin_level))}
             ${kv('Последнее обновление', dateTime(latestTime))}
           </div>`, '', 'account')}
         </div>
-        ${panel('Account snapshots', accountSnapshots().length ? table(['Время','Balance','Equity','Free Margin','Source'], accountSnapshots().slice(0, 60).map(row => [dateTime(row.snapshot_at || row.created_at), money(row.balance), money(row.equity), money(row.free_margin), esc(row.source || '—')])) : '<div class="empty">Снимков счёта пока нет.</div>', '', 'accountHistory')}
+        ${panel('Снимки счёта', accountSnapshots().length ? table(['Время','Баланс','Эквити','Свободная маржа','Источник'], accountSnapshots().slice(0, 60).map(row => [dateTime(row.snapshot_at || row.created_at), money(row.balance), money(row.equity), money(row.free_margin), esc(row.source || '—')])) : '<div class="empty">Снимков счёта пока нет.</div>', '', 'accountHistory')}
       </div>`;
     }
 
@@ -1331,7 +1395,7 @@
       return `<div class="page-grid">
         ${metricStrip([
           {label:'Открыто', value:dash(rows.length), sub:'позиции', badge:`Equity: ${money(account().equity)}`, tone:'blue', seed:rows.length},
-          {label:'Floating PnL', value:money(rows.reduce((sum, row) => sum + (num(first(row.profit, row.floating_pnl, row.pnl)) || 0), 0)), sub:'открытые позиции', badge:'real-time MT5', tone:'green', seed:rows.length}
+          {label:'Открытый PnL', value:money(rows.reduce((sum, row) => sum + (num(first(row.profit, row.floating_pnl, row.pnl)) || 0), 0)), sub:'открытые позиции', badge:'live MT5', tone:'green', seed:rows.length}
         ])}
         ${panel('Открытые позиции', rows.length ? `<div class="page-grid cols-3">${rows.map(positionCard).join('')}</div>` : '<div class="empty">Открытых позиций нет.</div>', '', 'trades')}
       </div>`;
@@ -1339,45 +1403,48 @@
 
     function renderTrades() {
       const rows = filteredTrades();
-      const today = trades().filter(row => dateTime(first(row.closed_at, row.close_time, row.created_at, row.time)) !== '—').slice(0, 20);
+      const closedRows = rows.filter(row => String(first(row.status, '')).toLowerCase() !== 'open');
+      const pnlValue = rows.reduce((sum, row) => sum + (num(first(row.net_profit, row.profit, row.total_net, row.pnl)) || 0), 0);
       return `<div class="page-grid">
         ${metricStrip([
-          {label:'Всего сделок', value:dash(trades().length), sub:'загружено', badge:`Winrate: ${pct(first(stats().win_rate, stats().winrate))}`, tone:'blue', seed:trades().length},
-          {label:'Сегодня', value:dash(first(statsToday().total_trades, pnl().trades_count, today.length)), sub:'сделки', badge:`PnL: ${money(first(pnl().closed_pnl, pnl().net_pnl, 0))}`, tone:'amber', seed:today.length}
+          {label:`Сделки · ${periodLabels[state.filters.period]}`, value:dash(rows.length), sub:'реальные записи', badge:`Закрыто: ${closedRows.length}`, tone:'blue', seed:rows.length},
+          {label:'PnL периода', value:money(pnlValue), sub:'по выбранному периоду', badge:'MT5 storage', tone:pnlValue < 0 ? 'red' : 'green', seed:pnlValue}
         ])}
         ${panel('Фильтры', tradeFilters())}
-        ${panel('Последние сделки', rows.length ? tradeTable(rows.slice(0, 120)) : '<div class="empty">Сделок пока нет.</div>', '', 'trades')}
+        ${panel('Последние сделки', rows.length ? tradeTable(rows.slice(0, 120)) : '<div class="empty">За выбранный период сделок нет.</div>', periodLabels[state.filters.period], 'trades')}
       </div>`;
     }
 
     function renderHistory() {
       const st = storage();
       const h = labHealth();
+      const periodRows = filteredTrades();
       const warnings = arr(st.warnings);
       if (!Number(st.native_history_total || 0)) warnings.push('history_empty');
       if (!Number(st.closed_trades_total || 0)) warnings.push('closed_trades_empty');
       return `<div class="page-grid">
+        ${panel('Период', periodSwitcher())}
         ${metricStrip([
-          {label:'Native history', value:dash(st.native_history_total), sub:'history_deals', badge:'MT5 import', tone:'blue', seed:st.native_history_total},
-          {label:'Closed trades', value:dash(st.closed_trades_total), sub:'закрытые сделки', badge:`Trade count: ${dash(h.trade_count)}`, tone:'green', seed:st.closed_trades_total},
-          {label:'Account snapshots', value:dash(st.account_snapshots_total), sub:'снимки счёта', badge:dateTime(st.latest_account_time), tone:'amber', seed:st.account_snapshots_total}
+          {label:'Native History', value:dash(st.native_history_total), sub:'history_deals', badge:'импорт MT5', tone:'blue', seed:st.native_history_total},
+          {label:`Сделки · ${periodLabels[state.filters.period]}`, value:dash(periodRows.length), sub:'по периоду', badge:`Всего закрытых: ${dash(st.closed_trades_total)}`, tone:'green', seed:periodRows.length},
+          {label:'Снимки счёта', value:dash(st.account_snapshots_total), sub:'account snapshots', badge:dateTime(st.latest_account_time), tone:'amber', seed:st.account_snapshots_total}
         ])}
         <div class="page-grid cols-2">
           ${panel('Состояние истории', `<div class="stack">
-            ${kvRow('Imported history count', dash(first(st.imported_history_total, st.native_history_total)))}
-            ${kvRow('Latest trade time', dateTime(st.latest_trade_time))}
-            ${kvRow('Latest account time', dateTime(st.latest_account_time))}
-            ${kvRow('Warnings', warnings.length ? esc([...new Set(warnings)].join(', ')) : '—')}
+            ${kvRow('Импортировано записей', dash(first(st.imported_history_total, st.native_history_total)))}
+            ${kvRow('Последняя сделка', dateTime(st.latest_trade_time))}
+            ${kvRow('Последний счёт', dateTime(st.latest_account_time))}
+            ${kvRow('Предупреждения', warnings.length ? esc([...new Set(warnings)].join(', ')) : '—')}
           </div>`, '', 'storage')}
-          ${panel('Import MT5 History', '<div class="empty">Импорт выполняется через защищённый POST /api/history/import. На dashboard показан только read-only статус: сначала делай dry_run preview CSV/JSON, затем импорт с секретом.</div>')}
+          ${panel('Импорт истории MT5', '<div class="empty">Импорт выполняется через защищённый POST /api/history/import. На Dashboard показан только статус чтения: сначала dry_run preview CSV/JSON, затем импорт с секретом.</div>')}
         </div>
-        ${panel('Последняя история сделок', trades().length ? tradeTable(trades().slice(0, 80)) : '<div class="empty">История сделок пока пуста.</div>', '', 'trades')}
+        ${panel('История сделок', periodRows.length ? tradeTable(periodRows.slice(0, 80)) : '<div class="empty">За выбранный период данных нет.</div>', periodLabels[state.filters.period], 'trades')}
       </div>`;
     }
 
     function symbolPerformance() {
       const grouped = new Map();
-      trades().forEach(row => {
+      filteredTrades().forEach(row => {
         const symbol = row.symbol || 'UNKNOWN';
         grouped.set(symbol, (grouped.get(symbol) || 0) + (num(first(row.net_profit, row.profit, row.total_net, row.pnl)) || 0));
       });
@@ -1388,25 +1455,31 @@
     }
 
     function renderAnalytics() {
+      const rows = filteredTrades();
+      const periodPnl = rows.reduce((sum, row) => sum + (num(first(row.net_profit, row.profit, row.total_net, row.pnl)) || 0), 0);
+      const wins = rows.filter(row => tradeResult(row) === 'WIN').length;
+      const losses = rows.filter(row => tradeResult(row) === 'LOSS').length;
+      const closed = wins + losses;
       const s = stats();
       const risk = obj(lab().risk_damage_analytics);
       const lowSample = lab().sample_warning || labHealth().sample_warning || Number(first(s.total_trades, lab().trade_count, 0)) < 30;
       return `<div class="page-grid">
-        ${lowSample ? '<div class="endpoint-error">LOW SAMPLE SIZE — импортируй историю MT5.</div>' : ''}
+        ${panel('Период', periodSwitcher())}
+        ${lowSample ? '<div class="endpoint-error">Мало данных — импортируй историю MT5.</div>' : ''}
         ${metricStrip([
-          {label:'Total trades', value:dash(first(s.total_trades, lab().trade_count)), sub:'выборка', badge:`Winrate: ${pct(first(s.win_rate, s.winrate, risk.winrate))}`, tone:'blue', seed:s.total_trades},
-          {label:'Profit Factor', value:dash(first(s.profit_factor, risk.profit_factor)), sub:'gross profit/loss', badge:`Avg R: ${dash(first(s.avg_r, risk.expectancy_R))}`, tone:'green', seed:s.profit_factor},
-          {label:'Best trade', value:money(first(s.best_trade, risk.biggest_win)), sub:'лучшая сделка', badge:`Worst: ${money(first(s.worst_trade, risk.biggest_loss))}`, tone:'green', seed:s.best_trade},
-          {label:'Daily PnL', value:money(first(pnl().closed_pnl, pnl().net_pnl, 0)), sub:'сегодня', badge:'realized', tone:signedClass(first(pnl().closed_pnl, pnl().net_pnl, 0)).replace('-text',''), seed:pnl().closed_pnl}
+          {label:'Сделки', value:dash(rows.length), sub:periodLabels[state.filters.period], badge:`Winrate: ${closed ? pct((wins / closed) * 100) : '—'}`, tone:'blue', seed:rows.length},
+          {label:'PF', value:dash(first(s.profit_factor, risk.profit_factor)), sub:'profit factor', badge:`Средний R: ${dash(first(s.avg_r, risk.expectancy_R))}`, tone:'green', seed:s.profit_factor},
+          {label:'Лучшая сделка', value:money(first(s.best_trade, risk.biggest_win)), sub:'история', badge:`Худшая: ${money(first(s.worst_trade, risk.biggest_loss))}`, tone:'green', seed:s.best_trade},
+          {label:'PnL периода', value:money(periodPnl), sub:'реализованный результат', badge:periodLabels[state.filters.period], tone:periodPnl < 0 ? 'red' : 'green', seed:periodPnl}
         ])}
         <div class="page-grid cols-2">
-          ${panel('Symbol performance', symbolPerformance(), '', 'trades')}
+          ${panel('Результат по символам', symbolPerformance(), periodLabels[state.filters.period], 'trades')}
           ${panel('Детали аналитики', `<div class="stack">
-            ${kvRow('Expectancy', money(risk.expectancy_money))}
-            ${kvRow('Average win', money(risk.average_winning_trade))}
-            ${kvRow('Average loss', money(risk.average_losing_trade))}
-            ${kvRow('Average R', dash(first(s.avg_r, risk.expectancy_R)))}
-            ${kvRow('Monthly PnL', money(first(s.monthly_pnl, risk.monthly_pnl)))}
+            ${kvRow('Ожидание', money(risk.expectancy_money))}
+            ${kvRow('Средняя прибыль', money(risk.average_winning_trade))}
+            ${kvRow('Средний убыток', money(risk.average_losing_trade))}
+            ${kvRow('Средний R', dash(first(s.avg_r, risk.expectancy_R)))}
+            ${kvRow('PnL месяца', money(first(s.monthly_pnl, risk.monthly_pnl)))}
           </div>`, '', 'stats')}
         </div>
       </div>`;
@@ -1415,26 +1488,29 @@
     function renderRisk() {
       const risk = obj(lab().risk_damage_analytics);
       const st = storage();
+      const periodRows = filteredTrades();
+      const periodPnl = periodRows.reduce((sum, row) => sum + (num(first(row.net_profit, row.profit, row.total_net, row.pnl)) || 0), 0);
       const rawStatus = String(first(risk.risk_status, 'NORMAL')).toUpperCase();
       const status = rawStatus.includes('CRITICAL') ? 'CRITICAL' : rawStatus.includes('WARN') || st.db_storage !== 'render_persistent_disk' ? 'WARNING' : 'NORMAL';
       const tone = status === 'CRITICAL' ? 'red' : status === 'WARNING' ? 'amber' : 'green';
       return `<div class="page-grid">
+        ${panel('Период', periodSwitcher())}
         ${metricStrip([
-          {label:'Risk status', value:status, sub:'контроль', badge:`Storage: ${st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING'}`, tone, seed:1},
-          {label:'Today PnL', value:money(first(pnl().closed_pnl, pnl().net_pnl, 0)), sub:'сегодня', badge:'realized', tone:signedClass(first(pnl().closed_pnl, pnl().net_pnl, 0)).replace('-text',''), seed:pnl().closed_pnl},
-          {label:'Biggest loss', value:money(first(risk.biggest_loss, stats().worst_trade)), sub:'история', badge:`SL days: ${dash(risk.single_loss_damage_days)}`, tone:'red', seed:risk.biggest_loss},
-          {label:'Open risk', value:dash(first(risk.open_risk, '—')), sub:'если доступно', badge:`1 SL стирает ${dash(risk.single_loss_damage_days)} дней`, tone:'amber', seed:1}
+          {label:'Статус риска', value:status === 'NORMAL' ? 'НОРМА' : status === 'WARNING' ? 'ВНИМАНИЕ' : 'КРИТИЧНО', sub:'контроль', badge:`База: ${st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING'}`, tone, seed:1},
+          {label:'PnL периода', value:money(periodPnl), sub:periodLabels[state.filters.period], badge:'realized', tone:periodPnl < 0 ? 'red' : 'green', seed:periodPnl},
+          {label:'Худший убыток', value:money(first(risk.biggest_loss, stats().worst_trade)), sub:'история', badge:`SL damage: ${dash(risk.single_loss_damage_days)} дней`, tone:'red', seed:risk.biggest_loss},
+          {label:'Открытый риск', value:dash(first(risk.open_risk, '—')), sub:'если доступно', badge:`1 SL стирает ${dash(risk.single_loss_damage_days)} дней`, tone:'amber', seed:1}
         ])}
         <div class="page-grid cols-2">
-          ${panel('Risk damage', `<div class="stack">
-            ${kvRow('SL damage days', dash(risk.single_loss_damage_days))}
-            ${kvRow('One SL erases X avg days', dash(risk.single_loss_damage_days))}
-            ${kvRow('TP wins needed', dash(risk.tp1_wins_needed_to_recover_one_sl))}
-            ${kvRow('Max drawdown', money(risk.max_drawdown))}
+          ${panel('Риск-ущерб', `<div class="stack">
+            ${kvRow('SL damage дней', dash(risk.single_loss_damage_days))}
+            ${kvRow('Один SL стирает дней', dash(risk.single_loss_damage_days))}
+            ${kvRow('TP побед для восстановления', dash(risk.tp1_wins_needed_to_recover_one_sl))}
+            ${kvRow('Макс. просадка', money(risk.max_drawdown))}
           </div>`, '', 'lab')}
-          ${panel('Dangerous symbols / storage risk', `<div class="stack">
-            ${arr(lab().dangerous_symbols).length ? arr(lab().dangerous_symbols).map(item => kvRow(item, 'review')).join('') : kvRow('Dangerous symbols', '—')}
-            ${kvRow('History risk', Number(st.closed_trades_total || 0) ? 'OK' : 'closed_trades_empty', Number(st.closed_trades_total || 0) ? 'green-text' : 'amber-text')}
+          ${panel('Опасные символы / база', `<div class="stack">
+            ${arr(lab().dangerous_symbols).length ? arr(lab().dangerous_symbols).map(item => kvRow(item, 'проверить')).join('') : kvRow('Опасные символы', '—')}
+            ${kvRow('История', Number(st.closed_trades_total || 0) ? 'OK' : 'EMPTY', Number(st.closed_trades_total || 0) ? 'green-text' : 'amber-text')}
             ${kvRow('Persistent DB', st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', st.db_storage === 'render_persistent_disk' ? 'green-text' : 'red-text')}
           </div>`, '', 'storage')}
         </div>
@@ -1448,13 +1524,13 @@
 
     function factorTable() {
       const labels = ['market_structure','trend','vwap','momentum','volatility','intermarket','macro_news'];
-      return liveBiasRows().length ? table(['Символ', ...labels], liveBiasRows().map(row => [esc(row.symbol || '—'), ...labels.map(key => esc(dash(obj(row.factor_scores)[key])))])) : '<div class="empty">Нет factor scores.</div>';
+      return liveBiasRows().length ? table(['Символ', ...labels], liveBiasRows().map(row => [esc(row.symbol || '—'), ...labels.map(key => esc(dash(obj(row.factor_scores)[key])))])) : '<div class="empty">Факторы пока не переданы.</div>';
     }
 
     function sourceAvailabilityBlock() {
       const sources = obj(liveBias().source_availability);
       const entries = Object.keys(sources).length ? Object.entries(sources) : Object.entries(obj(liveBiasRows()[0]?.source_availability));
-      if (!entries.length) return '<div class="empty">Source availability пока не передан.</div>';
+      if (!entries.length) return '<div class="empty">Доступность источников пока не передана.</div>';
       return `<div class="kv-grid">${entries.map(([key, value]) => kv(key, esc(value))).join('')}</div>`;
     }
 
@@ -1464,17 +1540,17 @@
       const acc = obj(liveBiasAccuracy().overall);
       const calib = liveBiasCalibration();
       return `<div class="page-grid">
-        ${panel('Live Bias', liveRows.length ? `<div class="page-grid cols-3">${liveRows.map(row => {
+        ${panel('Живой Bias', liveRows.length ? `<div class="page-grid cols-3">${liveRows.map(row => {
           const direction = row.direction === 'CONSOLIDATION' ? '—' : row.direction;
-          return `<div class="position-card"><div class="position-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(row.strength || '—')}</div></div><div class="bias-direction ${direction === 'SHORT' ? 'short' : ''}">${esc(direction || '—')}</div></div><div class="progress"><span style="width:${Math.max(0, Math.min(100, num(row.confidence) || 0))}%"></span></div><div class="kv-grid">${kv('Confidence', `${dash(row.confidence)}%`)}${kv('Risk', esc(row.risk || '—'))}${kv('Long', `${dash(row.long_probability)}%`)}${kv('Short', `${dash(row.short_probability)}%`)}</div><div class="tag-list" style="margin-top:10px">${arr(row.reasons).slice(0,5).map(reason => `<span class="tag">${esc(reason)}</span>`).join('')}</div></div>`;
+          return `<div class="position-card"><div class="position-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(row.strength || '—')}</div></div><div class="bias-direction ${direction === 'SHORT' ? 'short' : ''}">${esc(direction || '—')}</div></div><div class="progress"><span style="width:${Math.max(0, Math.min(100, num(row.confidence) || 0))}%"></span></div><div class="kv-grid">${kv('Уверенность', `${dash(row.confidence)}%`)}${kv('Риск', esc(row.risk || '—'))}${kv('LONG', `${dash(row.long_probability)}%`)}${kv('SHORT', `${dash(row.short_probability)}%`)}</div><div class="tag-list" style="margin-top:10px">${arr(row.reasons).slice(0,5).map(reason => `<span class="tag">${esc(reason)}</span>`).join('')}</div></div>`;
         }).join('')}</div>` : '<div class="empty">Байес не рассчитан.</div>', '', 'biasLive')}
         <div class="page-grid cols-2">
           ${panel('Точность Live Bias', `<div class="kv-grid">${kv('30m', accuracyPercent(acc['30m']))}${kv('1h', accuracyPercent(acc['1h']))}${kv('2h', accuracyPercent(acc['2h']))}${kv('4h', accuracyPercent(acc['4h']))}</div>`, '', 'biasLiveAccuracy')}
-          ${panel('Calibration suggestions', arr(calib.recommended_weight_adjustments).length ? table(['Фактор','Изменение','Причина'], arr(calib.recommended_weight_adjustments).map(item => [esc(first(item.factor, item.type, '—')), esc(item.suggested_change || '—'), esc(item.reason || '—')])) : `<div class="empty">Рекомендаций пока нет. requires_human_approval: ${calib.requires_human_approval !== false}</div>`, '', 'biasLiveCalibration')}
+          ${panel('Калибровка', arr(calib.recommended_weight_adjustments).length ? table(['Фактор','Изменение','Причина'], arr(calib.recommended_weight_adjustments).map(item => [esc(first(item.factor, item.type, '—')), esc(item.suggested_change || '—'), esc(item.reason || '—')])) : `<div class="empty">Рекомендаций пока нет. Ручное подтверждение: ${calib.requires_human_approval !== false ? 'да' : 'нет'}</div>`, '', 'biasLiveCalibration')}
         </div>
-        ${panel('Factor scores', factorTable(), '', 'biasLive')}
-        ${panel('Source availability', sourceAvailabilityBlock(), '', 'biasLive')}
-        ${panel('Pre-Market Bias', arr(pre.symbols).length ? table(['Символ','Bias','Confidence','Risk','Reasons'], arr(pre.symbols).map(row => [esc(row.symbol || '—'), esc(row.bias || '—'), `${dash(row.confidence)}%`, esc(row.macro_risk || pre.macro_risk || '—'), esc(arr(row.reasons).slice(0,3).join(', ') || '—')])) : '<div class="empty">Pre-Market отчёта пока нет.</div>', '', 'bias')}
+        ${panel('Факторы Bias', factorTable(), '', 'biasLive')}
+        ${panel('Доступность источников', sourceAvailabilityBlock(), '', 'biasLive')}
+        ${panel('Pre-Market Bias', arr(pre.symbols).length ? table(['Символ','Bias','Уверенность','Риск','Причины'], arr(pre.symbols).map(row => [esc(row.symbol || '—'), esc(row.bias || '—'), `${dash(row.confidence)}%`, esc(row.macro_risk || pre.macro_risk || '—'), esc(arr(row.reasons).slice(0,3).join(', ') || '—')])) : '<div class="empty">Pre-Market отчёта пока нет.</div>', '', 'bias')}
       </div>`;
     }
 
@@ -1483,18 +1559,18 @@
       const h = labHealth();
       const recs = labRecs();
       const count = Number(first(l.trade_count, h.trade_count, 0));
-      if (!count) return panel('Strategy Lab', '<div class="empty">No closed trade history found. Import MT5 history.</div>', '', 'lab');
+      if (!count) return panel('Лаборатория стратегии', '<div class="empty">Нет закрытой истории сделок. Импортируй историю MT5.</div>', '', 'lab');
       return `<div class="page-grid">
         ${metricStrip([
-          {label:'Trade count', value:dash(count), sub:'closed trades', badge:`Sample: ${dash(first(l.sample_warning, h.sample_warning))}`, tone:'blue', seed:count},
-          {label:'Closed trades', value:dash(first(h.closed_trades_total, storage().closed_trades_total)), sub:'storage', badge:'data health', tone:'green', seed:h.closed_trades_total},
-          {label:'Human approval', value:recs.requires_human_approval ? 'required' : '—', sub:'recommendations', badge:'no auto-change', tone:'amber', seed:1}
+          {label:'Сделок', value:dash(count), sub:'закрытая история', badge:`Sample: ${statusRu(first(l.sample_warning, h.sample_warning, 'OK'))}`, tone:'blue', seed:count},
+          {label:'Закрытые сделки', value:dash(first(h.closed_trades_total, storage().closed_trades_total)), sub:'storage', badge:'состояние данных', tone:'green', seed:h.closed_trades_total},
+          {label:'Ручное подтверждение', value:recs.requires_human_approval ? 'нужно' : '—', sub:'рекомендации', badge:'без автоизменений', tone:'amber', seed:1}
         ])}
         <div class="page-grid cols-2">
-          ${panel('Data health', `<div class="stack">${kvRow('trade_count', dash(count))}${kvRow('sample_warning', dash(first(l.sample_warning, h.sample_warning)))}${kvRow('data_sources', arr(first(h.data_sources, l.data_sources)).join(', ') || '—')}${kvRow('native_history', dash(storage().native_history_total))}</div>`, '', 'labHealth')}
-          ${panel('Risk damage analytics', `<div class="stack">${Object.entries(obj(l.risk_damage_analytics)).slice(0,10).map(([key,value]) => kvRow(key, esc(dash(value)))).join('') || '<div class="empty">Risk analytics пока нет.</div>'}</div>`, '', 'lab')}
+          ${panel('Состояние данных', `<div class="stack">${kvRow('Сделок', dash(count))}${kvRow('Sample', statusRu(first(l.sample_warning, h.sample_warning, 'OK')))}${kvRow('Источники данных', arr(first(h.data_sources, l.data_sources)).join(', ') || '—')}${kvRow('Native History', dash(storage().native_history_total))}</div>`, '', 'labHealth')}
+          ${panel('Аналитика риска', `<div class="stack">${Object.entries(obj(l.risk_damage_analytics)).slice(0,10).map(([key,value]) => kvRow(key, esc(dash(value)))).join('') || '<div class="empty">Аналитики риска пока нет.</div>'}</div>`, '', 'lab')}
         </div>
-        ${panel('Recommendations', Object.keys(obj(recs.best_candidate_settings_per_symbol)).length ? table(['Символ','Score','Причины'], Object.values(obj(recs.best_candidate_settings_per_symbol)).map(item => [esc(item.symbol || '—'), esc(dash(item.score)), esc(arr(item.reasons).join(', ') || '—')])) : '<div class="empty">Рекомендаций пока нет.</div>', '', 'labRecs')}
+        ${panel('Рекомендации', Object.keys(obj(recs.best_candidate_settings_per_symbol)).length ? table(['Символ','Score','Причины'], Object.values(obj(recs.best_candidate_settings_per_symbol)).map(item => [esc(item.symbol || '—'), esc(dash(item.score)), esc(arr(item.reasons).join(', ') || '—')])) : '<div class="empty">Рекомендаций пока нет.</div>', '', 'labRecs')}
       </div>`;
     }
 
@@ -1504,26 +1580,26 @@
       return `<div class="page-grid">
         ${metricStrip([
           {label:'Persistent DB', value:safe ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:dash(st.db_file_is_writable), tone:safe ? 'green' : 'red', seed:1},
-          {label:'DB size', value:st.db_file_size ? `${Math.round(Number(st.db_file_size)/1024)} KB` : '—', sub:'SQLite', badge:'persistent disk', tone:'blue', seed:st.db_file_size},
-          {label:'Trades total', value:dash(st.trades_total), sub:'all sources', badge:`Closed: ${dash(st.closed_trades_total)}`, tone:'amber', seed:st.trades_total}
+          {label:'Размер базы', value:st.db_file_size ? `${Math.round(Number(st.db_file_size)/1024)} KB` : '—', sub:'SQLite', badge:'persistent disk', tone:'blue', seed:st.db_file_size},
+          {label:'Всего сделок', value:dash(st.trades_total), sub:'все источники', badge:`Закрыто: ${dash(st.closed_trades_total)}`, tone:'amber', seed:st.trades_total}
         ])}
-        ${panel('Storage health', `<div class="kv-grid">
-          ${kv('DB path', `<span class="mono">${esc(first(st.db_file, st.db_file_path, '—'))}</span>`)}
-          ${kv('db_storage', esc(dash(st.db_storage)))}
-          ${kv('db_file_exists', String(Boolean(st.db_file_exists)))}
-          ${kv('db_file_is_writable', esc(dash(st.db_file_is_writable)))}
-          ${kv('native_history_total', dash(st.native_history_total))}
-          ${kv('account_snapshots_total', dash(st.account_snapshots_total))}
-          ${kv('screenshots_total', dash(st.screenshots_total))}
-          ${kv('latest_trade_time', dateTime(st.latest_trade_time))}
-          ${kv('latest_account_time', dateTime(st.latest_account_time))}
-          ${kv('warnings', esc(arr(st.warnings).join(', ') || st.db_warning || '—'))}
+        ${panel('Состояние базы', `<div class="kv-grid">
+          ${kv('Путь DB', `<span class="mono">${esc(first(st.db_file, st.db_file_path, '—'))}</span>`)}
+          ${kv('Тип хранения', esc(dash(st.db_storage)))}
+          ${kv('Файл существует', st.db_file_exists ? 'да' : 'нет')}
+          ${kv('Запись доступна', esc(dash(st.db_file_is_writable)))}
+          ${kv('Native History', dash(st.native_history_total))}
+          ${kv('Снимки счёта', dash(st.account_snapshots_total))}
+          ${kv('Скриншоты', dash(st.screenshots_total))}
+          ${kv('Последняя сделка', dateTime(st.latest_trade_time))}
+          ${kv('Последний счёт', dateTime(st.latest_account_time))}
+          ${kv('Предупреждения', esc(arr(st.warnings).join(', ') || st.db_warning || '—'))}
         </div>`, '', 'storage')}
       </div>`;
     }
 
     function renderSignals() {
-      const rows = signalRows();
+      const rows = signalRows().filter(inSelectedPeriod);
       const sources = signalSources();
       const evaluations = arr(signalAccuracy().samples);
       const evalById = new Map(evaluations.map(item => [item.signal_id, item]));
@@ -1531,20 +1607,21 @@
       const watch = rows.filter(row => ['WATCH_ONLY','WAIT_CONFIRMATION'].includes(row.verdict));
       const rejected = rows.filter(row => ['REJECTED','DUPLICATE','EXPIRED'].includes(row.verdict));
       const sourceTrust = name => sources.find(source => source.source_name === name)?.trust_score;
-      if (!rows.length) return panel('Сигналы', '<div class="empty">No signals processed yet.</div>', '', 'signals');
+      if (!rows.length) return `<div class="page-grid">${panel('Период', periodSwitcher())}${panel('Сигналы', '<div class="empty">Сигналы ещё не обработаны.</div>', periodLabels[state.filters.period], 'signals')}</div>`;
       return `<div class="page-grid">
+        ${panel('Период', periodSwitcher())}
         ${metricStrip([
-          {label:'Valid', value:dash(valid.length), sub:'score >= 70', badge:'VALID_SIGNAL', tone:'green', seed:valid.length},
-          {label:'Watch', value:dash(watch.length), sub:'ожидание', badge:'WAIT_CONFIRMATION', tone:'amber', seed:watch.length},
-          {label:'Rejected', value:dash(rejected.length), sub:'фильтр', badge:'без Telegram spam', tone:'red', seed:rejected.length}
+          {label:'Подтверждённые', value:dash(valid.length), sub:'score >= 70', badge:'Подтверждён', tone:'green', seed:valid.length},
+          {label:'Наблюдать', value:dash(watch.length), sub:'ожидание', badge:'Наблюдать', tone:'amber', seed:watch.length},
+          {label:'Отклонённые', value:dash(rejected.length), sub:'фильтр', badge:'без Telegram spam', tone:'red', seed:rejected.length}
         ])}
-        ${panel('Latest signals', `<div class="desktop-table">${table(['Время','Символ','Side','Score','Verdict','Source','Trust','Result','Expiry'], rows.slice(0,100).map(row => [dateTime(row.timestamp), esc(row.symbol || '—'), esc(row.direction || '—'), `${dash(row.score)}%`, esc(row.verdict || '—'), esc(row.source_name || '—'), dash(sourceTrust(row.source_name)), esc(evalById.get(row.signal_id)?.result || 'pending'), `${dash(row.expiry_minutes)}m`]))}</div><div class="mobile-cards"><div class="compact-list">${rows.slice(0,60).map(row => `<div class="compact-card"><div class="compact-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(row.verdict || '—')}</div></div><b class="amber-text">${dash(row.score)}%</b></div><div class="kv-grid">${kv('Side', esc(row.direction || '—'))}${kv('Source', esc(row.source_name || '—'))}${kv('Trust', dash(sourceTrust(row.source_name)))}${kv('Result', esc(evalById.get(row.signal_id)?.result || 'pending'))}</div></div>`).join('')}</div></div>`, '', 'signals')}
+        ${panel('Последние сигналы', `<div class="desktop-table">${table(['Время','Символ','Направление','Score','Статус','Источник','Доверие','Результат','Актуален'], rows.slice(0,100).map(row => [dateTime(row.timestamp), esc(row.symbol || '—'), esc(row.direction || '—'), `${dash(row.score)}%`, esc(statusRu(row.verdict)), esc(row.source_name || '—'), dash(sourceTrust(row.source_name)), esc(statusRu(evalById.get(row.signal_id)?.result || 'pending')), `${dash(row.expiry_minutes)}m`]))}</div><div class="mobile-cards"><div class="compact-list">${rows.slice(0,60).map(row => `<div class="compact-card"><div class="compact-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(statusRu(row.verdict))}</div></div><b class="amber-text">${dash(row.score)}%</b></div><div class="kv-grid">${kv('Направление', esc(row.direction || '—'))}${kv('Источник', esc(row.source_name || '—'))}${kv('Доверие', dash(sourceTrust(row.source_name)))}${kv('Результат', esc(statusRu(evalById.get(row.signal_id)?.result || 'pending')))}</div></div>`).join('')}</div></div>`, periodLabels[state.filters.period], 'signals')}
       </div>`;
     }
 
     function renderSources() {
       const sources = signalSources();
-      return panel('Источники сигналов', sources.length ? table(['Источник','Trust','Signals','Accuracy','Avg R','Best','Worst','Last signal'], sources.map(source => [esc(source.source_name || '—'), dash(source.trust_score), dash(source.total_signals), source.winrate === null || source.winrate === undefined ? '—' : `${source.winrate}%`, dash(source.average_R), esc(arr(source.best_symbols).map(item => item.symbol).join(', ') || '—'), esc(arr(source.worst_symbols).map(item => item.symbol).join(', ') || '—'), dateTime(source.last_signal_at)])) : '<div class="empty">Источники сигналов пока не подключены.</div>', '', 'signalSources');
+      return panel('Источники сигналов', sources.length ? table(['Источник','Доверие','Сигналов','Точность','Средний R','Лучшие','Худшие','Последний сигнал'], sources.map(source => [esc(source.source_name || '—'), dash(source.trust_score), dash(source.total_signals), source.winrate === null || source.winrate === undefined ? '—' : `${source.winrate}%`, dash(source.average_R), esc(arr(source.best_symbols).map(item => item.symbol).join(', ') || '—'), esc(arr(source.worst_symbols).map(item => item.symbol).join(', ') || '—'), dateTime(source.last_signal_at)])) : '<div class="empty">Источники сигналов пока не подключены.</div>', '', 'signalSources');
     }
 
     function renderSettings() {
@@ -1553,19 +1630,19 @@
       const status = obj(state.data.status);
       return `<div class="page-grid">
         ${metricStrip([
-          {label:'Render', value:health().ok ? 'LIVE' : 'OFFLINE', sub:dash(sys.render_service), badge:dateTime(sys.server_time), tone:health().ok ? 'green' : 'red', seed:1},
-          {label:'System mode', value:dash(first(sys.system_mode, status.system_mode)), sub:'read-only', badge:'без secrets', tone:'blue', seed:1},
-          {label:'DB status', value:st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:'persistent', tone:st.db_storage === 'render_persistent_disk' ? 'green' : 'red', seed:1}
+          {label:'Render', value:health().ok ? 'Онлайн' : 'Нет связи', sub:dash(sys.render_service), badge:dateTime(sys.server_time), tone:health().ok ? 'green' : 'red', seed:1},
+          {label:'Режим системы', value:dash(first(sys.system_mode, status.system_mode)), sub:'только чтение', badge:'без secrets', tone:'blue', seed:1},
+          {label:'Статус базы', value:st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:'persistent', tone:st.db_storage === 'render_persistent_disk' ? 'green' : 'red', seed:1}
         ])}
         <div class="page-grid cols-2">
-          ${panel('System', `<div class="stack">
+          ${panel('Система', `<div class="stack">
             ${kvRow('git_commit', `<span class="mono">${esc(sys.git_commit || '—')}</span>`)}
             ${kvRow('git_branch', esc(dash(sys.git_branch)))}
             ${kvRow('dashboard_version', esc(first(sys.dashboard_version, DASHBOARD_VERSION)))}
-            ${kvRow('refresh interval', `${REFRESH_MS/1000}s`)}
+            ${kvRow('Интервал обновления', `${REFRESH_MS/1000}s`)}
             ${kvRow('uptime', sys.uptime_seconds !== undefined ? `${sys.uptime_seconds}s` : '—')}
           </div>`, '', 'system')}
-          ${panel('Endpoints status', `<div class="stack">${endpointList.map(path => kvRow(path, path.includes('/api/dashboard/') || path === '/api/health' ? 'read-only' : '—')).join('')}</div>`)}
+          ${panel('Статус endpoints', `<div class="stack">${endpointList.map(path => kvRow(path, path.includes('/api/dashboard/') || path === '/api/health' ? 'только чтение' : '—')).join('')}</div>`)}
         </div>
       </div>`;
     }
@@ -1609,6 +1686,12 @@
       if (result) result.addEventListener('change', event => { state.filters.result = event.target.value; render(); });
       const source = $('source-filter');
       if (source) source.addEventListener('change', event => { state.filters.source = event.target.value; render(); });
+      document.querySelectorAll('[data-period]').forEach(button => {
+        button.addEventListener('click', () => {
+          state.filters.period = button.dataset.period || 'day';
+          render();
+        });
+      });
     }
 
     function topbarBiasText() {

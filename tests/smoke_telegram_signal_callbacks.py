@@ -29,7 +29,13 @@ def main():
     for callback in callbacks:
         text, keyboard = render_menu_callback(callback, "smoke-chat")
         assert text and isinstance(keyboard, dict), callback
-        assert keyboard["inline_keyboard"][0][0]["text"] == "📊 Счёт и позиции", callback
+        assert "keyboard" not in keyboard, callback
+        assert "inline_keyboard" in keyboard, callback
+        assert any(
+            button.get("text") == "🌐 Dashboard"
+            for row in keyboard["inline_keyboard"]
+            for button in row
+        ), callback
     print({"telegram_signal_callbacks": "ok", "callbacks": len(callbacks)})
 
 

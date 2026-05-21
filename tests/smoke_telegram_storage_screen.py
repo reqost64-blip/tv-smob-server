@@ -9,14 +9,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from server import telegram_bot as bot
 
 
-def test_bias_screen_russian():
-    text, markup = bot.render_menu_callback("refresh_bias", "smoke")
+def test_storage_screen():
+    text, markup = bot.render_menu_callback("refresh_storage", "smoke")
     assert "keyboard" not in (markup or {})
-    assert "ЖИВОЙ BIAS" in text
-    assert "CONSOLIDATION" not in text
-    assert "Dashboard" in str(markup)
+    assert "СОСТОЯНИЕ БАЗЫ" in text
+    assert "Путь:" in text
+    assert "/var/data/bridge.db" in text or "—" in text
 
 
 if __name__ == "__main__":
-    test_bias_screen_russian()
+    test_storage_screen()
     print("ok")
