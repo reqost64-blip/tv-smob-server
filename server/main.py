@@ -21,6 +21,7 @@ from .live_bias_engine import (
     format_live_bias_telegram_message,
     live_bias_send_decision,
 )
+from .live_bias_accuracy import live_bias_accuracy, live_bias_calibration
 from .database import init_db
 from .models import (
     AckRequest,
@@ -1079,6 +1080,26 @@ async def dashboard_live_bias_history(symbol: str | None = None, limit: int = 10
         logger.exception("Failed to load live bias history")
         rows = []
     return {"ok": True, "symbol": symbol, "history": rows, "count": len(rows)}
+
+
+@app.get("/api/dashboard/bias/live/accuracy")
+async def dashboard_live_bias_accuracy(symbol: str | None = None, limit: int = 5000):
+    try:
+        result = live_bias_accuracy(symbol=symbol, limit=limit)
+    except Exception as exc:
+        logger.exception("Failed to calculate live bias accuracy")
+        return {"ok": False, "error": f"live_bias_accuracy_unavailable: {exc}"}
+    return result
+
+
+@app.get("/api/dashboard/bias/live/calibration")
+async def dashboard_live_bias_calibration(symbol: str | None = None, limit: int = 5000):
+    try:
+        result = live_bias_calibration(symbol=symbol, limit=limit)
+    except Exception as exc:
+        logger.exception("Failed to calculate live bias calibration")
+        return {"ok": False, "error": f"live_bias_calibration_unavailable: {exc}"}
+    return result
 
 
 @app.get("/api/dashboard/strategy-lab")

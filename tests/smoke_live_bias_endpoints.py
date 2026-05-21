@@ -38,6 +38,12 @@ def main():
     history = client.get("/api/dashboard/bias/live/history?limit=10")
     assert history.status_code == 200, history.text
     assert history.json()["count"] > 0, history.text
+    accuracy = client.get("/api/dashboard/bias/live/accuracy?limit=50")
+    assert accuracy.status_code == 200, accuracy.text
+    assert "overall" in accuracy.json(), accuracy.text
+    calibration = client.get("/api/dashboard/bias/live/calibration?limit=50")
+    assert calibration.status_code == 200, calibration.text
+    assert calibration.json()["requires_human_approval"] is True, calibration.text
 
     blocked_send = client.post("/api/bias/live/run", json={"allow_network": False, "send": True})
     assert blocked_send.status_code == 403, blocked_send.text

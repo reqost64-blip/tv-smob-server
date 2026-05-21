@@ -136,6 +136,8 @@ def calculate_live_symbol_bias(item: dict, context: dict) -> dict:
     volatility_state = volatility_regime(tf_bundles)
     macro_risk = str(macro.get("risk") or "UNKNOWN").upper()
     direction = "LONG" if final_score >= 0 else "SHORT"
+    price_bundle = tf_bundles.get("M5") or tf_bundles.get("M15") or tf_bundles.get("H1") or next(iter(tf_bundles.values()), None)
+    current_price = price_bundle.closes[-1] if price_bundle and price_bundle.closes else None
     confidence, long_probability, short_probability = live_probabilities(
         final_score=final_score,
         direction=direction,
@@ -164,6 +166,8 @@ def calculate_live_symbol_bias(item: dict, context: dict) -> dict:
         "risk": risk,
         "risk_flags": flags,
         "flags": flags,
+        "current_price": round(float(current_price), 5) if current_price is not None else None,
+        "price_source": price_bundle.source if price_bundle else None,
         "data_quality_score": data_quality,
         "factor_scores": {key: round(value, 1) if value is not None else None for key, value in factors.items()},
         "source_availability": source_availability,

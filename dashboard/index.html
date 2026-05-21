@@ -600,6 +600,8 @@
       '/api/dashboard/bias',
       '/api/dashboard/bias/live',
       '/api/dashboard/bias/live/history',
+      '/api/dashboard/bias/live/accuracy',
+      '/api/dashboard/bias/live/calibration',
       '/api/dashboard/strategy-lab',
       '/api/dashboard/strategy-lab/recommendations',
       '/api/dashboard/strategy-lab/data-health',
@@ -620,6 +622,8 @@
       bias: '/api/dashboard/bias',
       biasLive: '/api/dashboard/bias/live',
       biasLiveHistory: '/api/dashboard/bias/live/history?limit=80',
+      biasLiveAccuracy: '/api/dashboard/bias/live/accuracy?limit=5000',
+      biasLiveCalibration: '/api/dashboard/bias/live/calibration?limit=5000',
       lab: '/api/dashboard/strategy-lab',
       labRecs: '/api/dashboard/strategy-lab/recommendations',
       labHealth: '/api/dashboard/strategy-lab/data-health',
@@ -795,6 +799,8 @@
         api('bias', endpoints.bias, {ok:true, bias:null}),
         api('biasLive', endpoints.biasLive, {ok:true, bias:null}),
         api('biasLiveHistory', endpoints.biasLiveHistory, {ok:true, history:[]}),
+        api('biasLiveAccuracy', endpoints.biasLiveAccuracy, {ok:true, overall:{}, by_symbol:{}, by_confidence_bucket:{}}),
+        api('biasLiveCalibration', endpoints.biasLiveCalibration, {ok:true, recommended_weight_adjustments:[], requires_human_approval:true}),
         api('lab', endpoints.lab, {ok:false, trade_count:0}),
         api('labRecs', endpoints.labRecs, {ok:false}),
         api('labHealth', endpoints.labHealth, {ok:false, trade_count:0}),
@@ -804,7 +810,7 @@
       ]);
       [
         'health','status','system','account','accountHistory','positions','trades','stats','statsToday','pnl','bots',
-        'bias','biasLive','biasLiveHistory','lab','labRecs','labHealth','storage','events','performance'
+        'bias','biasLive','biasLiveHistory','biasLiveAccuracy','biasLiveCalibration','lab','labRecs','labHealth','storage','events','performance'
       ].forEach((key, index) => state.data[key] = results[index]);
       state.loading = false;
       state.lastUpdate = new Date();
@@ -872,6 +878,8 @@
     function bias() { return obj(obj(state.data.bias).bias); }
     function liveBias() { return obj(obj(state.data.biasLive).bias); }
     function liveBiasRows() { return arr(liveBias().symbols); }
+    function liveBiasAccuracy() { return obj(state.data.biasLiveAccuracy); }
+    function liveBiasCalibration() { return obj(state.data.biasLiveCalibration); }
     function events() { return arr(obj(state.data.events).events); }
     function historySnapshots() { return arr(obj(state.data.accountHistory).snapshots); }
 
@@ -1037,6 +1045,52 @@
       if (!items.length) return empty('No source availability reported.');
       return `<div class="grid cols-3">${items.map(([key, value]) => `
         <div class="info-block"><b>${esc(key)}</b><br><span class="muted">${esc(value)}</span></div>`).join('')}</div>`;
+    }
+
+    function accuracyPercent(stats) {
+      const value = obj(stats).accuracy;
+      return value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
+    }
+
+    function liveAccuracyBlock() {
+      const data = liveBiasAccuracy();
+      const overall = obj(data.overall);
+      const all = obj(overall.all);
+      const bySymbol = obj(data.by_symbol);
+      const ranked = Object.entries(bySymbol)
+        .map(([symbol, payload]) => ({symbol, stats: obj(obj(payload).all)}))
+        .filter(item => item.stats.accuracy !== null && item.stats.accuracy !== undefined)
+        .sort((a, b) => Number(b.stats.accuracy) - Number(a.stats.accuracy));
+      const best = ranked[0];
+      const worst = ranked[ranked.length - 1];
+      return `<div class="grid cols-4">
+        ${metric('30m accuracy', accuracyPercent(overall['30m']), `${dash(obj(overall['30m']).samples)} samples`)}
+        ${metric('1h accuracy', accuracyPercent(overall['1h']), `${dash(obj(overall['1h']).samples)} samples`)}
+        ${metric('2h accuracy', accuracyPercent(overall['2h']), `${dash(obj(overall['2h']).samples)} samples`)}
+        ${metric('4h accuracy', accuracyPercent(overall['4h']), `${dash(obj(overall['4h']).samples)} samples`)}
+      </div>
+      <div class="grid cols-3">
+        ${metric('Best symbol', best ? best.symbol : '—', best ? accuracyPercent(best.stats) : 'waiting for data')}
+        ${metric('Worst symbol', worst ? worst.symbol : '—', worst ? accuracyPercent(worst.stats) : 'waiting for data')}
+        ${metric('Evaluated snapshots', dash(data.evaluated_count), `${dash(data.not_enough_data_count)} not enough data`)}
+      </div>
+      ${Object.keys(obj(data.by_confidence_bucket)).length ? table(['bucket','accuracy','samples','correct','wrong','neutral'], Object.entries(obj(data.by_confidence_bucket)).map(([bucket, payload]) => {
+        const stats = obj(obj(payload).all);
+        return [bucket, accuracyPercent(stats), dash(stats.samples), dash(stats.correct), dash(stats.wrong), dash(stats.neutral)];
+      })) : empty('No confidence bucket accuracy yet.')}`;
+    }
+
+    function calibrationBlock() {
+      const data = liveBiasCalibration();
+      const suggestions = arr(data.recommended_weight_adjustments);
+      return `<div class="stack">
+        ${kvRow('Requires human approval', String(data.requires_human_approval !== false))}
+        ${kvRow('Best symbol', data.best_symbol ? `${data.best_symbol.name} ${data.best_symbol.accuracy}%` : '—')}
+        ${kvRow('Worst symbol', data.worst_symbol ? `${data.worst_symbol.name} ${data.worst_symbol.accuracy}%` : '—')}
+        ${suggestions.length ? table(['type','factor','suggested change','reason'], suggestions.map(item => [
+          compact(item.type), compact(item.factor), compact(item.suggested_change), compact(item.reason)
+        ])) : empty('No calibration suggestions yet.')}
+      </div>`;
     }
 
     function eventsPanel() {
@@ -1262,6 +1316,8 @@
         ${metric('Live symbols', liveRows.length, 'LONG / SHORT only')}
       </div>
       ${card('Live Bias', liveRows.length ? liveBiasPanel(false) : empty('No live bias snapshot yet.'), '', 'biasLive')}
+      ${card('Live Bias Accuracy', liveAccuracyBlock(), '', 'biasLiveAccuracy')}
+      ${card('Calibration Suggestions', calibrationBlock(), '', 'biasLiveCalibration')}
       ${card('Live Factor Breakdown', liveFactorBreakdown(), '', 'biasLive')}
       ${card('Live Source Availability', liveSourceAvailability(), '', 'biasLive')}
       <div class="grid cols-3">

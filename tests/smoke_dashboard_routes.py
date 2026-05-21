@@ -53,6 +53,8 @@ def main():
         "/api/dashboard/bias",
         "/api/dashboard/bias/live",
         "/api/dashboard/bias/live/history",
+        "/api/dashboard/bias/live/accuracy",
+        "/api/dashboard/bias/live/calibration",
         "/api/dashboard/strategy-lab",
         "/api/dashboard/strategy-lab/recommendations",
         "/api/dashboard/strategy-lab/data-health",
