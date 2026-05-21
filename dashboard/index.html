@@ -1,1326 +1,1368 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>MT5 Orbit Command Center</title>
+  <title>MT5 Command Dashboard</title>
   <link rel="icon" href="data:,">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap&v=20260514_2" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     :root {
-      --bg: #020408;
-      --bg2: #05080e;
-      --panel: rgba(7, 11, 17, .78);
-      --panel-strong: rgba(10, 16, 24, .92);
-      --glass: rgba(12, 19, 28, .64);
-      --line: rgba(120, 150, 175, .16);
-      --line2: rgba(170, 190, 205, .26);
-      --line-hot: rgba(193, 142, 74, .36);
-      --text: #93a3b4;
-      --muted: #5f7081;
-      --faint: #354454;
-      --hi: #e8f2fb;
-      --gold: #c99858;
-      --amber: #d58a42;
-      --blue: #6ab7df;
-      --cyan: #64d3d8;
-      --green: #45d68b;
-      --yellow: #d3b15c;
-      --red: #d85d62;
-      --orange: #d07944;
-      --gray: #717b85;
-      --font: "JetBrains Mono", Consolas, monospace;
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --surface-2: #f9fafc;
+      --line: #e4e8f0;
+      --line-strong: #d6dce8;
+      --text: #111827;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --blue: #2563eb;
+      --blue-soft: #e8f0ff;
+      --green: #059669;
+      --green-soft: #e7f7ef;
+      --red: #dc2626;
+      --red-soft: #fdecec;
+      --yellow: #b7791f;
+      --yellow-soft: #fff7df;
+      --shadow: 0 12px 34px rgba(15, 23, 42, .08);
+      --shadow-soft: 0 5px 18px rgba(15, 23, 42, .05);
+      --radius: 16px;
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     }
     html, body {
       margin: 0;
       min-height: 100%;
-      background:
-        radial-gradient(circle at 50% -20%, rgba(90, 125, 155, .17), transparent 34rem),
-        radial-gradient(circle at 8% 42%, rgba(184, 129, 70, .08), transparent 28rem),
-        linear-gradient(180deg, #060912 0%, #020408 48%, #010204 100%);
+      max-width: 100%;
+      background: var(--bg);
       color: var(--text);
       font-family: var(--font);
-      font-size: 12px;
-      overflow-x: hidden;
+      font-size: 14px;
+      letter-spacing: 0;
     }
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background:
-        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: radial-gradient(circle at 50% 28%, black, transparent 78%);
-    }
-    body::after {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background: linear-gradient(transparent 0 49%, rgba(116, 190, 224, .026) 50%, transparent 51%);
-      background-size: 100% 7px;
-      opacity: .42;
-      mix-blend-mode: screen;
-    }
-    button, input, select { font-family: var(--font); }
+    body { overflow-x: hidden; }
+    button, input, select { font: inherit; }
     button {
-      min-height: 32px;
-      border: 1px solid rgba(120, 150, 175, .24);
-      border-radius: 4px;
-      background: linear-gradient(180deg, rgba(18, 28, 38, .92), rgba(7, 11, 17, .94));
-      color: var(--hi);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      padding: 7px 10px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--text);
+      min-height: 38px;
+      border-radius: 12px;
+      padding: 0 14px;
       cursor: pointer;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 10px 24px rgba(0,0,0,.18);
-      transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, color .16s ease;
+      box-shadow: var(--shadow-soft);
     }
-    button:hover {
-      border-color: rgba(201, 152, 88, .55);
-      color: white;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 22px rgba(201,152,88,.16), 0 12px 28px rgba(0,0,0,.28);
-      transform: translateY(-1px);
-    }
-    button.good { border-color: rgba(69,214,139,.36); }
-    button.danger { border-color: rgba(216,93,98,.4); }
-    button.ghost { color: var(--text); }
+    button:hover { border-color: #b7c2d6; }
     select, input {
-      min-height: 34px;
+      min-height: 38px;
       border: 1px solid var(--line);
-      border-radius: 4px;
-      background: rgba(5, 9, 14, .88);
-      color: var(--hi);
-      padding: 7px 9px;
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 0 12px;
       outline: none;
     }
-    select:focus, input:focus { border-color: rgba(106,183,223,.42); box-shadow: 0 0 0 2px rgba(106,183,223,.08); }
-    .green { color: var(--green); } .red { color: var(--red); } .blue { color: var(--blue); }
-    .yellow { color: var(--yellow); } .gold { color: var(--gold); } .muted { color: var(--muted); }
-    .shell {
-      position: relative;
-      max-width: 1900px;
-      margin: 0 auto;
-      padding: 14px;
-      z-index: 1;
+    select:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+    .app {
+      display: grid;
+      grid-template-columns: 272px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      background: #ffffff;
+      border-right: 1px solid var(--line);
+      padding: 22px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      z-index: 20;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 44px;
+    }
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      color: #ffffff;
+      background: linear-gradient(145deg, #1d4ed8, #0f172a);
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .brand-title { font-weight: 800; font-size: 16px; }
+    .brand-subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .nav {
+      display: grid;
+      gap: 6px;
+    }
+    .nav a {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 42px;
+      padding: 0 12px;
+      border-radius: 12px;
+      color: #334155;
+      text-decoration: none;
+      font-weight: 650;
+    }
+    .nav a:hover { background: #f1f5f9; color: var(--text); }
+    .nav a.active { background: var(--blue-soft); color: var(--blue); }
+    .nav-icon {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .nav a.active .nav-icon { background: #dbeafe; color: var(--blue); }
+    .sidebar-footer {
+      margin-top: auto;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .main {
+      min-width: 0;
+      max-width: 100%;
+      padding: 24px;
     }
     .topbar {
       display: grid;
-      grid-template-columns: minmax(320px, 1fr) auto;
-      gap: 14px;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+    .mobile-menu { display: none; }
+    .page-title { font-size: 26px; font-weight: 820; margin: 0; }
+    .page-subtitle { color: var(--muted); margin-top: 5px; }
+    .status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 0 10px;
+      border-radius: 999px;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background:
-        linear-gradient(90deg, rgba(12,18,28,.94), rgba(7,11,17,.68)),
-        radial-gradient(circle at 18% 0%, rgba(106,183,223,.1), transparent 34rem);
-      box-shadow: 0 18px 52px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.035);
-      padding: 12px 14px;
+      background: var(--surface);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
     }
-    .title {
-      color: var(--hi);
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: .18em;
-      text-transform: uppercase;
-    }
-    .subtitle {
-      margin-top: 5px;
-      color: var(--gold);
-      font-size: 10px;
-      letter-spacing: .16em;
-      text-transform: uppercase;
-    }
-    .top-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
-    .chip {
-      display: grid;
-      gap: 2px;
-      min-width: 92px;
-      border: 1px solid rgba(120,150,175,.18);
-      border-radius: 4px;
-      background: rgba(4, 8, 13, .74);
-      padding: 7px 9px;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
-    }
-    .chip span { color: var(--muted); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
-    .chip b { color: var(--hi); font-size: 11px; font-weight: 800; white-space: nowrap; }
-    .main-grid {
-      display: grid;
-      grid-template-columns: minmax(680px, 1.42fr) minmax(390px, .58fr);
-      gap: 14px;
-      margin-top: 14px;
-      align-items: stretch;
-    }
-    .cockpit {
-      position: relative;
-      min-height: 610px;
-      overflow: hidden;
-      border: 1px solid rgba(120,150,175,.18);
-      border-radius: 8px;
-      background:
-        radial-gradient(circle at 50% 45%, rgba(195,150,92,.09), transparent 21rem),
-        linear-gradient(180deg, rgba(9,14,21,.84), rgba(3,5,9,.96));
-      box-shadow: inset 0 0 80px rgba(0,0,0,.58), 0 22px 70px rgba(0,0,0,.28);
-      isolation: isolate;
-    }
-    #particle-canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      opacity: .72;
-      z-index: 0;
-    }
-    .cockpit::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background:
-        radial-gradient(circle at 50% 45%, transparent 0 19rem, rgba(2,4,8,.22) 30rem, rgba(0,0,0,.44) 100%),
-        linear-gradient(115deg, transparent 0 54%, rgba(106,183,223,.035) 54.2%, transparent 55%),
-        linear-gradient(65deg, transparent 0 42%, rgba(201,152,88,.035) 42.2%, transparent 43%);
-      z-index: 1;
-    }
-    .system-label {
-      position: absolute;
-      left: 16px;
-      top: 14px;
-      z-index: 12;
-      color: var(--muted);
-      font-size: 9px;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-    }
-    .black-hole {
-      position: absolute;
-      left: 50%;
-      top: 48%;
-      width: 268px;
-      height: 268px;
-      transform: translate(-50%, -50%);
-      border-radius: 50%;
-      z-index: 5;
-      background:
-        radial-gradient(circle at 50% 50%, #000 0 34%, #020203 38%, rgba(0,0,0,.78) 42%, transparent 45%),
-        radial-gradient(circle at 52% 46%, rgba(255,255,255,.08), transparent 21%);
-      box-shadow:
-        inset 0 0 36px #000,
-        0 0 42px rgba(0,0,0,.96),
-        0 0 96px rgba(196,139,72,.18),
-        0 0 160px rgba(91,146,178,.10);
-    }
-    .black-hole::before,
-    .black-hole::after {
-      content: "";
-      position: absolute;
-      border-radius: 50%;
-      pointer-events: none;
-    }
-    .black-hole::before {
-      left: -92px;
-      right: -92px;
-      top: 39px;
-      bottom: 39px;
-      background:
-        conic-gradient(from 214deg,
-          transparent 0deg,
-          rgba(85,111,128,.16) 34deg,
-          rgba(186,135,75,.54) 78deg,
-          rgba(214,153,78,.78) 105deg,
-          rgba(81,124,151,.22) 142deg,
-          transparent 180deg,
-          rgba(63,95,118,.18) 222deg,
-          rgba(149,105,62,.46) 282deg,
-          rgba(214,153,78,.62) 312deg,
-          transparent 360deg);
-      filter: blur(10px);
-      transform: rotateX(68deg) rotate(-10deg);
-      animation: diskDrift 26s linear infinite;
-      opacity: .88;
-      box-shadow: 0 0 56px rgba(192,137,74,.18);
-    }
-    .black-hole::after {
-      inset: 70px;
-      background: radial-gradient(circle, #000 0 60%, rgba(5,5,6,.9) 72%, transparent 78%);
-      box-shadow: inset 0 0 30px #000, 0 0 44px rgba(0,0,0,.95);
-    }
-    .lens-ring {
-      position: absolute;
-      left: 50%;
-      top: 48%;
-      transform: translate(-50%, -50%) rotateX(68deg);
-      border: 1px solid rgba(201,152,88,.18);
-      border-radius: 50%;
-      pointer-events: none;
-      z-index: 4;
-      filter: blur(.1px);
-    }
-    .lens-ring.r1 { width: 360px; height: 128px; box-shadow: 0 0 34px rgba(201,152,88,.09); }
-    .lens-ring.r2 { width: 480px; height: 176px; border-color: rgba(106,183,223,.12); }
-    .lens-ring.r3 { width: 610px; height: 232px; border-color: rgba(135,151,162,.09); }
-    .orbit-track {
-      position: absolute;
-      left: 50%;
-      top: 48%;
-      transform: translate(-50%, -50%) rotate(var(--tilt));
-      width: var(--w);
-      height: var(--h);
-      border: 1px solid rgba(150, 172, 188, var(--o));
-      border-radius: 50%;
-      z-index: 2;
-      pointer-events: none;
-      box-shadow: inset 0 0 20px rgba(106,183,223,.025);
-    }
-    .orbit-track::after {
-      content: "";
-      position: absolute;
-      inset: -1px;
-      border-radius: 50%;
-      border: 1px solid rgba(201,152,88,.035);
-      clip-path: polygon(0 0, 60% 0, 40% 100%, 0 100%);
-    }
-    .beam-layer {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3;
-    }
-    .position-beam {
-      position: absolute;
-      left: 50%;
-      top: 48%;
-      width: var(--len);
-      height: 1px;
-      transform-origin: 0 50%;
-      transform: rotate(var(--angle));
-      background: linear-gradient(90deg, transparent, var(--beam), rgba(255,255,255,.36), transparent);
-      box-shadow: 0 0 12px var(--beam);
-      opacity: .62;
-    }
-    .bot-layer { position: absolute; inset: 0; z-index: 8; }
-    .satellite {
-      --sx: 0px;
-      --sy: 0px;
-      --status: var(--gray);
-      --beam: var(--cyan);
-      position: absolute;
-      left: 50%;
-      top: 48%;
-      width: 142px;
-      min-height: 58px;
-      margin-left: -71px;
-      margin-top: -29px;
-      border: 0;
-      background: transparent;
-      padding: 0;
-      text-align: left;
-      transform: translate(var(--sx), var(--sy));
-      animation: orbitalDrift var(--speed) ease-in-out infinite alternate;
-      z-index: 9;
-    }
-    .satellite.selected { animation-play-state: paused; }
-    .sat-frame {
-      position: relative;
-      display: grid;
-      grid-template-columns: 34px 1fr;
-      gap: 9px;
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--faint); }
+    .pill.green { color: var(--green); background: var(--green-soft); border-color: #c7ead7; }
+    .pill.green .dot { background: var(--green); }
+    .pill.red { color: var(--red); background: var(--red-soft); border-color: #facaca; }
+    .pill.red .dot { background: var(--red); }
+    .pill.yellow { color: var(--yellow); background: var(--yellow-soft); border-color: #f4dfaa; }
+    .pill.yellow .dot { background: var(--yellow); }
+    .pill.blue { color: var(--blue); background: var(--blue-soft); border-color: #c8d8ff; }
+    .pill.blue .dot { background: var(--blue); }
+    .toolbar {
+      display: flex;
       align-items: center;
-      min-height: 54px;
-      padding: 7px 8px;
-      border: 1px solid rgba(120,150,175,.14);
-      border-radius: 5px;
-      background: linear-gradient(180deg, rgba(10,16,24,.74), rgba(3,6,10,.56));
-      box-shadow: 0 12px 30px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.04);
-      backdrop-filter: blur(6px);
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
     }
-    .satellite:hover .sat-frame,
-    .satellite.selected .sat-frame {
-      border-color: rgba(201,152,88,.5);
-      box-shadow: 0 0 0 1px rgba(201,152,88,.15), 0 0 30px rgba(201,152,88,.13), 0 16px 36px rgba(0,0,0,.34);
+    .toolbar-left, .toolbar-right { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .grid { display: grid; gap: 16px; }
+    .metrics { grid-template-columns: repeat(9, minmax(140px, 1fr)); }
+    .cols-2 { grid-template-columns: minmax(0, 1fr) minmax(320px, .46fr); }
+    .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-soft);
+      padding: 18px;
+      min-width: 0;
+      max-width: 100%;
     }
-    .sat-icon {
-      position: relative;
-      width: 30px;
-      height: 30px;
-      border: 1px solid rgba(170,190,205,.24);
-      border-radius: 4px;
-      background:
-        linear-gradient(90deg, transparent 42%, rgba(255,255,255,.16) 43% 57%, transparent 58%),
-        linear-gradient(180deg, rgba(126,150,168,.18), rgba(0,0,0,.22));
-      box-shadow: inset 0 0 12px rgba(106,183,223,.06), 0 0 18px rgba(0,0,0,.4);
+    .card.raised { box-shadow: var(--shadow); }
+    .card-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
     }
-    .sat-icon::before,
-    .sat-icon::after {
-      content: "";
-      position: absolute;
-      top: 10px;
-      width: 14px;
-      height: 8px;
-      border: 1px solid rgba(120,150,175,.2);
-      background: rgba(106,183,223,.08);
+    .card-title h2, .card-title h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 800;
     }
-    .sat-icon::before { left: -15px; }
-    .sat-icon::after { right: -15px; }
-    .status-dot {
-      position: absolute;
-      right: -4px;
-      top: -4px;
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--status);
-      box-shadow: 0 0 12px var(--status);
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-soft);
+      padding: 15px;
+      min-height: 102px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
-    .sat-name {
-      color: var(--hi);
+    .metric-label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    .metric-value { font-size: 22px; font-weight: 850; margin-top: 8px; overflow-wrap: anywhere; }
+    .metric-note { color: var(--faint); font-size: 12px; margin-top: 4px; }
+    .green-text { color: var(--green); }
+    .red-text { color: var(--red); }
+    .blue-text { color: var(--blue); }
+    .yellow-text { color: var(--yellow); }
+    .muted { color: var(--muted); }
+    .mono { font-family: var(--mono); }
+    .table-wrap { overflow-x: auto; max-width: 100%; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    th {
+      text-align: left;
+      color: var(--muted);
       font-size: 12px;
       font-weight: 800;
-      letter-spacing: .08em;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
     }
-    .sat-status {
-      margin-top: 3px;
-      color: var(--status);
-      font-size: 9px;
-      letter-spacing: .12em;
-      text-transform: uppercase;
+    td {
+      padding: 11px 8px;
+      border-bottom: 1px solid var(--line);
+      color: #1f2937;
+      vertical-align: top;
     }
-    .satellite.has-position .sat-frame {
-      border-color: color-mix(in srgb, var(--beam) 42%, rgba(120,150,175,.18));
-      box-shadow: 0 0 24px color-mix(in srgb, var(--beam) 18%, transparent), 0 16px 38px rgba(0,0,0,.38);
+    tr:last-child td { border-bottom: 0; }
+    .empty, .error, .loading {
+      min-height: 138px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      background: var(--surface-2);
+      padding: 18px;
     }
-    .satellite.has-position .sat-icon {
-      box-shadow: 0 0 18px color-mix(in srgb, var(--beam) 46%, transparent), inset 0 0 14px rgba(255,255,255,.06);
+    .error { color: var(--red); background: var(--red-soft); border-color: #facaca; }
+    .stack { display: grid; gap: 12px; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
     }
-    .satellite.has-position .sat-icon .active-ring {
-      position: absolute;
-      inset: -9px;
-      border: 1px solid var(--beam);
-      border-radius: 50%;
-      opacity: .72;
-      animation: ringPulse 2.4s ease-out infinite;
-    }
-    .panel, .drawer, .terminal-strip {
+    .row:last-child { border-bottom: 0; }
+    .kv { display: grid; gap: 3px; }
+    .kv span { color: var(--muted); font-size: 12px; }
+    .kv b { font-size: 14px; overflow-wrap: anywhere; }
+    .tp-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .tp {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 9px;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background:
-        linear-gradient(180deg, rgba(15, 23, 33, .78), rgba(5, 9, 14, .84)),
-        radial-gradient(circle at 20% 0%, rgba(106,183,223,.06), transparent 18rem);
-      box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
-      backdrop-filter: blur(10px);
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .tp.done { color: var(--green); background: var(--green-soft); border-color: #c7ead7; }
+    .progress {
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      background: #e9edf5;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .progress > span { display: block; height: 100%; background: var(--blue); border-radius: 999px; }
+    .chart {
+      width: 100%;
+      min-height: 280px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+      border: 1px solid var(--line);
       overflow: hidden;
     }
-    .drawer { min-height: 610px; }
-    .panel-head {
+    .chart svg { display: block; width: 100%; height: 280px; }
+    .bars { display: grid; gap: 10px; }
+    .bar-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 84px; gap: 10px; align-items: center; }
+    .bar-track { height: 10px; border-radius: 999px; background: #e9edf5; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: var(--blue); }
+    .bar-fill.negative { background: var(--red); }
+    .bias-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .bias-item, .position-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      background: var(--surface-2);
+    }
+    .position-head, .bias-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(120,150,175,.14);
-      background: rgba(4, 8, 13, .45);
+      margin-bottom: 12px;
     }
-    .panel-title {
-      color: var(--blue);
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: .16em;
-      text-transform: uppercase;
-    }
-    .panel-body { padding: 12px; }
-    .drawer-hero {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      align-items: start;
-      padding-bottom: 12px;
-      margin-bottom: 8px;
-      border-bottom: 1px solid rgba(120,150,175,.12);
-    }
-    .drawer-symbol { color: var(--hi); font-size: 22px; font-weight: 800; letter-spacing: .08em; }
-    .drawer-id { margin-top: 4px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
-    .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .kv {
-      min-height: 48px;
-      border: 1px solid rgba(120,150,175,.1);
-      border-radius: 4px;
-      background: rgba(2,5,9,.32);
-      padding: 8px;
-    }
-    .kv .k {
-      color: var(--muted);
-      font-size: 8px;
-      letter-spacing: .13em;
-      text-transform: uppercase;
-    }
-    .kv .v {
-      margin-top: 5px;
-      color: var(--hi);
-      font-size: 11px;
-      overflow-wrap: anywhere;
-    }
-    .position-card {
-      margin-top: 10px;
-      border: 1px solid rgba(106,183,223,.16);
-      border-radius: 5px;
-      background: linear-gradient(180deg, rgba(7,14,20,.78), rgba(3,7,12,.72));
-      padding: 10px;
-      box-shadow: inset 0 0 32px rgba(106,183,223,.035);
-    }
-    .position-card.buy { border-color: rgba(100,211,216,.28); box-shadow: inset 0 0 34px rgba(100,211,216,.045), 0 0 18px rgba(100,211,216,.07); }
-    .position-card.sell { border-color: rgba(216,93,98,.28); box-shadow: inset 0 0 34px rgba(216,93,98,.045), 0 0 18px rgba(216,93,98,.07); }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .filters {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-      margin: 14px 0;
-      padding: 10px;
+    .symbol { font-weight: 850; font-size: 16px; }
+    .side { text-transform: uppercase; color: var(--muted); font-weight: 800; }
+    .mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .info-block {
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background: rgba(5, 9, 14, .68);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+      border-radius: 14px;
+      padding: 14px;
+      background: var(--surface-2);
+      color: #334155;
+      line-height: 1.55;
     }
-    .filters .label {
-      color: var(--muted);
-      font-size: 9px;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-      margin-right: 4px;
-    }
-    .data-grid {
+    .hide { display: none !important; }
+    .desktop-table { display: block; }
+    .mobile-cards { display: none; }
+    .compact-list { display: grid; gap: 10px; }
+    .compact-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface-2);
+      padding: 13px;
       display: grid;
-      grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 14px;
+      gap: 10px;
+      min-width: 0;
     }
-    .span-3 { grid-column: span 3; }
-    .span-4 { grid-column: span 4; }
-    .span-5 { grid-column: span 5; }
-    .span-6 { grid-column: span 6; }
-    .span-7 { grid-column: span 7; }
-    .span-8 { grid-column: span 8; }
-    .span-12 { grid-column: span 12; }
-    .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
-    .metric {
-      min-height: 68px;
-      border: 1px solid rgba(120,150,175,.11);
-      border-radius: 5px;
-      background: linear-gradient(180deg, rgba(5,10,15,.72), rgba(2,5,9,.7));
-      padding: 10px;
-      position: relative;
-      overflow: hidden;
+    .compact-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
     }
-    .metric::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, rgba(106,183,223,.28), transparent);
-    }
-    .metric-label { color: var(--muted); font-size: 8px; letter-spacing: .13em; text-transform: uppercase; }
-    .metric-value { margin-top: 7px; color: var(--hi); font-size: 18px; font-weight: 800; letter-spacing: -.02em; }
-    .metric-small { margin-top: 6px; color: var(--muted); font-size: 9px; }
-    .bot-status-grid { display: grid; gap: 8px; }
-    .bot-row {
-      display: grid;
-      grid-template-columns: 76px 1fr auto;
-      gap: 8px;
-      align-items: center;
-      padding: 8px;
-      border: 1px solid rgba(120,150,175,.1);
-      border-radius: 4px;
-      background: rgba(2,5,9,.28);
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      display: inline-block;
-      margin-right: 7px;
-      background: var(--dot);
-      box-shadow: 0 0 12px var(--dot);
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th, td {
+    .endpoint-error {
+      min-height: auto;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      justify-items: start;
       text-align: left;
-      padding: 8px 8px;
-      border-bottom: 1px solid rgba(120,150,175,.1);
-      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 700;
     }
-    th {
-      color: var(--muted);
-      font-size: 8px;
-      letter-spacing: .13em;
-      text-transform: uppercase;
-      font-weight: 800;
+    .bottom-nav,
+    .sheet-backdrop,
+    .more-sheet { display: none; }
+    @media (max-width: 1400px) {
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-    td { color: var(--text); }
-    .table-wrap { overflow-x: auto; }
-    .empty, .loading, .error {
-      color: var(--muted);
-      min-height: 74px;
-      display: grid;
-      place-items: center;
-      text-align: center;
-      border: 1px dashed rgba(120,150,175,.12);
-      border-radius: 5px;
-      background: rgba(2,5,9,.22);
+    @media (min-width: 1024px) {
+      .sidebar { transform: none !important; }
     }
-    .error { color: var(--red); }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      min-height: 22px;
-      border: 1px solid rgba(120,150,175,.2);
-      border-radius: 999px;
-      padding: 3px 8px;
-      font-size: 8px;
-      font-weight: 800;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-    }
-    .badge.green { color: var(--green); border-color: rgba(69,214,139,.32); }
-    .badge.red { color: var(--red); border-color: rgba(216,93,98,.34); }
-    .badge.yellow { color: var(--yellow); border-color: rgba(211,177,92,.34); }
-    .badge.gray { color: var(--gray); border-color: rgba(113,123,133,.28); }
-    .chart {
-      height: 96px;
-      width: 100%;
-      display: block;
-      border: 1px solid rgba(120,150,175,.1);
-      border-radius: 5px;
-      background:
-        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(106,183,223,.06), transparent);
-      background-size: 100% 24px, 48px 100%, 100% 100%;
-      overflow: hidden;
-    }
-    .shots { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
-    .shot {
-      border: 1px solid rgba(120,150,175,.14);
-      border-radius: 5px;
-      overflow: hidden;
-      background: rgba(2,5,9,.38);
-      cursor: pointer;
-    }
-    .shot img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; filter: contrast(1.02) saturate(.9); }
-    .shot div { padding: 7px; color: var(--muted); font-size: 9px; }
-    dialog {
-      border: 1px solid var(--line2);
-      border-radius: 6px;
-      background: #05080d;
-      color: var(--hi);
-      max-width: min(1120px, 94vw);
-      box-shadow: 0 28px 90px rgba(0,0,0,.62);
-    }
-    dialog::backdrop { background: rgba(0,0,0,.78); backdrop-filter: blur(4px); }
-    dialog img { width: 100%; display: block; }
-    .ui-version {
-      margin: 14px 2px 0;
-      color: rgba(147,163,180,.52);
-      font-size: 10px;
-      text-align: right;
-    }
-    @keyframes diskDrift { to { transform: rotateX(68deg) rotate(350deg); } }
-    @keyframes orbitalDrift {
-      0% { transform: translate(calc(var(--sx) - 5px), calc(var(--sy) + 2px)); }
-      100% { transform: translate(calc(var(--sx) + 5px), calc(var(--sy) - 2px)); }
-    }
-    @keyframes ringPulse {
-      from { opacity: .68; transform: scale(.72); }
-      to { opacity: 0; transform: scale(1.55); }
-    }
-    @media (max-width: 1240px) {
-      .main-grid { grid-template-columns: 1fr; }
-      .cockpit, .drawer { min-height: 560px; }
-      .span-3, .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: span 12; }
-    }
-    @media (max-width: 760px) {
-      .shell { padding: 10px; }
+    @media (min-width: 768px) and (max-width: 1023px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 272px;
+        transform: translateX(-104%);
+        transition: transform .18s ease;
+        box-shadow: var(--shadow);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu { display: inline-flex; align-items: center; justify-content: center; }
+      .main { padding: 18px; }
       .topbar { grid-template-columns: 1fr; }
-      .top-meta { justify-content: flex-start; }
-      .title { font-size: 15px; }
-      .cockpit { min-height: 520px; }
-      .black-hole { width: 210px; height: 210px; }
-      .satellite { width: 118px; margin-left: -59px; }
-      .sat-frame { grid-template-columns: 28px 1fr; gap: 7px; }
-      .sat-icon { width: 25px; height: 25px; }
-      .kv-grid, .metric-grid { grid-template-columns: 1fr; }
-      .shots { grid-template-columns: 1fr; }
+      .status-strip { justify-content: flex-start; }
+      .cols-2, .cols-3, .cols-4, .bias-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+    }
+    @media (max-width: 767px) {
+      button, select, input { min-height: 44px; }
+      .app { grid-template-columns: 1fr; }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: min(292px, 86vw);
+        transform: translateX(-104%);
+        transition: transform .18s ease;
+        box-shadow: var(--shadow);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
+      .main { padding: 14px 12px 92px; }
+      .topbar { grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+      .page-title { font-size: 22px; }
+      .page-subtitle { font-size: 13px; }
+      .status-strip { justify-content: flex-start; overflow: hidden; }
+      .toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
+      .toolbar-left, .toolbar-right { width: 100%; }
+      .toolbar-right button, .toolbar-left select { width: 100%; }
+      .grid, .cols-2, .cols-3, .cols-4, .bias-grid, .metrics, .mini-grid { grid-template-columns: 1fr; }
+      .metrics .metric-card:nth-child(n+5) { display: none; }
+      .card { padding: 14px; border-radius: 14px; }
+      .metric-card { min-height: 92px; }
+      .metric-value { font-size: 20px; }
+      .chart { min-height: 220px; }
+      .chart svg { height: 220px; max-width: 100%; }
+      .bar-row { grid-template-columns: 72px minmax(0, 1fr) 74px; gap: 8px; }
+      .row { align-items: flex-start; }
+      .table-wrap { overflow-x: visible; }
+      table { min-width: 0; }
+      thead { display: none; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      tr {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface-2);
+        padding: 10px 12px;
+        margin-bottom: 10px;
+      }
+      td {
+        display: grid;
+        grid-template-columns: 104px minmax(0, 1fr);
+        gap: 10px;
+        border-bottom: 0;
+        padding: 7px 0;
+        overflow-wrap: anywhere;
+      }
+      td::before {
+        content: attr(data-label);
+        color: var(--muted);
+        font-weight: 800;
+        font-size: 12px;
+      }
+      .desktop-table { display: none; }
+      .mobile-cards { display: block; }
+      .bottom-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 40;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 4px;
+        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+        background: rgba(255,255,255,.97);
+        border-top: 1px solid var(--line);
+        box-shadow: 0 -10px 28px rgba(15, 23, 42, .08);
+      }
+      .bottom-nav button {
+        min-width: 0;
+        min-height: 46px;
+        padding: 0 4px;
+        border: 0;
+        box-shadow: none;
+        border-radius: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .bottom-nav button.active { background: var(--blue-soft); color: var(--blue); }
+      .sheet-backdrop.open {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 38;
+        background: rgba(15, 23, 42, .22);
+      }
+      .more-sheet {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 74px;
+        z-index: 39;
+        display: none;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        padding: 10px;
+      }
+      .more-sheet.open { display: grid; gap: 6px; }
+      .more-sheet button {
+        justify-content: flex-start;
+        text-align: left;
+        box-shadow: none;
+        border-color: transparent;
+        background: var(--surface-2);
+      }
+      .more-sheet button.active { background: var(--blue-soft); color: var(--blue); }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <header class="topbar">
-      <div>
-        <div class="title">MT5 ORBIT COMMAND CENTER</div>
-        <div class="subtitle">Cinematic black-hole trading cockpit / NATIVE_MT5_ONLY</div>
-      </div>
-      <div class="top-meta">
-        <div class="chip"><span>System</span><b id="system-status">loading</b></div>
-        <div class="chip"><span>Bots online</span><b id="bots-online">0/5</b></div>
-        <div class="chip"><span>Last heartbeat</span><b id="heartbeat-age">waiting</b></div>
-        <div class="chip"><span>Terminal time</span><b id="clock">--:--:--</b></div>
-        <button onclick="refreshAll()">Refresh</button>
-      </div>
-    </header>
-
-    <section class="main-grid">
-      <div class="cockpit" id="cockpit">
-        <canvas id="particle-canvas"></canvas>
-        <div class="system-label">System core / live MT5 telemetry</div>
-        <div class="orbit-track" style="--w:330px;--h:154px;--tilt:-9deg;--o:.18"></div>
-        <div class="orbit-track" style="--w:456px;--h:228px;--tilt:7deg;--o:.16"></div>
-        <div class="orbit-track" style="--w:594px;--h:326px;--tilt:-5deg;--o:.14"></div>
-        <div class="orbit-track" style="--w:746px;--h:430px;--tilt:8deg;--o:.12"></div>
-        <div class="lens-ring r1"></div>
-        <div class="lens-ring r2"></div>
-        <div class="lens-ring r3"></div>
-        <div class="black-hole" aria-hidden="true"></div>
-        <div class="beam-layer" id="beam-layer"></div>
-        <div class="bot-layer" id="orbit-nodes"></div>
-      </div>
-      <aside class="drawer">
-        <div class="panel-head">
-          <div class="panel-title">Selected Bot</div>
-          <span class="badge gray" id="drawer-state">waiting</span>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">MT5</div>
+        <div>
+          <div class="brand-title">MT5 Command</div>
+          <div class="brand-subtitle">Broker Dashboard</div>
         </div>
-        <div class="panel-body" id="bot-drawer">
-          <div class="empty">Select a satellite node to inspect live MT5 state</div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-footer">
+        <div>Refresh: <b id="refresh-interval">30s</b></div>
+        <div>Version: <b id="dash-version">broker-dashboard</b></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <button class="mobile-menu" id="menu-toggle" type="button">Menu</button>
+          <h1 class="page-title" id="page-title">Главная</h1>
+          <div class="page-subtitle" id="page-subtitle">Профессиональная панель MT5, Render и persistent storage.</div>
         </div>
-      </aside>
-    </section>
+        <div class="status-strip" id="status-strip"></div>
+      </div>
 
-    <div class="filters">
-      <span class="label">Filters</span>
-      <select id="bot-filter" onchange="onFilterChange()"><option value="ALL">All bots</option></select>
-      <select id="period-filter" onchange="onFilterChange()">
-        <option value="all" selected>All history</option>
-        <option value="today">Today</option>
-        <option value="week">7 days</option>
-        <option value="month">30 days</option>
-      </select>
-      <select id="source-filter" onchange="onFilterChange()">
-        <option value="bot">Live trades</option>
-        <option value="backtest">Backtest</option>
-        <option value="all">All</option>
-      </select>
-      <input id="search-filter" oninput="renderAll()" placeholder="Search bot / symbol / event">
-    </div>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="pill blue"><span class="dot"></span><span id="clock">—</span></span>
+          <span class="pill"><span class="dot"></span>Last update: <span id="last-update">—</span></span>
+        </div>
+        <div class="toolbar-right">
+          <button id="refresh-button" type="button">Refresh</button>
+        </div>
+      </div>
 
-    <section class="data-grid">
-      <div class="panel span-3"><div class="panel-head"><div class="panel-title">Account</div><span class="badge gray">MT5</span></div><div class="panel-body" id="account-panel"></div></div>
-      <div class="panel span-3"><div class="panel-head"><div class="panel-title">PnL Today</div><span class="badge gray">Live</span></div><div class="panel-body" id="pnl-panel"></div></div>
-      <div class="panel span-3"><div class="panel-head"><div class="panel-title">Storage / History Health</div><span class="badge gray" id="storage-risk">DB</span></div><div class="panel-body" id="storage-panel"></div></div>
-      <div class="panel span-6"><div class="panel-head"><div class="panel-title">NY Pre-Market Bias</div><span class="badge yellow" id="bias-risk">waiting</span></div><div class="panel-body" id="bias-panel"></div></div>
-      <div class="panel span-6"><div class="panel-head"><div class="panel-title">Strategy Test Lab</div><span class="badge gray" id="strategy-risk">waiting</span></div><div class="panel-body" id="strategy-lab-panel"></div></div>
-      <div class="panel span-6"><div class="panel-head"><div class="panel-title">Equity Curve</div><span class="badge gray">Closed trades</span></div><div class="panel-body" id="curve-panel"></div></div>
-      <div class="panel span-5"><div class="panel-head"><div class="panel-title">Bot Status</div><span class="badge gray">5 agents</span></div><div class="panel-body" id="bot-status-panel"></div></div>
-      <div class="panel span-7"><div class="panel-head"><div class="panel-title">Open Positions</div><span class="badge gray">Risk monitor</span></div><div class="panel-body" id="positions-panel"></div></div>
-      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Recent Trades</div><span class="badge gray">Execution</span></div><div class="panel-body" id="trades-panel"></div></div>
-      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Alerts</div><span class="badge gray">Blocks</span></div><div class="panel-body" id="alerts-panel"></div></div>
-      <div class="panel span-8"><div class="panel-head"><div class="panel-title">Event Journal</div><span class="badge gray">Native MT5</span></div><div class="panel-body" id="journal-panel"></div></div>
-      <div class="panel span-4"><div class="panel-head"><div class="panel-title">Screenshots</div><span class="badge gray">Chart evidence</span></div><div class="panel-body" id="screens-panel"></div></div>
-      <div class="panel span-12"><div class="panel-head"><div class="panel-title">Backtest / Stats</div><span class="badge yellow">Real and backtest separated</span></div><div class="panel-body" id="history-panel"></div></div>
-    </section>
-    <div class="ui-version">DASHBOARD_UI_VERSION = "20260514_ORBIT_PRO_V2"</div>
+      <section id="content" class="grid"></section>
+    </main>
   </div>
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Mobile dashboard navigation"></nav>
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="more-sheet" id="more-sheet" aria-label="More dashboard pages"></div>
 
-  <dialog id="screenshot-modal" onclick="if(event.target===this)this.close()">
-    <div style="padding:10px;display:flex;justify-content:space-between;gap:12px;align-items:center">
-      <span id="modal-caption" class="muted"></span>
-      <button onclick="document.getElementById('screenshot-modal').close()">Dismiss</button>
-    </div>
-    <img id="modal-image" alt="MT5 screenshot">
-  </dialog>
+  <script>
+    const DASHBOARD_VERSION = 'broker-dashboard-2026-05';
+    const REFRESH_MS = 30000;
+    const ROUTES = [
+      {id:'overview', path:'overview', label:'Главная', subtitle:'Сводка счёта, риска, bias и последних MT5 событий.', icon:'OV'},
+      {id:'portfolio', path:'portfolio', label:'Портфель', subtitle:'Balance, equity, margin и история account snapshots.', icon:'PF'},
+      {id:'positions', path:'positions', label:'Позиции', subtitle:'Открытые позиции, SL, BE и TP checklist.', icon:'PO'},
+      {id:'trades', path:'trades', label:'Сделки', subtitle:'Сегодняшние и последние сделки с фильтрами.', icon:'TR'},
+      {id:'history', path:'history', label:'История', subtitle:'Native history, импорт MT5 и состояние trade storage.', icon:'HI'},
+      {id:'analytics', path:'analytics', label:'Аналитика', subtitle:'Winrate, profit factor, expectancy и symbol performance.', icon:'AN'},
+      {id:'risk', path:'risk', label:'Риск', subtitle:'Daily risk, SL damage и risk status.', icon:'RK'},
+      {id:'bias', path:'bias', label:'Bias', subtitle:'Latest NY pre-market bias и source availability.', icon:'BI'},
+      {id:'lab', path:'lab', label:'Strategy Lab', subtitle:'Data health, recommendations и optimizer status.', icon:'LB'},
+      {id:'storage', path:'storage', label:'Storage', subtitle:'Persistent SQLite, counts, warnings и timestamps.', icon:'ST'},
+      {id:'settings', path:'settings', label:'Настройки', subtitle:'Read-only system, Render, GitHub и endpoint status.', icon:'SE'}
+    ];
+    const MOBILE_NAV = [
+      {id:'overview', label:'Главная'},
+      {id:'positions', label:'Позиции'},
+      {id:'trades', label:'Сделки'},
+      {id:'risk', label:'Риск'},
+      {id:'more', label:'Ещё'}
+    ];
+    const MORE_ROUTES = ['portfolio', 'history', 'analytics', 'bias', 'lab', 'storage', 'settings'];
+    const routeById = Object.fromEntries(ROUTES.map(route => [route.id, route]));
+    const endpointList = [
+      '/api/health',
+      '/api/dashboard/status',
+      '/api/dashboard/system',
+      '/api/dashboard/account',
+      '/api/dashboard/account-history',
+      '/api/dashboard/positions',
+      '/api/dashboard/trades',
+      '/api/dashboard/stats',
+      '/api/dashboard/bots',
+      '/api/dashboard/bias',
+      '/api/dashboard/strategy-lab',
+      '/api/dashboard/strategy-lab/recommendations',
+      '/api/dashboard/strategy-lab/data-health',
+      '/api/dashboard/storage-health'
+    ];
+    const endpoints = {
+      health: '/api/health',
+      status: '/api/dashboard/status',
+      system: '/api/dashboard/system',
+      account: '/api/dashboard/account',
+      accountHistory: '/api/dashboard/account-history?limit=500',
+      positions: '/api/dashboard/positions',
+      trades: '/api/dashboard/trades?source=bot&period=all&asset=ALL&limit=500',
+      stats: '/api/dashboard/stats?source=bot&period=all&asset=ALL',
+      statsToday: '/api/dashboard/stats?source=bot&period=today&asset=ALL',
+      pnl: '/api/dashboard/pnl?period=today',
+      bots: '/api/dashboard/bots',
+      bias: '/api/dashboard/bias',
+      lab: '/api/dashboard/strategy-lab',
+      labRecs: '/api/dashboard/strategy-lab/recommendations',
+      labHealth: '/api/dashboard/strategy-lab/data-health',
+      storage: '/api/dashboard/storage-health',
+      events: '/api/dashboard/events?limit=80',
+      performance: '/api/dashboard/performance?period=all'
+    };
+    const state = {
+      route: 'overview',
+      data: {},
+      errors: {},
+      loading: true,
+      lastUpdate: null,
+      filters: {symbol: 'ALL', result: 'ALL'}
+    };
 
-<script>
-'use strict';
-const API = location.origin;
-const DASHBOARD_UI_VERSION = '20260514_ORBIT_PRO_V2';
-const CACHE_BUSTER = '20260514_2';
-console.info('DASHBOARD_UI_VERSION = "20260514_ORBIT_PRO_V2"');
+    const $ = id => document.getElementById(id);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const arr = value => Array.isArray(value) ? value : [];
+    const obj = value => value && typeof value === 'object' ? value : {};
+    const num = value => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const dash = value => value === null || value === undefined || value === '' ? '—' : value;
+    const raw = value => ({__raw: String(value ?? '')});
+    const renderCell = value => value && typeof value === 'object' && value.__raw !== undefined ? value.__raw : esc(value);
+    const compact = value => {
+      if (value === null || value === undefined || value === '') return '—';
+      const text = String(value);
+      return text.length > 64 ? text.slice(0, 61) + '...' : text;
+    };
+    const money = value => {
+      const n = num(value);
+      if (n === null) return '—';
+      const sign = n > 0 ? '+' : n < 0 ? '-' : '';
+      return `${sign}€${Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    };
+    const price = value => {
+      const n = num(value);
+      return n === null ? '—' : n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    };
+    const pct = value => {
+      const n = num(value);
+      return n === null ? '—' : `${n.toFixed(Math.abs(n) >= 10 ? 0 : 1)}%`;
+    };
+    const signedClass = value => {
+      const n = num(value);
+      return n > 0 ? 'green-text' : n < 0 ? 'red-text' : 'blue-text';
+    };
+    const dateTime = value => {
+      if (!value) return '—';
+      const parsed = new Date(String(value).replace(' ', 'T'));
+      if (Number.isNaN(parsed.getTime())) return esc(value);
+      return parsed.toLocaleString([], {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+    };
+    const ageMinutes = value => {
+      if (!value) return null;
+      const parsed = new Date(String(value).replace(' ', 'T'));
+      if (Number.isNaN(parsed.getTime())) return null;
+      return Math.max(0, Math.round((Date.now() - parsed.getTime()) / 60000));
+    };
 
-const BOT_IDS = [
-  'NAS100_ORB_VWAP_RSI_OF',
-  'SP500_ORB_VWAP_RSI_OF',
-  'DJ30_ORB_VWAP_RSI_OF',
-  'BTCUSD_ORB_VWAP_RSI_OF',
-  'GER40_ORB_VWAP_RSI_OF'
-];
-const SHORT = {
-  NAS100_ORB_VWAP_RSI_OF: 'NAS100',
-  SP500_ORB_VWAP_RSI_OF: 'US500',
-  DJ30_ORB_VWAP_RSI_OF: 'DJ30',
-  BTCUSD_ORB_VWAP_RSI_OF: 'BTCUSD',
-  GER40_ORB_VWAP_RSI_OF: 'GER40'
-};
-const ORBIT_POINTS = [
-  {x:-270,y:-92,speed:'16s'},
-  {x:250,y:-132,speed:'19s'},
-  {x:-185,y:146,speed:'22s'},
-  {x:306,y:126,speed:'24s'},
-  {x:18,y:-214,speed:'20s'}
-];
-let state = { status:null, storageHealth:null, account:null, pnl:null, bots:[], positions:[], trades:[], stats:null, bias:null, strategyLab:null, strategyRecs:null, journal:[], screenshots:[], backtest:null, selected:null, lastEventKey:'' };
-let refreshTimer = null;
-const $ = id => document.getElementById(id);
-const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const num = value => value === null || value === undefined || value === '' || Number.isNaN(Number(value)) ? null : Number(value);
-const fmt = (value, digits=2) => num(value) === null ? 'no data' : num(value).toLocaleString('en-US', {minimumFractionDigits:digits, maximumFractionDigits:digits});
-const money = value => num(value) === null ? 'no data' : (num(value) >= 0 ? '+' : '-') + Math.abs(num(value)).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-const pnlClass = value => num(value) === null ? 'muted' : num(value) >= 0 ? 'green' : 'red';
-const compact = value => value === null || value === undefined || value === '' ? 'no data' : esc(value);
-function age(iso) {
-  if(!iso) return 'waiting heartbeat';
-  const parsed = new Date(iso).getTime();
-  if(Number.isNaN(parsed)) return 'no data';
-  const sec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
-  if(sec < 60) return sec + 's';
-  if(sec < 3600) return Math.floor(sec / 60) + 'm';
-  return Math.floor(sec / 3600) + 'h';
-}
-function dt(iso) {
-  if(!iso) return 'no data';
-  try { return new Date(iso).toLocaleString('en-GB', {month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit'}); }
-  catch { return String(iso); }
-}
-async function api(path, options) {
-  const response = await fetch(API + path, options);
-  if(!response.ok) throw new Error(path + ' HTTP ' + response.status);
-  return response.json();
-}
-async function safeApi(path, fallback) {
-  try {
-    return await api(path);
-  } catch(error) {
-    return {...fallback, ok:false, error:String(error?.message || error)};
-  }
-}
-function period(){ return $('period-filter').value; }
-function selectedBot(){ return $('bot-filter').value; }
-function source(){ return $('source-filter').value; }
-function searchText(){ return $('search-filter').value.trim().toLowerCase(); }
-function botShort(id){ return SHORT[id] || String(id || 'UNKNOWN').split('_')[0]; }
-function sum(values) {
-  const numbers = values.map(num).filter(v => v !== null);
-  return numbers.length ? numbers.reduce((a,b) => a + b, 0) : null;
-}
-function botPosition(bot) {
-  return bot?.active_position || state.positions.find(p => p.bot_id === bot?.bot_id || p.symbol === bot?.symbol || p.symbol === bot?.asset);
-}
-function botStatus(bot) {
-  if(!bot) return {kind:'offline', dot:'var(--gray)', label:'Offline'};
-  const enabled = bot.enabled !== false;
-  const online = bot.online_status === 'online';
-  const stale = bot.online_status === 'stale';
-  const event = String(bot.last_event_type || '').toLowerCase();
-  const reason = String(bot.reason || '').toLowerCase();
-  const hasError = /fail|error|reject|blocked|secret|config/.test(event + ' ' + reason);
-  if(!online && !stale) return {kind:'offline', dot:'var(--gray)', label:'Offline'};
-  if(hasError) return {kind:'error', dot:'var(--red)', label:'Error'};
-  if(!enabled) return {kind:'disabled', dot:'var(--red)', label:'Disabled'};
-  if(stale) return {kind:'stale', dot:'var(--yellow)', label:'Stale'};
-  return {kind:'online', dot:'var(--green)', label:'Online'};
-}
-function mergedBots() {
-  return BOT_IDS.map((id, index) => {
-    const found = state.bots.find(bot => bot.bot_id === id) || {};
-    return {...found, bot_id:id, asset:found.asset || botShort(id), orbit:ORBIT_POINTS[index] || {x:0,y:0,speed:'20s'}};
-  });
-}
-function filterRows(rows) {
-  const bot = selectedBot();
-  const q = searchText();
-  return (rows || []).filter(row => {
-    const matchesBot = bot === 'ALL' || row.bot_id === bot || row.symbol === bot || row.asset === bot;
-    const matchesSearch = !q || JSON.stringify(row).toLowerCase().includes(q);
-    return matchesBot && matchesSearch;
-  });
-}
-function metric(label, value, klass='', hint='') {
-  return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${klass}">${value}</div>${hint ? `<div class="metric-small">${hint}</div>` : ''}</div>`;
-}
-function table(headers, rows, empty) {
-  if(!rows.length) return `<div class="empty">${empty}</div>`;
-  return `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
-}
-function field(obj, names) {
-  for(const name of names) {
-    if(obj && obj[name] !== undefined && obj[name] !== null && obj[name] !== '') return obj[name];
-  }
-  return null;
-}
-function renderTop() {
-  const status = state.status || {};
-  const bots = mergedBots();
-  const online = bots.filter(bot => bot.online_status === 'online').length;
-  $('system-status').textContent = status.system_mode || 'NATIVE_MT5_ONLY';
-  $('system-status').className = status.trading_enabled === false ? 'red' : 'green';
-  $('bots-online').textContent = `${online}/${BOT_IDS.length}`;
-  $('heartbeat-age').textContent = age(status.last_heartbeat_at);
-  $('clock').textContent = new Date().toLocaleTimeString('en-GB');
-}
-function renderBotOptions() {
-  const current = selectedBot();
-  $('bot-filter').innerHTML = '<option value="ALL">All bots</option>' + BOT_IDS.map(id => `<option value="${id}">${botShort(id)}</option>`).join('');
-  $('bot-filter').value = current || 'ALL';
-}
-function renderOrbit() {
-  const cockpit = $('cockpit').getBoundingClientRect();
-  const centerX = cockpit.width / 2;
-  const centerY = cockpit.height * .48;
-  const selected = state.selected || selectedBot();
-  const beams = [];
-  const nodes = mergedBots().map(bot => {
-    const status = botStatus(bot);
-    const pos = bot.orbit;
-    const active = botPosition(bot);
-    const side = String(active?.side || active?.type || '').toLowerCase();
-    const beam = side === 'sell' ? 'var(--orange)' : 'var(--cyan)';
-    if(active) {
-      const dx = pos.x;
-      const dy = pos.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-      beams.push(`<div class="position-beam" style="--len:${len}px;--angle:${angle}deg;--beam:${beam}"></div>`);
+    function initialRoute() {
+      const hash = window.location.hash.replace('#', '').replace('/', '');
+      if (routeById[hash]) return hash;
+      const path = window.location.pathname.replace(/^\/dashboard\/?/, '').replace('/', '');
+      return routeById[path] ? path : 'overview';
     }
-    const isSelected = selected === bot.bot_id;
-    return `<button class="satellite ${active ? 'has-position' : ''} ${isSelected ? 'selected' : ''}" style="--sx:${pos.x}px;--sy:${pos.y}px;--speed:${pos.speed};--status:${status.dot};--beam:${beam}" onclick="selectBot('${bot.bot_id}')">
-      <div class="sat-frame">
-        <div class="sat-icon"><span class="status-dot"></span>${active ? '<span class="active-ring"></span>' : ''}</div>
-        <div><div class="sat-name">${botShort(bot.bot_id)}</div><div class="sat-status">${status.label}${active ? ' / Active trade' : ''}</div></div>
-      </div>
-    </button>`;
-  }).join('');
-  $('beam-layer').innerHTML = beams.join('');
-  $('orbit-nodes').innerHTML = nodes;
-  const latest = (state.journal[0] && (state.journal[0].trade_uid || state.journal[0].id || state.journal[0].created_at)) || '';
-  if(latest && state.lastEventKey && latest !== state.lastEventKey) {
-    $('cockpit').animate([{boxShadow:'inset 0 0 80px rgba(0,0,0,.58), 0 0 0 rgba(201,152,88,0)'},{boxShadow:'inset 0 0 80px rgba(0,0,0,.58), 0 0 42px rgba(201,152,88,.22)'}], {duration:720, iterations:1});
-  }
-  if(latest) state.lastEventKey = latest;
-}
-function selectBot(id) {
-  state.selected = id;
-  $('bot-filter').value = id;
-  renderAll();
-}
-function renderDrawer() {
-  const id = state.selected || selectedBot();
-  const bot = id && id !== 'ALL' ? mergedBots().find(item => item.bot_id === id) : null;
-  if(!bot) {
-    $('drawer-state').textContent = 'waiting';
-    $('drawer-state').className = 'badge gray';
-    $('bot-drawer').innerHTML = '<div class="empty">Select a satellite node to inspect live MT5 state</div>';
-    return;
-  }
-  const status = botStatus(bot);
-  const pos = botPosition(bot);
-  const side = String(pos?.side || pos?.type || '').toLowerCase();
-  const pnlValue = field(pos, ['profit','pnl','floating_pnl']);
-  const botTrades = state.trades.filter(t => t.bot_id === bot.bot_id);
-  const wins = botTrades.filter(t => num(t.profit_money ?? t.profit ?? t.pnl) > 0).length;
-  const losses = botTrades.filter(t => num(t.profit_money ?? t.profit ?? t.pnl) < 0).length;
-  const lastJournal = state.journal.find(e => e.bot_id === bot.bot_id) || {};
-  $('drawer-state').textContent = status.label;
-  $('drawer-state').className = 'badge ' + (status.kind === 'online' ? 'green' : status.kind === 'error' || status.kind === 'disabled' ? 'red' : status.kind === 'stale' ? 'yellow' : 'gray');
-  $('bot-drawer').innerHTML = `
-    <div class="drawer-hero">
-      <div><div class="drawer-symbol">${botShort(bot.bot_id)}</div><div class="drawer-id">${esc(bot.bot_id)}</div></div>
-      <span class="badge ${status.kind === 'online' ? 'green' : status.kind === 'error' || status.kind === 'disabled' ? 'red' : status.kind === 'stale' ? 'yellow' : 'gray'}">${status.label}</span>
-    </div>
-    <div class="kv-grid">
-      ${kv('Symbol', bot.symbol || bot.asset)}
-      ${kv('Enabled', bot.enabled !== false ? 'Enabled' : 'Disabled', bot.enabled !== false ? 'green' : 'red')}
-      ${kv('Heartbeat', age(bot.last_heartbeat_at))}
-      ${kv('Last event', bot.last_event_type || lastJournal.event_type)}
-      ${kv('Magic', field(bot, ['magic','magic_number']) || field(pos, ['magic','magic_number']))}
-      ${kv('Lot', field(bot, ['lot','lots']) || field(pos, ['lot','lots','volume']))}
-      ${kv('ORB window', field(bot, ['orb_window','orb','orb_time']))}
-      ${kv('VWAP filter', field(bot, ['vwap_filter','use_vwap','vwap']))}
-      ${kv('OrderFlow filter', field(bot, ['orderflow_filter','use_orderflow','orderflow']))}
-      ${kv('TP enabled', field(bot, ['tp_enabled','take_profit_enabled']))}
-      ${kv('TP fixed values', field(bot, ['tp_fixed','tp_values','tp1_fixed']))}
-      ${kv('Exit flags', field(bot, ['exit_flags','return_inside','vwap_invalid']))}
-    </div>
-    <div class="position-card ${side === 'sell' ? 'sell' : side === 'buy' ? 'buy' : ''}">
-      <div class="panel-title">Open Position</div>
-      <div class="kv-grid" style="margin-top:9px">
-        ${kv('Side', pos ? (pos.side || pos.type || 'no data') : 'no open position', side === 'sell' ? 'red' : side === 'buy' ? 'green' : '')}
-        ${kv('Floating PnL', pos ? money(pnlValue) : 'no data', pnlClass(pnlValue))}
-        ${kv('Entry', pos ? field(pos, ['entry','entry_price','open_price']) : null)}
-        ${kv('SL', pos ? field(pos, ['sl','stop_loss']) : null)}
-        ${kv('TP1 / TP2 / TP3', pos ? `${fmt(pos.tp1,5)} / ${fmt(pos.tp2,5)} / ${fmt(pos.tp3,5)}` : null)}
-        ${kv('Opened', pos ? dt(pos.opened_at || pos.time || pos.open_time) : null)}
-      </div>
-    </div>
-    <div class="kv-grid" style="margin-top:10px">
-      ${kv('Today PnL', money(sum(botTrades.map(t => t.profit_money ?? t.profit ?? t.pnl))), pnlClass(sum(botTrades.map(t => t.profit_money ?? t.profit ?? t.pnl))))}
-      ${kv('Win / Loss', `<span class="green">${wins}</span> / <span class="red">${losses}</span>`)}
-      ${kv('Last error', findLastError(bot.bot_id) || bot.reason)}
-      ${kv('Equity snapshot', state.account ? fmt(state.account.equity) : null)}
-    </div>
-    <div class="actions">
-      <button onclick="refreshAll()">Refresh</button>
-      <button class="good" onclick="toggleBot('${bot.bot_id}', true)">Enable bot</button>
-      <button class="danger" onclick="toggleBot('${bot.bot_id}', false)">Disable bot</button>
-      <button onclick="focusPanel('bot-status-panel')">View details</button>
-      <button onclick="openLastScreenshot('${bot.bot_id}')">Screenshots</button>
-      <button onclick="focusPanel('journal-panel')">Journal</button>
-    </div>`;
-}
-function kv(label, value, klass='') {
-  const empty = value === null || value === undefined || value === '';
-  return `<div class="kv"><div class="k">${label}</div><div class="v ${klass}">${empty ? 'no data' : value}</div></div>`;
-}
-function findLastError(botId) {
-  const entry = state.journal.find(item => item.bot_id === botId && /fail|error|reject|blocked|secret|config/i.test(String(item.event_type || item.message || '')));
-  return entry && (entry.message || entry.event_type);
-}
-async function toggleBot(botId, enabled) {
-  let secret = sessionStorage.getItem('control_secret') || '';
-  if(!secret) {
-    secret = prompt('Control secret for enable/disable');
-    if(secret) sessionStorage.setItem('control_secret', secret);
-  }
-  if(!secret) return;
-  try {
-    await api(enabled ? '/api/bots/enable' : '/api/bots/disable', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({bot_id:botId, secret, reason:'dashboard control'})
-    });
-    await refreshAll();
-  } catch(error) {
-    alert('Control request failed: ' + error.message);
-  }
-}
-function renderAccount() {
-  const a = state.account;
-  if(!a) { $('account-panel').innerHTML = '<div class="empty">no account snapshot yet</div>'; return; }
-  $('account-panel').innerHTML = `<div class="metric-grid">
-    ${metric('Balance', fmt(a.balance))}
-    ${metric('Equity', fmt(a.equity), 'blue')}
-    ${metric('Margin', fmt(a.margin))}
-    ${metric('Free margin', fmt(a.free_margin))}
-    ${metric('Margin level', num(a.margin_level) === null ? 'no data' : fmt(a.margin_level,1) + '%', num(a.margin_level) > 120 ? 'green' : 'yellow')}
-    ${metric('Open positions', a.open_positions ?? state.positions.length)}
-  </div>`;
-}
-function renderPnl() {
-  const p = state.pnl || {};
-  const closed = p.closed_pnl ?? p.net_pnl;
-  const floating = sum(state.positions.map(x => x.profit ?? x.pnl ?? x.floating_pnl));
-  const trades = p.trades_count ?? p.closed_trades_count ?? 0;
-  const wins = p.wins ?? 0;
-  const losses = p.losses ?? 0;
-  const winrate = trades ? wins / trades * 100 : null;
-  $('pnl-panel').innerHTML = `<div class="metric-grid">
-    ${metric('Closed PnL', money(closed), pnlClass(closed))}
-    ${metric('Floating PnL', money(floating), pnlClass(floating))}
-    ${metric('Trades', trades)}
-    ${metric('Wins / Losses', `<span class="green">${wins}</span> / <span class="red">${losses}</span>`)}
-    ${metric('Winrate', winrate === null ? 'no trades' : winrate.toFixed(0) + '%', winrate === null ? '' : winrate >= 50 ? 'green' : 'red')}
-    ${metric('Best / Worst', `<span class="green">${money(p.best_trade)}</span> / <span class="red">${money(p.worst_trade)}</span>`)}
-  </div>`;
-}
-function renderStorageHealth() {
-  const health = state.storageHealth || {};
-  const persistent = health.db_storage === 'render_persistent_disk' && health.db_file_exists && !health.db_warning;
-  $('storage-risk').textContent = persistent ? 'persistent' : 'warning';
-  $('storage-risk').className = 'badge ' + (persistent ? 'green' : 'yellow');
-  const warnings = health.warnings || [];
-  const historyEmpty = warnings.includes('history_empty');
-  $('storage-panel').innerHTML = `<div class="metric-grid">
-    ${metric('DB persistent', persistent ? 'yes' : 'no', persistent ? 'green' : 'red')}
-    ${metric('Trades found', health.trades_total ?? 0, historyEmpty ? 'yellow' : 'blue')}
-    ${metric('Closed trades', health.closed_trades_total ?? 0)}
-    ${metric('Native history', health.native_history_total ?? 0)}
-    ${metric('Last trade', dt(health.latest_trade_time))}
-    ${metric('Warning', warnings.length ? compact(warnings.slice(0,2).join(' / ')) : 'none', warnings.length ? 'yellow' : 'green')}
-  </div>`;
-}
-function renderBias() {
-  const bias = state.bias;
-  if(!bias || !bias.symbols || !bias.symbols.length) {
-    $('bias-risk').textContent = 'waiting';
-    $('bias-risk').className = 'badge gray';
-    $('bias-panel').innerHTML = '<div class="empty">no NY pre-market bias report yet</div>';
-    return;
-  }
-  const risk = String(bias.macro_risk || 'UNKNOWN').toUpperCase();
-  $('bias-risk').textContent = 'Macro ' + risk;
-  $('bias-risk').className = 'badge ' + (risk === 'HIGH' ? 'red' : risk === 'LOW' ? 'green' : 'yellow');
-  const sources = bias.source_availability || {};
-  const sourceText = Object.entries(sources).map(([key, value]) => `${key}:${value}`).join(' / ') || 'no sources';
-  const rows = filterRows(bias.symbols).map(row => {
-    const klass = row.bias === 'LONG' ? 'green' : row.bias === 'SHORT' ? 'red' : 'yellow';
-    const rowSources = row.source_availability || {};
-    const rowSourceText = Object.entries(rowSources).filter(([, value]) => value !== 'unavailable').map(([key, value]) => `${key}:${value}`).join(' / ') || 'limited';
-    return `<tr><td class="blue">${compact(row.symbol)}</td><td class="${klass}">${compact(row.bias)}</td><td>${row.confidence ?? 0}%</td><td>${Math.round(row.data_quality_score || 0)}%</td><td>${compact(rowSourceText)}</td><td>${compact((row.reasons || []).slice(0,2).join('; '))}</td></tr>`;
-  });
-  $('bias-panel').innerHTML = `<div class="metric-grid" style="margin-bottom:8px">
-    ${metric('Last update', dt(bias.run_at))}
-    ${metric('NY / DE time', `${compact(bias.ny_time)} / ${compact(bias.berlin_time)}`)}
-    ${metric('Data quality', `${Math.round(bias.data_quality_score || 0)}%`, (bias.data_quality_score || 0) >= 60 ? 'green' : 'yellow')}
-    ${metric('Sources', compact(sourceText))}
-  </div>${table(['symbol','bias','confidence','quality','sources','reason'], rows, 'no bias rows for selected filter')}`;
-}
-function renderStrategyLab() {
-  const lab = state.strategyLab || {};
-  const recs = state.strategyRecs || {};
-  const panel = $('strategy-lab-panel');
-  if(!lab.ok) {
-    $('strategy-risk').textContent = 'waiting';
-    $('strategy-risk').className = 'badge gray';
-    panel.innerHTML = '<div class="empty">no strategy lab data yet</div>';
-    return;
-  }
-  const bot = selectedBot();
-  const symbols = lab.per_symbol || {};
-  const scoped = bot === 'ALL' ? Object.values(symbols) : Object.values(symbols).filter(item => item.symbol === botShort(bot) || item.symbol === 'SP500' && botShort(bot) === 'US500');
-  const worst = (scoped.length ? scoped : Object.values(symbols)).slice().sort((a,b) => (num(b.risk_damage?.single_loss_damage_days) || 0) - (num(a.risk_damage?.single_loss_damage_days) || 0))[0];
-  const damage = worst?.risk_damage || lab.risk_damage_analytics || {};
-  const diag = worst?.tp_sl_diagnostics || {};
-  const status = String(damage.risk_status || 'UNKNOWN');
-  $('strategy-risk').textContent = status;
-  $('strategy-risk').className = 'badge ' + (status === 'OK' ? 'green' : status === 'DANGEROUS' ? 'yellow' : status === 'UNKNOWN' ? 'gray' : 'red');
-  const bestMap = recs.best_candidate_settings_per_symbol || {};
-  const best = worst ? bestMap[worst.symbol] : null;
-  const settings = best?.settings || {};
-  const warn = (num(damage.single_loss_damage_days) || 0) > 3 ? '<div class="error" style="margin-top:8px">One SL can erase more than 3 average profitable days</div>' : '';
-  panel.innerHTML = `<div class="metric-grid">
-    ${metric('Problem symbol', worst ? worst.symbol : 'no data', status === 'OK' ? 'green' : 'red')}
-    ${metric('One SL erases', damage.single_loss_damage_days !== null && damage.single_loss_damage_days !== undefined ? fmt(damage.single_loss_damage_days,1) + ' days' : 'no data', (num(damage.single_loss_damage_days) || 0) > 3 ? 'red' : 'green')}
-    ${metric('Current SL/TP', diag.sl_tp_ratio !== null && diag.sl_tp_ratio !== undefined ? fmt(diag.sl_tp_ratio,2) + 'x' : 'no data', (num(diag.sl_tp_ratio) || 0) > 3 ? 'yellow' : 'blue')}
-    ${metric('Best setup', settings.tp1_R ? `TP1 ${fmt(settings.tp1_R,1)}R / BE ${compact(settings.be_after_tp1)}` : 'no passing setup')}
-    ${metric('Profit factor', best?.metrics?.profit_factor !== undefined ? fmt(best.metrics.profit_factor,2) : fmt(damage.profit_factor,2), 'blue')}
-    ${metric('Expectancy R', best?.metrics?.expectancy_R !== undefined && best.metrics.expectancy_R !== null ? fmt(best.metrics.expectancy_R,2) + 'R' : (damage.expectancy_R !== null && damage.expectancy_R !== undefined ? fmt(damage.expectancy_R,2) + 'R' : 'no data'), 'gold')}
-    ${metric('Max drawdown', best?.metrics?.max_drawdown !== undefined ? money(-Math.abs(best.metrics.max_drawdown)) : money(-Math.abs(damage.max_drawdown || 0)), 'red')}
-    ${metric('Sample', lab.sample_warning || worst?.sample_warning || 'OK', lab.sample_warning || worst?.sample_warning ? 'yellow' : 'green')}
-  </div>${warn}`;
-}
-function renderCurve() {
-  const closed = state.trades.slice().reverse().map(t => num(t.profit_money ?? t.profit ?? t.pnl)).filter(v => v !== null);
-  let acc = 0;
-  const points = closed.map(value => (acc += value));
-  if(!points.length) { $('curve-panel').innerHTML = '<div class="empty">no equity curve data</div>'; return; }
-  const min = Math.min(...points, 0);
-  const max = Math.max(...points, 0);
-  const range = max - min || 1;
-  const path = points.map((value, index) => `${index ? 'L' : 'M'} ${index / (points.length - 1 || 1) * 100} ${88 - ((value - min) / range) * 76}`).join(' ');
-  const zero = 88 - ((0 - min) / range) * 76;
-  $('curve-panel').innerHTML = `<svg class="chart" viewBox="0 0 100 96" preserveAspectRatio="none">
-    <path d="${path}" fill="none" stroke="var(--cyan)" stroke-width="1.5"/>
-    <path d="${path} L 100 96 L 0 96 Z" fill="rgba(100,211,216,.08)"/>
-    <line x1="0" y1="${zero}" x2="100" y2="${zero}" stroke="rgba(201,152,88,.28)" stroke-width=".6"/>
-  </svg>`;
-}
-function renderBotStatusPanel() {
-  const rows = mergedBots().map(bot => {
-    const status = botStatus(bot);
-    const pos = botPosition(bot);
-    return `<div class="bot-row" onclick="selectBot('${bot.bot_id}')">
-      <div><span class="dot" style="--dot:${status.dot}"></span><span class="blue">${botShort(bot.bot_id)}</span></div>
-      <div><div>${status.label} / ${bot.enabled !== false ? 'Enabled' : 'Disabled'}</div><div class="muted">HB ${age(bot.last_heartbeat_at)} / ${compact(bot.last_event_type || 'no event')}</div></div>
-      <div class="${pos ? pnlClass(pos.profit ?? pos.pnl ?? pos.floating_pnl) : 'muted'}">${pos ? money(pos.profit ?? pos.pnl ?? pos.floating_pnl) : 'flat'}</div>
-    </div>`;
-  });
-  $('bot-status-panel').innerHTML = `<div class="bot-status-grid">${rows.join('')}</div>`;
-}
-function renderPositions() {
-  const rows = filterRows(state.positions).map(pos => {
-    const side = String(pos.side || pos.type || '').toLowerCase();
-    return `<tr><td class="blue">${compact(pos.symbol)}</td><td class="${side === 'buy' ? 'green' : 'red'}">${compact(pos.side || pos.type)}</td><td>${fmt(pos.lot ?? pos.volume,2)}</td><td>${fmt(pos.entry ?? pos.entry_price ?? pos.open_price,5)}</td><td>${fmt(pos.sl ?? pos.stop_loss,5)}</td><td>${fmt(pos.tp1,5)} / ${fmt(pos.tp2,5)} / ${fmt(pos.tp3,5)}</td><td class="${pnlClass(pos.profit ?? pos.pnl ?? pos.floating_pnl)}">${money(pos.profit ?? pos.pnl ?? pos.floating_pnl)}</td><td>${dt(pos.opened_at || pos.time || pos.open_time)}</td><td>${compact(pos.bot_id || pos.magic || pos.magic_number)}</td></tr>`;
-  });
-  $('positions-panel').innerHTML = table(['symbol','side','lot','entry','sl','tp1/tp2/tp3','floating pnl','opened','bot'], rows, 'no open positions');
-}
-function renderTrades() {
-  const rows = filterRows(state.trades).slice(0,80).map(trade => {
-    const side = String(trade.side || '').toLowerCase();
-    const pnl = trade.profit_money ?? trade.profit ?? trade.pnl;
-    return `<tr><td>${dt(trade.closed_at || trade.close_time || trade.created_at || trade.time)}</td><td class="blue">${compact(trade.bot_id)}</td><td>${compact(trade.symbol)}</td><td class="${side === 'buy' ? 'green' : 'red'}">${compact(trade.side)}</td><td>${fmt(trade.lot ?? trade.volume ?? trade.lots,2)}</td><td>${fmt(trade.entry ?? trade.entry_price ?? trade.open_price,5)}</td><td>${fmt(trade.exit_price ?? trade.close_price,5)}</td><td class="${pnlClass(pnl)}">${money(pnl)}</td><td>${compact(trade.status || trade.close_reason || trade.reason)}</td></tr>`;
-  });
-  $('trades-panel').innerHTML = table(['time','bot','symbol','side','lot','entry','exit','pnl','status'], rows, 'no trades for selected filter');
-}
-function renderJournal() {
-  const rows = filterRows(state.journal).slice(0,120).map(entry => {
-    const event = entry.event_type || entry.type || '';
-    return `<tr><td>${dt(entry.created_at || entry.time || entry.timestamp)}</td><td class="blue">${compact(entry.bot_id)}</td><td class="${/fail|error|reject|blocked/i.test(event) ? 'red' : 'gold'}">${compact(event)}</td><td>${compact(entry.message || entry.detail || entry.details)}</td><td>${compact(entry.source || 'mt5_native')}</td></tr>`;
-  });
-  $('journal-panel').innerHTML = table(['time','bot','event_type','message','source'], rows, 'journal is empty');
-}
-function renderAlerts() {
-  const alerts = mergedBots().filter(bot => botStatus(bot).kind !== 'online').map(bot => {
-    const status = botStatus(bot);
-    return `<div class="kv"><div class="k">${botShort(bot.bot_id)}</div><div class="v ${status.kind === 'error' || status.kind === 'disabled' ? 'red' : 'yellow'}">${status.label} / ${compact(bot.reason || bot.online_status || 'no details')}</div></div>`;
-  });
-  $('alerts-panel').innerHTML = alerts.length ? `<div class="kv-grid" style="grid-template-columns:1fr">${alerts.join('')}</div>` : '<div class="empty">no active alerts</div>';
-}
-function renderScreens() {
-  const shots = filterRows(state.screenshots).slice(0,6);
-  if(!shots.length) { $('screens-panel').innerHTML = '<div class="empty">no screenshots</div>'; return; }
-  $('screens-panel').innerHTML = `<div class="shots">${shots.map(shot => `<div class="shot" onclick="openScreenshot(${shot.id})"><img src="${esc(shot.url)}" loading="lazy" alt="screenshot"><div>${compact(shot.bot_id)} / ${compact(shot.event_type)} / ${dt(shot.time || shot.created_at)}</div></div>`).join('')}</div>`;
-}
-function renderHistory() {
-  const stats = state.stats || {};
-  const backtest = state.backtest?.summary || {};
-  $('history-panel').innerHTML = `<div class="metric-grid">
-    ${metric('REAL trades', stats.total_trades ?? 0)}
-    ${metric('REAL PnL', money(stats.total_pnl), pnlClass(stats.total_pnl))}
-    ${metric('REAL winrate', stats.win_rate !== undefined && stats.win_rate !== null ? fmt(stats.win_rate,1) + '%' : 'no data')}
-    ${metric('REAL profit factor', stats.profit_factor !== undefined && stats.profit_factor !== null ? fmt(stats.profit_factor,2) : 'no data', 'blue')}
-    ${metric('BACKTEST trades', backtest.total_trades ?? backtest.total ?? 0)}
-    ${metric('BACKTEST PnL', money(backtest.total_pnl), pnlClass(backtest.total_pnl))}
-    ${metric('BACKTEST winrate', backtest.win_rate !== undefined && backtest.win_rate !== null ? fmt(backtest.win_rate,1) + '%' : 'no data')}
-    ${metric('BACKTEST profit factor', backtest.profit_factor !== undefined && backtest.profit_factor !== null ? fmt(backtest.profit_factor,2) : 'no data', 'blue')}
-  </div>`;
-}
-function openScreenshot(id) {
-  const shot = state.screenshots.find(item => item.id === id);
-  if(!shot) return;
-  $('modal-image').src = shot.url;
-  $('modal-caption').textContent = `${shot.bot_id || ''} / ${shot.event_type || ''} / ${dt(shot.time || shot.created_at)}`;
-  $('screenshot-modal').showModal();
-}
-function openLastScreenshot(botId) {
-  const shot = state.screenshots.find(item => item.bot_id === botId);
-  if(shot) openScreenshot(shot.id);
-  else alert('No screenshot for selected bot');
-}
-function focusPanel(id) {
-  $(id).scrollIntoView({behavior:'smooth', block:'center'});
-}
-function renderAll() {
-  renderTop();
-  renderBotOptions();
-  renderOrbit();
-  renderDrawer();
-  renderAccount();
-  renderPnl();
-  renderStorageHealth();
-  renderBias();
-  renderStrategyLab();
-  renderCurve();
-  renderBotStatusPanel();
-  renderPositions();
-  renderTrades();
-  renderJournal();
-  renderAlerts();
-  renderScreens();
-  renderHistory();
-}
-async function refreshAll() {
-  const bot = selectedBot();
-  const per = period();
-  const src = source();
-  const asset = bot === 'ALL' ? 'ALL' : bot;
-  try {
-    const [status, storageHealth, account, pnl, bots, positions, trades, stats, bias, strategyLab, strategyRecs, journal, screens, backtest] = await Promise.all([
-      safeApi('/api/dashboard/status', {system_mode:'unavailable', trading_enabled:null, bots_total:0, bots_online:0, bots_enabled:0}),
-      safeApi('/api/dashboard/storage-health', {trades_total:0, closed_trades_total:0, native_history_total:0, warnings:['storage_health_unavailable']}),
-      safeApi('/api/dashboard/account', {account:null}),
-      safeApi('/api/dashboard/pnl?period=today', {pnl:{}}),
-      safeApi('/api/dashboard/bots', {bots:[]}),
-      safeApi('/api/dashboard/positions', {positions:[]}),
-      safeApi(`/api/dashboard/trades?source=${encodeURIComponent(src)}&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}&limit=100`, {trades:[], total:0}),
-      safeApi(`/api/dashboard/stats?source=bot&period=${encodeURIComponent(per)}&asset=${encodeURIComponent(asset)}`, {stats:{}}),
-      safeApi('/api/dashboard/bias', {bias:null}),
-      safeApi(`/api/dashboard/strategy-lab?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`, {trade_count:0, sample_warning:'NO_DATA', risk_damage_analytics:{}, per_symbol:{}, critical_problems:[]}),
-      safeApi(`/api/dashboard/strategy-lab/recommendations?symbol=${bot === 'ALL' ? '' : encodeURIComponent(botShort(bot))}`, {best_candidate_settings_per_symbol:{}, rejected_settings:[], risk_warnings:[], sample_size_warning:null}),
-      safeApi(`/api/dashboard/journal?period=${encodeURIComponent(per)}&bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=150`, {journal:[]}),
-      safeApi(`/api/dashboard/screenshots?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=24`, {screenshots:[]}),
-      safeApi(`/api/dashboard/backtest?bot_id=${bot === 'ALL' ? '' : encodeURIComponent(bot)}&limit=200`, {summary:{}, trades:[]})
-    ]);
-    state.status = status || {};
-    state.storageHealth = storageHealth || {};
-    state.account = account.account || null;
-    state.pnl = pnl.pnl || {};
-    state.bots = bots.bots || [];
-    state.positions = positions.positions || [];
-    state.trades = trades.trades || [];
-    state.stats = stats.stats || {};
-    state.bias = bias.bias || null;
-    state.strategyLab = strategyLab || null;
-    state.strategyRecs = strategyRecs || null;
-    state.journal = journal.journal || [];
-    state.screenshots = screens.screenshots || [];
-    state.backtest = backtest || {};
-    renderAll();
-  } catch(error) {
-    console.error(error);
-    $('system-status').textContent = 'API ERROR';
-    $('system-status').className = 'red';
-    ['account-panel','pnl-panel','storage-panel','bias-panel','strategy-lab-panel','curve-panel','bot-status-panel','positions-panel','trades-panel','alerts-panel','journal-panel','screens-panel','history-panel'].forEach(id => {
-      if(!$(id).innerHTML) $(id).innerHTML = '<div class="error">API data unavailable</div>';
-    });
-  }
-}
-function onFilterChange() {
-  const bot = selectedBot();
-  state.selected = bot === 'ALL' ? state.selected : bot;
-  refreshAll();
-}
-function initParticles() {
-  const canvas = $('particle-canvas');
-  const ctx = canvas.getContext('2d');
-  let particles = [];
-  function resize() {
-    const rect = canvas.parentElement.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    particles = Array.from({length: Math.min(120, Math.floor(rect.width / 9))}, () => ({
-      x: Math.random() * rect.width,
-      y: Math.random() * rect.height,
-      z: Math.random(),
-      vx: (Math.random() - .5) * .08,
-      vy: (Math.random() - .5) * .06
-    }));
-  }
-  function frame() {
-    const rect = canvas.parentElement.getBoundingClientRect();
-    ctx.clearRect(0,0,rect.width,rect.height);
-    for(const p of particles) {
-      p.x += p.vx;
-      p.y += p.vy;
-      if(p.x < 0) p.x = rect.width;
-      if(p.x > rect.width) p.x = 0;
-      if(p.y < 0) p.y = rect.height;
-      if(p.y > rect.height) p.y = 0;
-      const alpha = .12 + p.z * .34;
-      ctx.fillStyle = `rgba(170,190,205,${alpha})`;
-      ctx.fillRect(p.x, p.y, p.z > .72 ? 1.4 : 1, p.z > .72 ? 1.4 : 1);
+
+    function setRoute(routeId) {
+      state.route = routeById[routeId] ? routeId : 'overview';
+      const currentHash = window.location.hash.replace('#', '');
+      if (currentHash !== state.route) window.location.hash = state.route;
+      render();
+      closeSidebar();
+      closeMoreSheet();
     }
-    requestAnimationFrame(frame);
-  }
-  resize();
-  window.addEventListener('resize', resize);
-  frame();
-}
-setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString('en-GB'); }, 1000);
-initParticles();
-refreshAll();
-refreshTimer = setInterval(refreshAll, 8000);
-</script>
+
+    function renderNav() {
+      $('nav').innerHTML = ROUTES.map(route => `
+        <a href="#${route.id}" class="${state.route === route.id ? 'active' : ''}" data-route="${route.id}">
+          <span class="nav-icon">${esc(route.icon)}</span>
+          <span>${esc(route.label)}</span>
+        </a>`).join('');
+      document.querySelectorAll('[data-route]').forEach(link => {
+        link.addEventListener('click', event => {
+          event.preventDefault();
+          setRoute(link.dataset.route);
+        });
+      });
+    }
+
+    function renderBottomNav() {
+      const bottomNav = $('bottom-nav');
+      const moreSheet = $('more-sheet');
+      if (!bottomNav || !moreSheet) return;
+      const isMoreActive = MORE_ROUTES.includes(state.route);
+      bottomNav.innerHTML = MOBILE_NAV.map(item => `
+        <button type="button" class="${item.id === state.route || (item.id === 'more' && isMoreActive) ? 'active' : ''}" data-mobile-route="${item.id}">
+          ${esc(item.label)}
+        </button>`).join('');
+      moreSheet.innerHTML = MORE_ROUTES.map(routeId => {
+        const route = routeById[routeId];
+        return `<button type="button" class="${state.route === routeId ? 'active' : ''}" data-more-route="${routeId}">
+          ${esc(route.label)}
+        </button>`;
+      }).join('') + '<button type="button" data-refresh-mobile>Dashboard refresh</button>';
+      bottomNav.querySelectorAll('[data-mobile-route]').forEach(button => {
+        button.addEventListener('click', () => {
+          const target = button.dataset.mobileRoute;
+          if (target === 'more') {
+            toggleMoreSheet();
+            return;
+          }
+          setRoute(target);
+        });
+      });
+      moreSheet.querySelectorAll('[data-more-route]').forEach(button => {
+        button.addEventListener('click', () => setRoute(button.dataset.moreRoute));
+      });
+      const refreshMobile = moreSheet.querySelector('[data-refresh-mobile]');
+      if (refreshMobile) refreshMobile.addEventListener('click', () => {
+        closeMoreSheet();
+        refreshAll();
+      });
+    }
+
+    function toggleMoreSheet() {
+      const sheet = $('more-sheet');
+      const backdrop = $('sheet-backdrop');
+      if (!sheet || !backdrop) return;
+      const next = !sheet.classList.contains('open');
+      sheet.classList.toggle('open', next);
+      backdrop.classList.toggle('open', next);
+    }
+
+    function closeMoreSheet() {
+      const sheet = $('more-sheet');
+      const backdrop = $('sheet-backdrop');
+      if (sheet) sheet.classList.remove('open');
+      if (backdrop) backdrop.classList.remove('open');
+    }
+
+    async function api(key, path, fallback) {
+      try {
+        const response = await fetch(path, {cache:'no-store'});
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const data = await response.json();
+        delete state.errors[key];
+        return data;
+      } catch (error) {
+        state.errors[key] = error.message || 'endpoint unavailable';
+        return fallback;
+      }
+    }
+
+    async function refreshAll() {
+      state.loading = true;
+      render();
+      const results = await Promise.all([
+        api('health', endpoints.health, {ok:false}),
+        api('status', endpoints.status, {ok:false}),
+        api('system', endpoints.system, {ok:false}),
+        api('account', endpoints.account, {ok:true, account:null}),
+        api('accountHistory', endpoints.accountHistory, {ok:true, snapshots:[]}),
+        api('positions', endpoints.positions, {ok:true, positions:[]}),
+        api('trades', endpoints.trades, {ok:true, trades:[], total:0}),
+        api('stats', endpoints.stats, {ok:true, stats:{}}),
+        api('statsToday', endpoints.statsToday, {ok:true, stats:{}}),
+        api('pnl', endpoints.pnl, {ok:true, pnl:{}}),
+        api('bots', endpoints.bots, {ok:true, bots:[]}),
+        api('bias', endpoints.bias, {ok:true, bias:null}),
+        api('lab', endpoints.lab, {ok:false, trade_count:0}),
+        api('labRecs', endpoints.labRecs, {ok:false}),
+        api('labHealth', endpoints.labHealth, {ok:false, trade_count:0}),
+        api('storage', endpoints.storage, {ok:false, warnings:['storage_unavailable']}),
+        api('events', endpoints.events, {ok:true, events:[]}),
+        api('performance', endpoints.performance, {ok:true, items:[], totals:{}})
+      ]);
+      [
+        'health','status','system','account','accountHistory','positions','trades','stats','statsToday','pnl','bots',
+        'bias','lab','labRecs','labHealth','storage','events','performance'
+      ].forEach((key, index) => state.data[key] = results[index]);
+      state.loading = false;
+      state.lastUpdate = new Date();
+      render();
+    }
+
+    function statusStrip() {
+      const health = obj(state.data.health);
+      const status = obj(state.data.status);
+      const storage = obj(state.data.storage);
+      const system = obj(state.data.system);
+      const live = health.ok && health.status !== 'error';
+      const dbSafe = storage.db_storage === 'render_persistent_disk' && storage.db_file_exists && !storage.db_warning;
+      const renderKnown = Boolean(system.render_service);
+      return [
+        pill(live ? 'LIVE' : 'OFFLINE', live ? 'green' : 'red'),
+        pill(`Render ${renderKnown ? system.render_service : 'unknown'}`, live ? 'green' : 'yellow'),
+        pill(`DB ${dbSafe ? 'Persistent' : 'Warning'}`, dbSafe ? 'green' : 'yellow'),
+        pill(`Mode ${dash(status.system_mode || system.system_mode)}`, 'blue')
+      ].join('');
+    }
+
+    function pill(text, tone='') {
+      return `<span class="pill ${tone}"><span class="dot"></span>${esc(text)}</span>`;
+    }
+
+    function metric(label, value, note='', tone='') {
+      return `<div class="metric-card">
+        <div>
+          <div class="metric-label">${esc(label)}</div>
+          <div class="metric-value ${tone}">${value}</div>
+        </div>
+        <div class="metric-note">${esc(note || '')}</div>
+      </div>`;
+    }
+
+    function card(title, body, meta='', endpointKey='') {
+      return `<div class="card raised">
+        <div class="card-title"><h2>${esc(title)}</h2>${meta}</div>
+        ${endpointKey ? errorBlock(endpointKey) : ''}
+        ${body}
+      </div>`;
+    }
+
+    function empty(text) {
+      return `<div class="empty">${esc(text)}</div>`;
+    }
+
+    function errorBlock(key) {
+      return state.errors[key] ? `<div class="error endpoint-error">${esc(state.errors[key])}</div>` : '';
+    }
+
+    function loadingBlock() {
+      return '<div class="loading">Loading dashboard data...</div>';
+    }
+
+    function account() { return obj(obj(state.data.account).account); }
+    function positions() { return arr(obj(state.data.positions).positions); }
+    function trades() { return arr(obj(state.data.trades).trades); }
+    function stats() { return obj(obj(state.data.stats).stats); }
+    function statsToday() { return obj(obj(state.data.statsToday).stats); }
+    function pnl() { return obj(obj(state.data.pnl).pnl); }
+    function storage() { return obj(state.data.storage); }
+    function lab() { return obj(state.data.lab); }
+    function bias() { return obj(obj(state.data.bias).bias); }
+    function events() { return arr(obj(state.data.events).events); }
+    function historySnapshots() { return arr(obj(state.data.accountHistory).snapshots); }
+
+    function topMetrics() {
+      const acc = account();
+      const p = pnl();
+      const s = stats();
+      const st = storage();
+      const l = lab();
+      return `<div class="grid metrics">
+        ${metric('Equity', money(acc.equity), dash(acc.currency))}
+        ${metric('Balance', money(acc.balance), dash(acc.account_server))}
+        ${metric('Today PnL', money(p.closed_pnl ?? p.net_pnl), `${dash(p.wins)}W / ${dash(p.losses)}L`, signedClass(p.closed_pnl ?? p.net_pnl))}
+        ${metric('Open PnL', money(p.floating_pnl), `${positions().length} open`, signedClass(p.floating_pnl))}
+        ${metric('Open Trades', positions().length, 'active positions')}
+        ${metric('Closed Today', dash(p.closed_trades_count ?? p.trades_count ?? statsToday().total_trades), 'closed trades')}
+        ${metric('Drawdown', money(obj(l.risk_damage_analytics).max_drawdown), 'strategy lab')}
+        ${metric('Free Margin', money(acc.free_margin), `Margin level ${pct(acc.margin_level)}`)}
+        ${metric('Storage', st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', st.db_file_exists ? 'SQLite online' : 'SQLite missing', st.db_storage === 'render_persistent_disk' ? 'green-text' : 'yellow-text')}
+      </div>`;
+    }
+
+    function equityPoints() {
+      const snapshots = historySnapshots()
+        .filter(row => num(row.equity) !== null)
+        .sort((a, b) => new Date(String(a.snapshot_at || a.created_at || '').replace(' ', 'T')) - new Date(String(b.snapshot_at || b.created_at || '').replace(' ', 'T')))
+        .map(row => ({label: dateTime(row.snapshot_at || row.created_at), value: num(row.equity)}));
+      if (snapshots.length >= 2) return snapshots;
+      let running = 0;
+      return trades()
+        .slice()
+        .sort((a, b) => new Date(String(a.closed_at || a.created_at || '').replace(' ', 'T')) - new Date(String(b.closed_at || b.created_at || '').replace(' ', 'T')))
+        .map(row => {
+          running += num(row.net_profit ?? row.profit ?? row.total_net) || 0;
+          return {label: dateTime(row.closed_at || row.created_at), value: running};
+        });
+    }
+
+    function lineChart(points, title='Equity') {
+      if (!points || points.length < 2) return empty('Not enough equity history yet.');
+      const width = 860, height = 280, pad = 32;
+      const values = points.map(point => point.value);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const span = max - min || 1;
+      const coords = points.map((point, index) => {
+        const x = pad + index * ((width - pad * 2) / Math.max(points.length - 1, 1));
+        const y = height - pad - ((point.value - min) / span) * (height - pad * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+      const last = points[points.length - 1];
+      return `<div class="chart">
+        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}">
+          <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"></rect>
+          <line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" stroke="#e4e8f0"></line>
+          <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height-pad}" stroke="#e4e8f0"></line>
+          <polyline points="${coords}" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <text x="${pad}" y="24" fill="#64748b" font-size="13">${esc(title)}</text>
+          <text x="${width-pad}" y="24" text-anchor="end" fill="#111827" font-size="13" font-weight="700">${esc(money(last.value))}</text>
+        </svg>
+      </div>`;
+    }
+
+    function tpChecklist(item) {
+      const rows = [1,2,3].filter(index => item[`tp${index}`] !== null && item[`tp${index}`] !== undefined && item[`tp${index}`] !== '' || item[`tp${index}_done`])
+        .map(index => `<span class="tp ${item[`tp${index}_done`] ? 'done' : ''}">TP${index} ${item[`tp${index}_done`] ? '✓' : '□'}</span>`);
+      return rows.length ? `<div class="tp-list">${rows.join('')}</div>` : '<div class="muted">No TP levels.</div>';
+    }
+
+    function positionCard(position) {
+      const closedPercent = [position.tp1_done, position.tp2_done, position.tp3_done].filter(Boolean).length * 33.33;
+      const duration = ageMinutes(position.opened_at);
+      return `<div class="position-card">
+        <div class="position-head">
+          <div><div class="symbol">${esc(position.symbol || '—')}</div><div class="side">${esc(position.side || '—')}</div></div>
+          <span class="pill ${num(position.profit) >= 0 ? 'green' : 'red'}">${money(position.profit)}</span>
+        </div>
+        <div class="mini-grid">
+          <div class="kv"><span>Entry</span><b>${price(position.entry_price ?? position.entry)}</b></div>
+          <div class="kv"><span>SL</span><b>${price(position.sl)}</b></div>
+          <div class="kv"><span>Current</span><b>${price(position.current_price)}</b></div>
+          <div class="kv"><span>Duration</span><b>${duration === null ? '—' : duration + 'm'}</b></div>
+        </div>
+        ${tpChecklist(position)}
+        <div class="progress"><span style="width:${Math.min(100, closedPercent)}%"></span></div>
+        <div class="metric-note">${position.be_done ? 'SL → BE protected' : 'BE not confirmed'}</div>
+      </div>`;
+    }
+
+    function positionsPanel(limit=3) {
+      const items = positions();
+      if (!items.length) return empty('No open positions.');
+      return `<div class="stack">${items.slice(0, limit).map(positionCard).join('')}</div>`;
+    }
+
+    function biasPanel(compactMode=false) {
+      const b = bias();
+      const rows = arr(b.symbols);
+      if (!rows.length) return empty('No latest bias report yet.');
+      const visible = compactMode ? rows.slice(0, 6) : rows;
+      return `<div class="bias-grid">${visible.map(row => `
+        <div class="bias-item">
+          <div class="bias-head"><div class="symbol">${esc(row.symbol)}</div><span class="pill ${row.high_risk ? 'yellow' : 'blue'}">${esc(row.bias || 'UNKNOWN')}</span></div>
+          <div class="mini-grid">
+            <div class="kv"><span>Confidence</span><b>${pct(row.confidence)}</b></div>
+            <div class="kv"><span>Quality</span><b>${pct(row.data_quality_score)}</b></div>
+          </div>
+          <div class="metric-note">${esc(arr(row.reasons).slice(0, 2).join(' · ') || 'data limited')}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    function eventsPanel() {
+      const rows = events().slice(0, 9);
+      if (!rows.length) return empty('No MT5 events yet.');
+      return `<div class="stack">${rows.map(row => `
+        <div class="row">
+          <div class="kv"><span>${dateTime(row.time || row.created_at)}</span><b>${esc(row.symbol || '—')} · ${esc(row.event_type || row.normalized_type || 'event')}</b></div>
+          <div class="${signedClass(row.profit)}">${money(row.profit)}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    function quickStats() {
+      const s = stats();
+      const risk = obj(lab().risk_damage_analytics);
+      return `<div class="stack">
+        ${kvRow('Total trades', dash(s.total_trades ?? risk.trades))}
+        ${kvRow('Winrate', pct(s.win_rate ?? risk.winrate))}
+        ${kvRow('Profit factor', dash(s.profit_factor ?? risk.profit_factor))}
+        ${kvRow('Average R', dash(s.avg_r ?? risk.expectancy_R))}
+        ${kvRow('Best trade', money(s.best_trade ?? risk.biggest_win))}
+        ${kvRow('Worst trade', money(s.worst_trade ?? risk.biggest_loss))}
+        ${lab().sample_warning ? `<div class="info-block">LOW SAMPLE SIZE — import more MT5 history.</div>` : ''}
+      </div>`;
+    }
+
+    function kvRow(label, value) {
+      return `<div class="row"><span class="muted">${esc(label)}</span><b>${renderCell(value)}</b></div>`;
+    }
+
+    function renderOverview() {
+      return `${topMetrics()}
+      <div class="grid cols-2">
+        ${card('Equity chart', lineChart(equityPoints()), '', 'accountHistory')}
+        ${card('Open Position', positionsPanel(1), '', 'positions')}
+      </div>
+      <div class="grid cols-3">
+        ${card('NY Bias', biasPanel(true), '', 'bias')}
+        ${card('Last Events', eventsPanel(), '', 'events')}
+        ${card('Quick Stats', quickStats(), '', 'stats')}
+      </div>`;
+    }
+
+    function renderPortfolio() {
+      const acc = account();
+      const snapshots = historySnapshots();
+      const latestAge = ageMinutes(acc.snapshot_at || acc.created_at);
+      return `${topMetrics()}
+      <div class="grid cols-2">
+        ${card('Balance / Equity', `<div class="grid cols-2">
+          ${metric('Balance', money(acc.balance), dash(acc.currency))}
+          ${metric('Equity', money(acc.equity), dash(acc.account_login))}
+          ${metric('Free margin', money(acc.free_margin), 'available')}
+          ${metric('Margin level', pct(acc.margin_level), latestAge !== null && latestAge > 10 ? 'account data may be old' : 'latest snapshot')}
+        </div>`, '', 'account')}
+        ${card('Equity Curve', lineChart(equityPoints()), '', 'accountHistory')}
+      </div>
+      ${card('Account Snapshots', snapshots.length ? table(['time','balance','equity','free margin','source'], snapshots.slice(0, 80).map(row => [
+        dateTime(row.snapshot_at || row.created_at), money(row.balance), money(row.equity), money(row.free_margin), compact(row.source)
+      ])) : empty('No account snapshots yet.'), '', 'accountHistory')}`;
+    }
+
+    function renderPositions() {
+      const items = positions();
+      return `${card('Open Positions', items.length ? `<div class="grid cols-3">${items.map(positionCard).join('')}</div>` : empty('No open positions.'), '', 'positions')}`;
+    }
+
+    function symbolOptions(rows) {
+      const symbols = ['ALL', ...new Set(rows.map(row => row.symbol).filter(Boolean).sort())];
+      return symbols.map(symbol => `<option value="${esc(symbol)}" ${state.filters.symbol === symbol ? 'selected' : ''}>${esc(symbol)}</option>`).join('');
+    }
+
+    function filteredTrades() {
+      return trades().filter(row => {
+        const symbolOk = state.filters.symbol === 'ALL' || row.symbol === state.filters.symbol;
+        const profit = num(row.net_profit ?? row.profit ?? row.total_net);
+        const result = profit > 0 ? 'WIN' : profit < 0 ? 'LOSS' : 'FLAT';
+        const resultOk = state.filters.result === 'ALL' || state.filters.result === result;
+        return symbolOk && resultOk;
+      });
+    }
+
+    function tradesToolbar() {
+      return `<div class="toolbar">
+        <div class="toolbar-left">
+          <select id="symbol-filter">${symbolOptions(trades())}</select>
+          <select id="result-filter">
+            ${['ALL','WIN','LOSS','FLAT'].map(item => `<option value="${item}" ${state.filters.result === item ? 'selected' : ''}>${item}</option>`).join('')}
+          </select>
+        </div>
+      </div>`;
+    }
+
+    function tradeTable(rows) {
+      if (!rows.length) return empty('No trades found.');
+      const headers = ['time','symbol','side','entry','close','profit','R','status','source'];
+      const body = table(headers, rows.map(row => [
+        dateTime(row.closed_at || row.close_time || row.created_at),
+        row.symbol || '—',
+        String(row.side || '—').toUpperCase(),
+        price(row.entry_price ?? row.entry),
+        price(row.exit_price ?? row.close_price ?? row.price),
+        raw(`<span class="${signedClass(row.net_profit ?? row.profit ?? row.total_net)}">${money(row.net_profit ?? row.profit ?? row.total_net)}</span>`),
+        dash(row.r_multiple ?? row.result_R ?? row.profit_r),
+        row.status || row.reason || row.close_reason || '—',
+        row.source || row.comment || '—'
+      ]));
+      return `<div class="desktop-table">${body}</div><div class="mobile-cards"><div class="compact-list">${rows.map(tradeCompactCard).join('')}</div></div>`;
+    }
+
+    function tradeCompactCard(row) {
+      const profit = row.net_profit ?? row.profit ?? row.total_net;
+      return `<div class="compact-card">
+        <div class="compact-head">
+          <div><div class="symbol">${esc(row.symbol || '—')}</div><div class="side">${esc(String(row.side || '—').toUpperCase())}</div></div>
+          <div class="${signedClass(profit)}"><b>${money(profit)}</b></div>
+        </div>
+        <div class="mini-grid">
+          <div class="kv"><span>Time</span><b>${dateTime(row.closed_at || row.close_time || row.created_at)}</b></div>
+          <div class="kv"><span>Status</span><b>${esc(row.status || row.reason || row.close_reason || '—')}</b></div>
+          <div class="kv"><span>Entry</span><b>${price(row.entry_price ?? row.entry)}</b></div>
+          <div class="kv"><span>Close</span><b>${price(row.exit_price ?? row.close_price ?? row.price)}</b></div>
+        </div>
+        ${tpChecklist(row)}
+      </div>`;
+    }
+
+    function renderTrades() {
+      const rows = filteredTrades();
+      return `${tradesToolbar()}${card('Trades', tradeTable(rows), '', 'trades')}`;
+    }
+
+    function renderHistory() {
+      const st = storage();
+      return `<div class="grid cols-3">
+        ${metric('Imported / Native history', dash(st.native_history_total), 'history_deals')}
+        ${metric('Closed trades', dash(st.closed_trades_total), 'journal + closed + reports')}
+        ${metric('Latest trade', dateTime(st.latest_trade_time), 'persistent SQLite')}
+      </div>
+      <div class="grid cols-2">
+        ${card('History Health', `<div class="stack">
+          ${kvRow('Trades total', dash(st.trades_total))}
+          ${kvRow('Native history total', dash(st.native_history_total))}
+          ${kvRow('Account snapshots', dash(st.account_snapshots_total))}
+          ${kvRow('Warnings', arr(st.warnings).join(', ') || 'none')}
+        </div>`, '', 'storage')}
+        ${card('Import MT5 history', `<div class="info-block">
+          POST /api/history/import supports CSV/JSON dry-run preview. Write mode is protected by server secret. This dashboard does not perform write actions.
+        </div>`)}
+      </div>
+      ${card('Recent History Trades', tradeTable(trades().slice(0, 120)), '', 'trades')}`;
+    }
+
+    function barsBySymbol() {
+      const grouped = new Map();
+      trades().forEach(row => {
+        const symbol = row.symbol || 'UNKNOWN';
+        grouped.set(symbol, (grouped.get(symbol) || 0) + (num(row.net_profit ?? row.profit ?? row.total_net) || 0));
+      });
+      const rows = [...grouped.entries()].map(([symbol, value]) => ({symbol, value})).sort((a,b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 10);
+      if (!rows.length) return empty('No symbol performance yet.');
+      const max = Math.max(...rows.map(row => Math.abs(row.value))) || 1;
+      return `<div class="bars">${rows.map(row => `
+        <div class="bar-row">
+          <b>${esc(row.symbol)}</b>
+          <div class="bar-track"><div class="bar-fill ${row.value < 0 ? 'negative' : ''}" style="width:${Math.max(4, Math.abs(row.value) / max * 100)}%"></div></div>
+          <span class="${signedClass(row.value)}">${money(row.value)}</span>
+        </div>`).join('')}</div>`;
+    }
+
+    function renderAnalytics() {
+      const s = stats();
+      const risk = obj(lab().risk_damage_analytics);
+      return `<div class="grid cols-4">
+        ${metric('Winrate', pct(s.win_rate ?? risk.winrate), 'all trades')}
+        ${metric('Profit factor', dash(s.profit_factor ?? risk.profit_factor), 'gross profit / loss')}
+        ${metric('Expectancy', money(risk.expectancy_money), 'money')}
+        ${metric('Expectancy R', dash(risk.expectancy_R), 'R multiple')}
+      </div>
+      <div class="grid cols-2">
+        ${card('Symbol Performance', barsBySymbol(), '', 'trades')}
+        ${card('Analytics Detail', `<div class="stack">
+          ${kvRow('Average win', money(risk.average_winning_trade))}
+          ${kvRow('Average loss', money(risk.average_losing_trade))}
+          ${kvRow('Best trade', money(s.best_trade ?? risk.biggest_win))}
+          ${kvRow('Worst trade', money(s.worst_trade ?? risk.biggest_loss))}
+          ${kvRow('Daily PnL', money(pnl().closed_pnl ?? pnl().net_pnl))}
+          ${kvRow('Monthly PnL', '—')}
+          ${lab().sample_warning ? '<div class="info-block">LOW SAMPLE SIZE — import more MT5 history.</div>' : ''}
+        </div>`)}
+      </div>`;
+    }
+
+    function renderRisk() {
+      const risk = obj(lab().risk_damage_analytics);
+      const rawStatus = String(risk.risk_status || 'UNKNOWN').toUpperCase();
+      const tone = rawStatus.includes('CRITICAL') || rawStatus.includes('BROKEN') ? 'red' : rawStatus.includes('DANGER') || rawStatus.includes('WARNING') ? 'yellow' : 'green';
+      return `<div class="grid cols-4">
+        ${metric('Risk status', rawStatus === 'OK' ? 'NORMAL' : rawStatus, 'Strategy Lab', tone === 'red' ? 'red-text' : tone === 'yellow' ? 'yellow-text' : 'green-text')}
+        ${metric('Today PnL', money(pnl().closed_pnl ?? pnl().net_pnl), 'realized + floating', signedClass(pnl().closed_pnl ?? pnl().net_pnl))}
+        ${metric('Max daily loss', money(risk.max_daily_loss), 'history')}
+        ${metric('Biggest loss', money(risk.biggest_loss), 'single trade')}
+      </div>
+      <div class="grid cols-2">
+        ${card('Risk Damage', `<div class="stack">
+          ${kvRow('SL damage days', dash(risk.single_loss_damage_days))}
+          ${kvRow('TP wins needed for one SL', dash(risk.tp1_wins_needed_to_recover_one_sl))}
+          ${kvRow('Open risk', '—')}
+          ${kvRow('Max drawdown', money(risk.max_drawdown))}
+        </div>`)}
+        ${card('Dangerous Symbols', arr(lab().dangerous_symbols).length ? `<div class="stack">${arr(lab().dangerous_symbols).map(item => kvRow(item, 'review')).join('')}</div>` : empty('No dangerous symbols reported.'))}
+      </div>`;
+    }
+
+    function renderBias() {
+      const b = bias();
+      const availability = obj(b.source_availability);
+      return `<div class="grid cols-3">
+        ${metric('Macro risk', dash(b.macro_risk), dateTime(b.run_at))}
+        ${metric('Data quality', pct(b.data_quality_score), 'latest report')}
+        ${metric('Symbols', arr(b.symbols).length, 'bias rows')}
+      </div>
+      ${card('Per Symbol Bias', biasPanel(false), '', 'bias')}
+      ${card('Source Availability', Object.keys(availability).length ? `<div class="grid cols-3">${Object.entries(availability).map(([key, value]) => `
+        <div class="info-block"><b>${esc(key)}</b><br><span class="muted">${esc(value)}</span></div>`).join('')}</div>` : empty('No source availability reported.'))}`;
+    }
+
+    function renderLab() {
+      const l = lab();
+      const h = obj(state.data.labHealth);
+      const recs = obj(state.data.labRecs);
+      if ((l.trade_count || h.trade_count || 0) === 0) {
+        return `${card('Strategy Lab', empty('No closed trade history found. Import MT5 history.'), '', 'lab')}${card('Data Health', labHealthBlock(), '', 'labHealth')}`;
+      }
+      return `<div class="grid cols-4">
+        ${metric('Trade count', dash(l.trade_count ?? h.trade_count), 'closed history')}
+        ${metric('Sample warning', dash(l.sample_warning ?? h.sample_warning), 'data health')}
+        ${metric('Human approval', recs.requires_human_approval ? 'required' : '—', 'optimizer')}
+        ${metric('Critical problems', arr(l.critical_problems).length, 'risk diagnostics')}
+      </div>
+      <div class="grid cols-2">
+        ${card('Data Health', labHealthBlock(), '', 'labHealth')}
+        ${card('Recommendations', recommendationsBlock(recs), '', 'labRecs')}
+      </div>`;
+    }
+
+    function labHealthBlock() {
+      const h = obj(state.data.labHealth);
+      const st = obj(h.storage_health || storage());
+      return `<div class="stack">
+        ${kvRow('Trade count', dash(h.trade_count ?? lab().trade_count))}
+        ${kvRow('Sample warning', dash(h.sample_warning ?? lab().sample_warning))}
+        ${kvRow('Data sources', arr(h.data_sources ?? lab().data_sources).join(', ') || '—')}
+        ${kvRow('Closed trades', dash(st.closed_trades_total))}
+        ${kvRow('Native history', dash(st.native_history_total))}
+      </div>`;
+    }
+
+    function recommendationsBlock(recs) {
+      const items = Object.values(obj(recs.best_candidate_settings_per_symbol));
+      if (!items.length) return empty('No candidate recommendation available.');
+      return `<div class="stack">${items.slice(0, 8).map(item => `
+        <div class="row">
+          <div class="kv"><span>${esc(item.symbol)}</span><b>Score ${dash(item.score)}</b></div>
+          <div class="muted">${esc(arr(item.reasons).join(', ') || 'candidate')}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    function renderStorage() {
+      const st = storage();
+      const safe = st.db_storage === 'render_persistent_disk' && st.db_file_exists && !st.db_warning;
+      return `<div class="grid cols-3">
+        ${metric('Persistent DB', safe ? 'SAFE' : 'WARNING', dash(st.db_storage), safe ? 'green-text' : 'yellow-text')}
+        ${metric('DB size', st.db_file_size ? `${Math.round(Number(st.db_file_size)/1024)} KB` : '—', 'SQLite')}
+        ${metric('Warnings', arr(st.warnings).length || 'none', 'storage health')}
+      </div>
+      ${card('Storage Details', `<div class="stack">
+        ${kvRow('DB file', raw(`<span class="mono">${esc(st.db_file || '—')}</span>`))}
+        ${kvRow('db_storage', dash(st.db_storage))}
+        ${kvRow('db_file_exists', String(Boolean(st.db_file_exists)))}
+        ${kvRow('db_file_is_writable', dash(st.db_file_is_writable))}
+        ${kvRow('trades_total', dash(st.trades_total))}
+        ${kvRow('closed_trades_total', dash(st.closed_trades_total))}
+        ${kvRow('native_history_total', dash(st.native_history_total))}
+        ${kvRow('account_snapshots_total', dash(st.account_snapshots_total))}
+        ${kvRow('screenshots_total', dash(st.screenshots_total))}
+        ${kvRow('latest_account_time', dateTime(st.latest_account_time))}
+        ${kvRow('latest_trade_time', dateTime(st.latest_trade_time))}
+      </div>`)}
+      ${card('Tables Found', arr(st.tables_found).length ? `<div class="info-block mono">${esc(arr(st.tables_found).join(', '))}</div>` : empty('No table list available.'))}`;
+    }
+
+    function renderSettings() {
+      const sys = obj(state.data.system);
+      const status = obj(state.data.status);
+      return `<div class="grid cols-2">
+        ${card('System', `<div class="stack">
+          ${kvRow('system_mode', dash(sys.system_mode || status.system_mode))}
+          ${kvRow('app_version', dash(sys.app_version))}
+          ${kvRow('dashboard_version', dash(sys.dashboard_version || DASHBOARD_VERSION))}
+          ${kvRow('render_service', dash(sys.render_service))}
+          ${kvRow('git_branch', dash(sys.git_branch))}
+          ${kvRow('git_commit', raw(`<span class="mono">${esc(sys.git_commit || '—')}</span>`))}
+          ${kvRow('uptime', sys.uptime_seconds !== undefined ? `${sys.uptime_seconds}s` : '—')}
+          ${kvRow('server_time', dateTime(sys.server_time))}
+          ${kvRow('data_refresh_interval', `${REFRESH_MS / 1000}s`)}
+          ${kvRow('telegram_status', 'not exposed')}
+        </div>`)}
+        ${card('API Endpoints', `<div class="stack">${endpointList.map(path => kvRow(path, state.errors[path] || 'read-only')).join('')}</div>`)}
+      </div>`;
+    }
+
+    function table(headers, rows) {
+      return `<div class="table-wrap"><table>
+        <thead><tr>${headers.map(header => `<th>${esc(header)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(row => `<tr>${row.map((cell, index) => `<td data-label="${esc(headers[index] || '')}">${renderCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+
+    function render() {
+      state.route = routeById[state.route] ? state.route : initialRoute();
+      const route = routeById[state.route];
+      $('page-title').textContent = route.label;
+      $('page-subtitle').textContent = route.subtitle;
+      $('dash-version').textContent = obj(state.data.system).dashboard_version || DASHBOARD_VERSION;
+      $('status-strip').innerHTML = statusStrip();
+      renderNav();
+      renderBottomNav();
+      if (state.loading && !state.lastUpdate) {
+        $('content').innerHTML = loadingBlock();
+        return;
+      }
+      const renderers = {
+        overview: renderOverview,
+        portfolio: renderPortfolio,
+        positions: renderPositions,
+        trades: renderTrades,
+        history: renderHistory,
+        analytics: renderAnalytics,
+        risk: renderRisk,
+        bias: renderBias,
+        lab: renderLab,
+        storage: renderStorage,
+        settings: renderSettings
+      };
+      $('content').innerHTML = (renderers[state.route] || renderOverview)();
+      bindPageControls();
+    }
+
+    function bindPageControls() {
+      const symbol = $('symbol-filter');
+      if (symbol) symbol.addEventListener('change', event => {
+        state.filters.symbol = event.target.value;
+        render();
+      });
+      const result = $('result-filter');
+      if (result) result.addEventListener('change', event => {
+        state.filters.result = event.target.value;
+        render();
+      });
+    }
+
+    function tickClock() {
+      $('clock').textContent = new Date().toLocaleString([], {weekday:'short', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      $('last-update').textContent = state.lastUpdate ? state.lastUpdate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '—';
+    }
+
+    function closeSidebar() {
+      $('sidebar').classList.remove('open');
+    }
+
+    window.addEventListener('hashchange', () => {
+      const next = window.location.hash.replace('#', '').replace('/', '');
+      state.route = routeById[next] ? next : 'overview';
+      closeMoreSheet();
+      render();
+    });
+    $('menu-toggle').addEventListener('click', () => $('sidebar').classList.toggle('open'));
+    $('sheet-backdrop').addEventListener('click', closeMoreSheet);
+    $('refresh-button').addEventListener('click', refreshAll);
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 768) closeMoreSheet();
+      if (window.innerWidth >= 1024) closeSidebar();
+    });
+    $('refresh-interval').textContent = `${REFRESH_MS / 1000}s`;
+    state.route = initialRoute();
+    tickClock();
+    setInterval(tickClock, 1000);
+    refreshAll();
+    setInterval(refreshAll, REFRESH_MS);
+  </script>
 </body>
 </html>

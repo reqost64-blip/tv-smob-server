@@ -3,6 +3,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -117,6 +118,8 @@ NY_TZ = ZoneInfo("America/New_York")
 _daily_report_task: asyncio.Task | None = None
 _bias_report_task: asyncio.Task | None = None
 pending_messages: dict[str, dict] = {}
+APP_STARTED_AT = time.time()
+DASHBOARD_VERSION = "broker-dashboard-2026-05"
 
 
 SYMBOL_ALIASES = {
@@ -246,6 +249,36 @@ def bool_param(value, default: bool = False) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+def safe_git_metadata() -> dict:
+    commit = (
+        os.getenv("RENDER_GIT_COMMIT")
+        or os.getenv("GIT_COMMIT")
+        or os.getenv("COMMIT_SHA")
+        or os.getenv("GITHUB_SHA")
+    )
+    branch = os.getenv("RENDER_GIT_BRANCH") or os.getenv("GIT_BRANCH") or os.getenv("BRANCH")
+    repo_root = Path(__file__).resolve().parents[1]
+    git_dir = repo_root / ".git"
+    try:
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not branch and head.startswith("ref:"):
+            ref = head.split(" ", 1)[1].strip()
+            branch = ref.rsplit("/", 1)[-1]
+        if not commit:
+            if head.startswith("ref:"):
+                ref_path = git_dir / head.split(" ", 1)[1].strip()
+                if ref_path.exists():
+                    commit = ref_path.read_text(encoding="utf-8").strip()
+            elif head:
+                commit = head
+    except OSError:
+        pass
+    return {
+        "git_commit": commit[:40] if commit else None,
+        "git_branch": branch or None,
+    }
+
+
 @app.on_event("startup")
 async def startup() -> None:
     global _daily_report_task, _bias_report_task
@@ -288,6 +321,11 @@ async def serve_dashboard():
 
 
 # ── 2. Webhook ─────────────────────────────────────────────────────────────────
+
+@app.get("/dashboard/{page:path}")
+async def serve_dashboard_route(page: str):
+    return await serve_dashboard()
+
 
 @app.post("/api/webhook/tradingview")
 async def webhook_tradingview(request: Request):
@@ -746,6 +784,25 @@ async def dashboard_status():
         }
 
 
+@app.get("/api/dashboard/system")
+async def dashboard_system():
+    diagnostics = config.db_file_diagnostics()
+    git = safe_git_metadata()
+    return {
+        "ok": True,
+        "system_mode": config.SYSTEM_MODE,
+        "app_version": app.version,
+        "dashboard_version": DASHBOARD_VERSION,
+        "git_commit": git.get("git_commit"),
+        "git_branch": git.get("git_branch"),
+        "render_service": os.getenv("RENDER_SERVICE_NAME") or os.getenv("RENDER_SERVICE_ID"),
+        "db_storage": diagnostics.get("db_storage"),
+        "db_file": diagnostics.get("db_file_path"),
+        "uptime_seconds": int(time.time() - APP_STARTED_AT),
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/api/dashboard/storage-health")
 async def dashboard_storage_health():
     try:
@@ -762,6 +819,16 @@ async def dashboard_account():
     except Exception:
         account = None
     return {"ok": True, "account": account}
+
+
+@app.get("/api/dashboard/account-history")
+async def dashboard_account_history(limit: int = 500):
+    try:
+        snapshots = acct.account_history(limit=limit)
+    except Exception:
+        logger.exception("Failed to load account history")
+        snapshots = []
+    return {"ok": True, "snapshots": snapshots, "count": len(snapshots)}
 
 
 @app.get("/api/dashboard/positions")

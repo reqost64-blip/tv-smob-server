@@ -296,6 +296,64 @@ def get_latest_native_account() -> Optional[dict]:
     return latest_native_account_snapshot()
 
 
+def account_history(limit: int = 500) -> list[dict]:
+    max_rows = max(1, min(int(limit or 500), 2000))
+    rows: list[dict] = []
+    with db() as conn:
+        for row in conn.execute(
+            """
+            SELECT * FROM native_account_snapshots
+            ORDER BY COALESCE(snapshot_at, created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (max_rows,),
+        ).fetchall():
+            item = _native_account_from_row(row)
+            item["id"] = row["id"]
+            item["source"] = item.get("source") or "native_account_snapshots"
+            rows.append(item)
+        for row in conn.execute(
+            """
+            SELECT * FROM native_mt5_accounts
+            ORDER BY COALESCE(snapshot_at, created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (max_rows,),
+        ).fetchall():
+            item = _native_account_from_row(row)
+            item["id"] = row["id"]
+            item["source"] = item.get("source") or "native_mt5_accounts"
+            rows.append(item)
+        for row in conn.execute(
+            """
+            SELECT * FROM account_snapshots
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (max_rows,),
+        ).fetchall():
+            data = dict(row)
+            rows.append(
+                {
+                    "id": data.get("id"),
+                    "balance": data.get("balance"),
+                    "equity": data.get("equity"),
+                    "margin": data.get("margin"),
+                    "free_margin": data.get("free_margin"),
+                    "margin_level": data.get("margin_level"),
+                    "currency": data.get("currency") or "€",
+                    "account_login": data.get("account_login"),
+                    "account_server": data.get("account_server"),
+                    "trade_mode": data.get("trade_mode"),
+                    "snapshot_at": data.get("created_at"),
+                    "created_at": data.get("created_at"),
+                    "source": "account_snapshots",
+                }
+            )
+    rows.sort(key=lambda item: str(first_present(item.get("snapshot_at"), item.get("created_at"), "")), reverse=True)
+    return rows[:max_rows]
+
+
 def _native_account_from_row(row) -> dict:
     data = dict(row)
     payload = _decode_payload(data.get("payload"))
