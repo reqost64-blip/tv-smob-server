@@ -39,15 +39,20 @@ def main():
         "/dashboard/lab",
         "/dashboard/sources",
         "/dashboard/storage",
+        "/dashboard/settings",
     ]
     for page in pages:
         response = ok_get(client, page)
-        assert "SMOB Торговая панель" in response.text, page
+        assert "SMOB" in response.text, page
+        assert "skeletonPage" not in response.text, page
+        assert "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430 \u0432 \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0435" not in response.text, page
+
     for endpoint in [
         "/api/health",
         "/api/dashboard/status",
         "/api/dashboard/account",
         "/api/dashboard/account-history",
+        "/api/dashboard/positions",
         "/api/dashboard/trades",
         "/api/dashboard/signals",
         "/api/dashboard/signals/sources",

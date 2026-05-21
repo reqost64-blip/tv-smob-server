@@ -13,11 +13,14 @@ def main():
         "return fallback",
         "endpoint-error",
         "errorBlock(endpointKey)",
-        "card('Equity chart', lineChart(equityPoints()), '', 'accountHistory')",
-        "card('Open Position', positionsPanel(1), '', 'positions')",
-        "card('Trades', tradeTable(rows), '', 'trades')",
         "Promise.all",
         "cache:'no-store'",
+        "panel('Live Bias'",
+        "panel('Storage health'",
+        "panel('Latest signals'",
+        "panel('Endpoints status'",
+        "No signals processed yet.",
+        "No closed trade history found. Import MT5 history.",
     ]
     missing = [item for item in required if item not in html]
     assert not missing, missing

@@ -1,12 +1,5 @@
-import os
 import subprocess
-import sys
 from pathlib import Path
-
-os.environ.setdefault("WEBHOOK_SECRET", "smoke-test-secret")
-os.environ.setdefault("MT5_NATIVE_SECRET", "do-not-leak-smoke-secret")
-os.environ.setdefault("DB_FILE", str(Path(__file__).with_name("dashboard_professional.sqlite3")))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,47 +9,69 @@ DASHBOARD = ROOT / "dashboard" / "index.html"
 def main():
     html = DASHBOARD.read_text(encoding="utf-8")
     required = [
-        "SMOB Торговая панель",
+        "SMOB",
         "Inter:wght",
         "JetBrains+Mono",
         "--page: #F0F2F7",
         "--amber: #D97706",
         "width: 220px",
         "height: 100vh",
-        "display: flex",
-        "Главная",
-        "Счёт",
-        "Позиции",
-        "Сделки",
-        "История",
-        "Сигналы",
-        "Байес",
-        "Статистика",
-        "Риск",
-        "Strategy Lab",
-        "Источники",
-        "Хранилище",
-        "Render Live",
-        "БАЛАНС",
-        "Последние сделки",
-        "Байес · Live",
-        "Аналитика · Риск",
-        "Страница в разработке · Данные скоро появятся",
         "bottom-nav",
-        "Мобильная навигация",
+        "DASHBOARD_VERSION",
+        "REFRESH_MS = 30000",
         "setInterval(refreshAll, REFRESH_MS)",
-        "return fallback",
+        "refresh-button",
+        "renderOverview",
+        "renderPortfolio",
+        "renderPositions",
+        "renderTrades",
+        "renderHistory",
+        "renderAnalytics",
+        "renderRisk",
+        "renderBias",
+        "renderLab",
+        "renderStorage",
+        "renderSignals",
+        "renderSources",
+        "renderSettings",
         "/api/dashboard/bias/live",
         "/api/dashboard/signals",
+        "/api/dashboard/signals/sources",
+        "/api/dashboard/signals/accuracy",
         "/api/dashboard/storage-health",
+        "/api/dashboard/system",
     ]
     missing = [item for item in required if item not in html]
     assert not missing, missing
-    forbidden = ["Orbit Command", "black-hole", "particle-canvas", "Dashboard refresh", "No open positions"]
+
+    forbidden = [
+        "skeletonPage",
+        "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430 \u0432 \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0435",
+        "\u0414\u0430\u043d\u043d\u044b\u0435 \u0441\u043a\u043e\u0440\u043e \u043f\u043e\u044f\u0432\u044f\u0442\u0441\u044f",
+        "Orbit Command",
+        "black-hole",
+        "particle-canvas",
+    ]
     present = [item for item in forbidden if item in html]
     assert not present, present
-    for route in ["overview", "portfolio", "positions", "trades", "history", "signals", "bias", "analytics", "risk", "lab", "sources", "storage"]:
+
+    for route in [
+        "overview",
+        "portfolio",
+        "positions",
+        "trades",
+        "history",
+        "signals",
+        "bias",
+        "analytics",
+        "risk",
+        "lab",
+        "sources",
+        "storage",
+        "settings",
+    ]:
         assert f"id:'{route}'" in html, route
+
     subprocess.run(
         [
             "node",

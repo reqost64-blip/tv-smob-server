@@ -479,9 +479,157 @@
       padding: 8px 10px;
       font-size: 11px;
     }
+    .refresh-button {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      color: var(--amber);
+      background: var(--amber-bg);
+      border-color: var(--amber-border);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .page-grid { display: grid; gap: 12px; }
+    .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .wide-grid { grid-template-columns: 1.25fr .75fr; }
+    .stack { display: grid; gap: 8px; }
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .kv-card {
+      min-height: 62px;
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      background: #FAFBFC;
+      padding: 10px;
+    }
+    .kv-card span, .kv-row span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    .kv-card b {
+      display: block;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    .kv-row {
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-md);
+    }
+    .kv-row:last-child { border-bottom: 0; }
+    .kv-row span { margin-bottom: 0; }
+    .kv-row b {
+      min-width: 0;
+      text-align: right;
+      overflow-wrap: anywhere;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th {
+      color: var(--text-muted);
+      font-size: 10px;
+      text-align: left;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      padding: 9px 8px;
+      white-space: nowrap;
+    }
+    td {
+      border-bottom: 1px solid var(--border-light);
+      padding: 9px 8px;
+      vertical-align: middle;
+    }
+    .desktop-table { display: block; }
+    .mobile-cards { display: none; }
+    .compact-list { display: grid; gap: 8px; }
+    .compact-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--white);
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+    .compact-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .chart-box {
+      width: 100%;
+      min-height: 220px;
+      border: 1px solid var(--border-light);
+      border-radius: 14px;
+      background: #FAFBFC;
+      overflow: hidden;
+    }
+    .chart-box svg { width: 100%; height: 220px; display: block; }
+    .position-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--white);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      min-width: 0;
+    }
+    .position-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    select {
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--white);
+      color: var(--text);
+      padding: 0 10px;
+    }
+    .bar-list { display: grid; gap: 8px; }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr) 86px;
+      gap: 8px;
+      align-items: center;
+      font-size: 11px;
+    }
+    .bar-track {
+      height: 8px;
+      border-radius: 999px;
+      background: var(--border-light);
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: inherit; background: var(--green); }
+    .bar-fill.negative { background: var(--red); }
     @media (max-width: 1023px) {
       .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .content-grid { grid-template-columns: 1fr; }
+      .cols-2, .cols-3, .cols-4, .wide-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 768px) {
       .app { height: auto; min-height: 100vh; overflow: visible; }
@@ -491,6 +639,7 @@
       .mobile-logo { display: grid; }
       .page-title { display: none; }
       .topbar-right .badge { display: none; }
+      .topbar-right .refresh-button { display: inline-flex; align-items: center; min-width: 44px; justify-content: center; padding: 0 8px; }
       .topbar-right #clock { display: inline; font-family: var(--mono); font-weight: 700; color: var(--text); }
       .content { padding: 12px; overflow: visible; }
       .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -511,6 +660,9 @@
       .trade-row .price-flow { grid-area: price; }
       .trade-row .tp-dots { grid-area: dots; justify-self: end; }
       .trade-row .pnl { grid-area: pnl; }
+      .desktop-table { display: none; }
+      .mobile-cards { display: block; }
+      .kv-grid { grid-template-columns: 1fr; }
       .bottom-nav {
         position: fixed;
         left: 0;
@@ -567,6 +719,7 @@
         <div class="topbar-right">
           <span class="badge green">● Render Live</span>
           <span class="badge amber" id="topbar-bias">Байес: —</span>
+          <button class="refresh-button" id="refresh-button" type="button">Обновить</button>
           <span id="clock">—</span>
         </div>
       </header>
@@ -590,7 +743,8 @@
       {id:'risk', path:'risk', label:'Риск', group:'Анализ', icon:'!'},
       {id:'lab', path:'lab', label:'Strategy Lab', group:'Анализ', icon:'◌'},
       {id:'sources', path:'sources', label:'Источники', group:'Система', icon:'◎'},
-      {id:'storage', path:'storage', label:'Хранилище', group:'Система', icon:'▣'}
+      {id:'storage', path:'storage', label:'Хранилище', group:'Система', icon:'▣'},
+      {id:'settings', path:'settings', label:'Система', group:'Система', icon:'⚙'}
     ];
     const MOBILE_NAV = [
       {id:'overview', label:'Главная', icon:'⌂'},
@@ -655,7 +809,8 @@
       data: {},
       errors: {},
       loading: true,
-      lastUpdate: null
+      lastUpdate: null,
+      filters: {symbol:'ALL', result:'ALL', source:'ALL'}
     };
 
     const $ = id => document.getElementById(id);
@@ -759,6 +914,7 @@
     }
 
     function account() { return obj(obj(state.data.account).account); }
+    function accountSnapshots() { return arr(obj(state.data.accountHistory).snapshots); }
     function positions() { return arr(obj(state.data.positions).positions); }
     function trades() { return arr(obj(state.data.trades).trades); }
     function stats() { return obj(obj(state.data.stats).stats); }
@@ -766,9 +922,19 @@
     function pnl() { return obj(obj(state.data.pnl).pnl); }
     function bots() { return arr(obj(state.data.bots).bots); }
     function lab() { return obj(state.data.lab); }
+    function labHealth() { return obj(state.data.labHealth); }
+    function labRecs() { return obj(state.data.labRecs); }
+    function storage() { return obj(state.data.storage); }
+    function system() { return obj(state.data.system); }
+    function health() { return obj(state.data.health); }
+    function bias() { return obj(obj(state.data.bias).bias); }
     function liveBias() { return obj(obj(state.data.biasLive).bias); }
     function liveBiasRows() { return arr(liveBias().symbols); }
     function liveBiasAccuracy() { return obj(state.data.biasLiveAccuracy); }
+    function liveBiasCalibration() { return obj(state.data.biasLiveCalibration); }
+    function signalRows() { return arr(obj(state.data.signals).signals); }
+    function signalSources() { return arr(obj(state.data.signalSources).sources); }
+    function signalAccuracy() { return obj(state.data.signalAccuracy); }
 
     function renderNav() {
       const groups = ['Обзор', 'Торговля', 'Анализ', 'Система'];
@@ -979,14 +1145,427 @@
       return `${statCards()}<div class="content-grid">${latestTradesPanel()}${biasPanel()}${riskPanel()}</div>`;
     }
 
-    function skeletonPage() {
-      const route = routeById[state.route] || routeById.overview;
-      return `<div class="skeleton-page">
-        <div class="skeleton-box">
-          <div>
-            <h2>${esc(route.label)}</h2>
-            <p>Страница в разработке · Данные скоро появятся</p>
-          </div>
+    function panel(title, body, chip='', endpointKey='') {
+      return `<section class="panel">
+        <div class="panel-header"><div class="panel-title">${esc(title)}</div>${chip ? `<span class="chip">${esc(chip)}</span>` : ''}</div>
+        ${endpointKey ? errorBlock(endpointKey) : ''}
+        ${body}
+      </section>`;
+    }
+
+    function kv(label, value, klass='') {
+      return `<div class="kv-card"><span>${esc(label)}</span><b class="${klass}">${value}</b></div>`;
+    }
+
+    function kvRow(label, value, klass='') {
+      return `<div class="kv-row"><span>${esc(label)}</span><b class="${klass}">${value}</b></div>`;
+    }
+
+    function metricStrip(items) {
+      return `<div class="stats-grid">${items.map(item => statCard(item.label, item.value, item.sub, item.badge, item.tone, item.seed)).join('')}</div>`;
+    }
+
+    function table(headers, rows) {
+      if (!rows.length) return `<div class="empty">Данных пока нет.</div>`;
+      return `<div class="table-wrap"><table>
+        <thead><tr>${headers.map(header => `<th>${esc(header)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+
+    function lineChart(points, label='График') {
+      const valid = points.filter(point => num(point.value) !== null);
+      if (valid.length < 2) return `<div class="empty">Недостаточно истории для графика.</div>`;
+      const width = 760, height = 220, pad = 26;
+      const values = valid.map(point => Number(point.value));
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const span = max - min || 1;
+      const coords = valid.map((point, index) => {
+        const x = pad + index * ((width - pad * 2) / Math.max(valid.length - 1, 1));
+        const y = height - pad - ((Number(point.value) - min) / span) * (height - pad * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+      return `<div class="chart-box"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}">
+        <rect width="${width}" height="${height}" fill="#FAFBFC"></rect>
+        <line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" stroke="#E5E7EB"></line>
+        <polyline points="${coords}" fill="none" stroke="#D97706" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+        <text x="${pad}" y="22" fill="#6B7280" font-size="12">${esc(label)}</text>
+      </svg></div>`;
+    }
+
+    function accountChartPoints() {
+      return accountSnapshots()
+        .filter(row => num(row.equity ?? row.balance) !== null)
+        .slice()
+        .reverse()
+        .map(row => ({label: dateTime(row.snapshot_at || row.created_at), value: row.equity ?? row.balance}));
+    }
+
+    function isDataOld(value) {
+      if (!value) return false;
+      const parsed = new Date(String(value).replace(' ', 'T'));
+      if (Number.isNaN(parsed.getTime())) return false;
+      return (Date.now() - parsed.getTime()) > 15 * 60 * 1000;
+    }
+
+    function openPositions() {
+      const fromPositions = positions();
+      if (fromPositions.length) return fromPositions;
+      return trades().filter(row => String(row.status || row.state || '').toLowerCase().includes('open'));
+    }
+
+    function positionCard(position) {
+      const side = String(first(position.side, position.direction, '—')).toUpperCase();
+      const profit = first(position.profit, position.floating_pnl, position.pnl);
+      return `<div class="position-card">
+        <div class="position-head">
+          <div><div class="symbol">${esc(position.symbol || '—')}</div><div class="chip">${esc(side)}</div></div>
+          <div class="pnl ${signedClass(profit)}">${money(profit)}</div>
+        </div>
+        <div class="kv-grid">
+          ${kv('Вход', price(first(position.entry_price, position.entry)))}
+          ${kv('SL', price(position.sl))}
+          ${kv('Объём', dash(first(position.lot, position.volume)))}
+          ${kv('Открыта', dateTime(first(position.opened_at, position.open_time, position.created_at)))}
+        </div>
+        <div style="margin-top:10px">${tpDots(position)}</div>
+        <div style="margin-top:8px;color:var(--text-muted);font-size:11px;">BE: ${position.be_done || position.be_protected ? 'защищено' : '—'}</div>
+      </div>`;
+    }
+
+    function tradeResult(row) {
+      const profit = num(first(row.net_profit, row.profit, row.total_net, row.pnl));
+      if (profit > 0) return 'WIN';
+      if (profit < 0) return 'LOSS';
+      return 'FLAT';
+    }
+
+    function filteredTrades() {
+      return trades().filter(row => {
+        const symbolOk = state.filters.symbol === 'ALL' || row.symbol === state.filters.symbol;
+        const resultOk = state.filters.result === 'ALL' || tradeResult(row) === state.filters.result;
+        const source = String(first(row.source, row.comment, '—'));
+        const sourceOk = state.filters.source === 'ALL' || source === state.filters.source;
+        return symbolOk && resultOk && sourceOk;
+      });
+    }
+
+    function filterOptions(values, selected) {
+      return values.map(value => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(value === 'ALL' ? 'Все' : value)}</option>`).join('');
+    }
+
+    function tradeFilters() {
+      const symbols = ['ALL', ...new Set(trades().map(row => row.symbol).filter(Boolean).sort())];
+      const sources = ['ALL', ...new Set(trades().map(row => String(first(row.source, row.comment, '—'))).filter(Boolean).sort())];
+      return `<div class="filter-bar">
+        <select id="symbol-filter">${filterOptions(symbols, state.filters.symbol)}</select>
+        <select id="result-filter">${filterOptions(['ALL','WIN','LOSS','FLAT'], state.filters.result)}</select>
+        <select id="source-filter">${filterOptions(sources, state.filters.source)}</select>
+      </div>`;
+    }
+
+    function tradeTable(rows) {
+      const tableRows = rows.map(row => {
+        const profit = first(row.net_profit, row.profit, row.total_net, row.pnl);
+        return [
+          esc(dateTime(first(row.closed_at, row.close_time, row.created_at, row.time))),
+          `<span class="symbol">${esc(row.symbol || '—')}</span>`,
+          esc(String(first(row.side, row.direction, row.type, '—')).toUpperCase()),
+          esc(first(row.status, row.reason, row.close_reason, '—')),
+          `<span class="${signedClass(profit)}">${money(profit)}</span>`,
+          esc(dash(first(row.r_multiple, row.result_R, row.profit_r))),
+          esc(first(row.source, row.comment, '—')),
+          tpDots(row)
+        ];
+      });
+      return `<div class="desktop-table">${table(['Время','Символ','Side','Статус','Profit','R','Source','TP'], tableRows)}</div>
+        <div class="mobile-cards"><div class="compact-list">${rows.length ? rows.map(tradeCompactCard).join('') : '<div class="empty">Сделок пока нет.</div>'}</div></div>`;
+    }
+
+    function tradeCompactCard(row) {
+      const profit = first(row.net_profit, row.profit, row.total_net, row.pnl);
+      return `<div class="compact-card">
+        <div class="compact-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(String(first(row.side, row.direction, row.type, '—')).toUpperCase())}</div></div><div class="pnl ${signedClass(profit)}">${money(profit)}</div></div>
+        <div class="kv-grid">
+          ${kv('Время', dateTime(first(row.closed_at, row.close_time, row.created_at, row.time)))}
+          ${kv('Статус', esc(first(row.status, row.reason, row.close_reason, '—')))}
+          ${kv('R', dash(first(row.r_multiple, row.result_R, row.profit_r)))}
+          ${kv('Source', esc(first(row.source, row.comment, '—')))}
+        </div>
+        <div style="margin-top:10px">${tpDots(row)}</div>
+      </div>`;
+    }
+
+    function renderPortfolio() {
+      const acc = account();
+      const p = pnl();
+      const st = storage();
+      const latestTime = first(acc.snapshot_at, acc.created_at, st.latest_account_time);
+      if (!Object.keys(acc).length) return panel('Счёт', '<div class="empty">Нет данных счёта. Ждём /api/mt5/native-account.</div>', '', 'account');
+      const warning = isDataOld(latestTime) ? '<div class="endpoint-error">Данные счёта могут быть устаревшими.</div>' : '';
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Balance', value:money(acc.balance), sub:dash(acc.currency), badge:'счёт', tone:'amber', seed:acc.balance},
+          {label:'Equity', value:money(acc.equity), sub:'текущая equity', badge:`PnL: ${money(first(p.closed_pnl, p.net_pnl, 0))}`, tone:'green', seed:acc.equity},
+          {label:'Free Margin', value:money(acc.free_margin), sub:`Margin: ${money(acc.margin)}`, badge:`Level: ${pct(acc.margin_level)}`, tone:'blue', seed:acc.free_margin},
+          {label:'Storage', value:st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:dateTime(latestTime), tone:st.db_storage === 'render_persistent_disk' ? 'green' : 'red', seed:1}
+        ])}
+        <div class="page-grid wide-grid">
+          ${panel('Баланс / Equity', `${warning}${lineChart(accountChartPoints(), 'Balance / Equity')}`, '', 'accountHistory')}
+          ${panel('Детали счёта', `<div class="kv-grid">
+            ${kv('Balance', money(acc.balance))}
+            ${kv('Equity', money(acc.equity))}
+            ${kv('Margin', money(acc.margin))}
+            ${kv('Free Margin', money(acc.free_margin))}
+            ${kv('Margin Level', pct(acc.margin_level))}
+            ${kv('Последнее обновление', dateTime(latestTime))}
+          </div>`, '', 'account')}
+        </div>
+        ${panel('Account snapshots', accountSnapshots().length ? table(['Время','Balance','Equity','Free Margin','Source'], accountSnapshots().slice(0, 60).map(row => [dateTime(row.snapshot_at || row.created_at), money(row.balance), money(row.equity), money(row.free_margin), esc(row.source || '—')])) : '<div class="empty">Снимков счёта пока нет.</div>', '', 'accountHistory')}
+      </div>`;
+    }
+
+    function renderPositions() {
+      const rows = openPositions();
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Открыто', value:dash(rows.length), sub:'позиции', badge:`Equity: ${money(account().equity)}`, tone:'blue', seed:rows.length},
+          {label:'Floating PnL', value:money(rows.reduce((sum, row) => sum + (num(first(row.profit, row.floating_pnl, row.pnl)) || 0), 0)), sub:'открытые позиции', badge:'real-time MT5', tone:'green', seed:rows.length}
+        ])}
+        ${panel('Открытые позиции', rows.length ? `<div class="page-grid cols-3">${rows.map(positionCard).join('')}</div>` : '<div class="empty">Открытых позиций нет.</div>', '', 'trades')}
+      </div>`;
+    }
+
+    function renderTrades() {
+      const rows = filteredTrades();
+      const today = trades().filter(row => dateTime(first(row.closed_at, row.close_time, row.created_at, row.time)) !== '—').slice(0, 20);
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Всего сделок', value:dash(trades().length), sub:'загружено', badge:`Winrate: ${pct(first(stats().win_rate, stats().winrate))}`, tone:'blue', seed:trades().length},
+          {label:'Сегодня', value:dash(first(statsToday().total_trades, pnl().trades_count, today.length)), sub:'сделки', badge:`PnL: ${money(first(pnl().closed_pnl, pnl().net_pnl, 0))}`, tone:'amber', seed:today.length}
+        ])}
+        ${panel('Фильтры', tradeFilters())}
+        ${panel('Последние сделки', rows.length ? tradeTable(rows.slice(0, 120)) : '<div class="empty">Сделок пока нет.</div>', '', 'trades')}
+      </div>`;
+    }
+
+    function renderHistory() {
+      const st = storage();
+      const h = labHealth();
+      const warnings = arr(st.warnings);
+      if (!Number(st.native_history_total || 0)) warnings.push('history_empty');
+      if (!Number(st.closed_trades_total || 0)) warnings.push('closed_trades_empty');
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Native history', value:dash(st.native_history_total), sub:'history_deals', badge:'MT5 import', tone:'blue', seed:st.native_history_total},
+          {label:'Closed trades', value:dash(st.closed_trades_total), sub:'закрытые сделки', badge:`Trade count: ${dash(h.trade_count)}`, tone:'green', seed:st.closed_trades_total},
+          {label:'Account snapshots', value:dash(st.account_snapshots_total), sub:'снимки счёта', badge:dateTime(st.latest_account_time), tone:'amber', seed:st.account_snapshots_total}
+        ])}
+        <div class="page-grid cols-2">
+          ${panel('Состояние истории', `<div class="stack">
+            ${kvRow('Imported history count', dash(first(st.imported_history_total, st.native_history_total)))}
+            ${kvRow('Latest trade time', dateTime(st.latest_trade_time))}
+            ${kvRow('Latest account time', dateTime(st.latest_account_time))}
+            ${kvRow('Warnings', warnings.length ? esc([...new Set(warnings)].join(', ')) : '—')}
+          </div>`, '', 'storage')}
+          ${panel('Import MT5 History', '<div class="empty">Импорт выполняется через защищённый POST /api/history/import. На dashboard показан только read-only статус: сначала делай dry_run preview CSV/JSON, затем импорт с секретом.</div>')}
+        </div>
+        ${panel('Последняя история сделок', trades().length ? tradeTable(trades().slice(0, 80)) : '<div class="empty">История сделок пока пуста.</div>', '', 'trades')}
+      </div>`;
+    }
+
+    function symbolPerformance() {
+      const grouped = new Map();
+      trades().forEach(row => {
+        const symbol = row.symbol || 'UNKNOWN';
+        grouped.set(symbol, (grouped.get(symbol) || 0) + (num(first(row.net_profit, row.profit, row.total_net, row.pnl)) || 0));
+      });
+      const rows = [...grouped.entries()].map(([symbol, value]) => ({symbol, value})).sort((a,b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 10);
+      if (!rows.length) return '<div class="empty">Нет данных по символам.</div>';
+      const max = Math.max(...rows.map(row => Math.abs(row.value))) || 1;
+      return `<div class="bar-list">${rows.map(row => `<div class="bar-row"><b class="symbol">${esc(row.symbol)}</b><div class="bar-track"><div class="bar-fill ${row.value < 0 ? 'negative' : ''}" style="width:${Math.max(4, Math.abs(row.value)/max*100)}%"></div></div><b class="${signedClass(row.value)}">${money(row.value)}</b></div>`).join('')}</div>`;
+    }
+
+    function renderAnalytics() {
+      const s = stats();
+      const risk = obj(lab().risk_damage_analytics);
+      const lowSample = lab().sample_warning || labHealth().sample_warning || Number(first(s.total_trades, lab().trade_count, 0)) < 30;
+      return `<div class="page-grid">
+        ${lowSample ? '<div class="endpoint-error">LOW SAMPLE SIZE — импортируй историю MT5.</div>' : ''}
+        ${metricStrip([
+          {label:'Total trades', value:dash(first(s.total_trades, lab().trade_count)), sub:'выборка', badge:`Winrate: ${pct(first(s.win_rate, s.winrate, risk.winrate))}`, tone:'blue', seed:s.total_trades},
+          {label:'Profit Factor', value:dash(first(s.profit_factor, risk.profit_factor)), sub:'gross profit/loss', badge:`Avg R: ${dash(first(s.avg_r, risk.expectancy_R))}`, tone:'green', seed:s.profit_factor},
+          {label:'Best trade', value:money(first(s.best_trade, risk.biggest_win)), sub:'лучшая сделка', badge:`Worst: ${money(first(s.worst_trade, risk.biggest_loss))}`, tone:'green', seed:s.best_trade},
+          {label:'Daily PnL', value:money(first(pnl().closed_pnl, pnl().net_pnl, 0)), sub:'сегодня', badge:'realized', tone:signedClass(first(pnl().closed_pnl, pnl().net_pnl, 0)).replace('-text',''), seed:pnl().closed_pnl}
+        ])}
+        <div class="page-grid cols-2">
+          ${panel('Symbol performance', symbolPerformance(), '', 'trades')}
+          ${panel('Детали аналитики', `<div class="stack">
+            ${kvRow('Expectancy', money(risk.expectancy_money))}
+            ${kvRow('Average win', money(risk.average_winning_trade))}
+            ${kvRow('Average loss', money(risk.average_losing_trade))}
+            ${kvRow('Average R', dash(first(s.avg_r, risk.expectancy_R)))}
+            ${kvRow('Monthly PnL', money(first(s.monthly_pnl, risk.monthly_pnl)))}
+          </div>`, '', 'stats')}
+        </div>
+      </div>`;
+    }
+
+    function renderRisk() {
+      const risk = obj(lab().risk_damage_analytics);
+      const st = storage();
+      const rawStatus = String(first(risk.risk_status, 'NORMAL')).toUpperCase();
+      const status = rawStatus.includes('CRITICAL') ? 'CRITICAL' : rawStatus.includes('WARN') || st.db_storage !== 'render_persistent_disk' ? 'WARNING' : 'NORMAL';
+      const tone = status === 'CRITICAL' ? 'red' : status === 'WARNING' ? 'amber' : 'green';
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Risk status', value:status, sub:'контроль', badge:`Storage: ${st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING'}`, tone, seed:1},
+          {label:'Today PnL', value:money(first(pnl().closed_pnl, pnl().net_pnl, 0)), sub:'сегодня', badge:'realized', tone:signedClass(first(pnl().closed_pnl, pnl().net_pnl, 0)).replace('-text',''), seed:pnl().closed_pnl},
+          {label:'Biggest loss', value:money(first(risk.biggest_loss, stats().worst_trade)), sub:'история', badge:`SL days: ${dash(risk.single_loss_damage_days)}`, tone:'red', seed:risk.biggest_loss},
+          {label:'Open risk', value:dash(first(risk.open_risk, '—')), sub:'если доступно', badge:`1 SL стирает ${dash(risk.single_loss_damage_days)} дней`, tone:'amber', seed:1}
+        ])}
+        <div class="page-grid cols-2">
+          ${panel('Risk damage', `<div class="stack">
+            ${kvRow('SL damage days', dash(risk.single_loss_damage_days))}
+            ${kvRow('One SL erases X avg days', dash(risk.single_loss_damage_days))}
+            ${kvRow('TP wins needed', dash(risk.tp1_wins_needed_to_recover_one_sl))}
+            ${kvRow('Max drawdown', money(risk.max_drawdown))}
+          </div>`, '', 'lab')}
+          ${panel('Dangerous symbols / storage risk', `<div class="stack">
+            ${arr(lab().dangerous_symbols).length ? arr(lab().dangerous_symbols).map(item => kvRow(item, 'review')).join('') : kvRow('Dangerous symbols', '—')}
+            ${kvRow('History risk', Number(st.closed_trades_total || 0) ? 'OK' : 'closed_trades_empty', Number(st.closed_trades_total || 0) ? 'green-text' : 'amber-text')}
+            ${kvRow('Persistent DB', st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', st.db_storage === 'render_persistent_disk' ? 'green-text' : 'red-text')}
+          </div>`, '', 'storage')}
+        </div>
+      </div>`;
+    }
+
+    function accuracyPercent(stats) {
+      const value = obj(stats).accuracy;
+      return value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`;
+    }
+
+    function factorTable() {
+      const labels = ['market_structure','trend','vwap','momentum','volatility','intermarket','macro_news'];
+      return liveBiasRows().length ? table(['Символ', ...labels], liveBiasRows().map(row => [esc(row.symbol || '—'), ...labels.map(key => esc(dash(obj(row.factor_scores)[key])))])) : '<div class="empty">Нет factor scores.</div>';
+    }
+
+    function sourceAvailabilityBlock() {
+      const sources = obj(liveBias().source_availability);
+      const entries = Object.keys(sources).length ? Object.entries(sources) : Object.entries(obj(liveBiasRows()[0]?.source_availability));
+      if (!entries.length) return '<div class="empty">Source availability пока не передан.</div>';
+      return `<div class="kv-grid">${entries.map(([key, value]) => kv(key, esc(value))).join('')}</div>`;
+    }
+
+    function renderBias() {
+      const liveRows = liveBiasRows();
+      const pre = bias();
+      const acc = obj(liveBiasAccuracy().overall);
+      const calib = liveBiasCalibration();
+      return `<div class="page-grid">
+        ${panel('Live Bias', liveRows.length ? `<div class="page-grid cols-3">${liveRows.map(row => {
+          const direction = row.direction === 'CONSOLIDATION' ? '—' : row.direction;
+          return `<div class="position-card"><div class="position-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(row.strength || '—')}</div></div><div class="bias-direction ${direction === 'SHORT' ? 'short' : ''}">${esc(direction || '—')}</div></div><div class="progress"><span style="width:${Math.max(0, Math.min(100, num(row.confidence) || 0))}%"></span></div><div class="kv-grid">${kv('Confidence', `${dash(row.confidence)}%`)}${kv('Risk', esc(row.risk || '—'))}${kv('Long', `${dash(row.long_probability)}%`)}${kv('Short', `${dash(row.short_probability)}%`)}</div><div class="tag-list" style="margin-top:10px">${arr(row.reasons).slice(0,5).map(reason => `<span class="tag">${esc(reason)}</span>`).join('')}</div></div>`;
+        }).join('')}</div>` : '<div class="empty">Байес не рассчитан.</div>', '', 'biasLive')}
+        <div class="page-grid cols-2">
+          ${panel('Точность Live Bias', `<div class="kv-grid">${kv('30m', accuracyPercent(acc['30m']))}${kv('1h', accuracyPercent(acc['1h']))}${kv('2h', accuracyPercent(acc['2h']))}${kv('4h', accuracyPercent(acc['4h']))}</div>`, '', 'biasLiveAccuracy')}
+          ${panel('Calibration suggestions', arr(calib.recommended_weight_adjustments).length ? table(['Фактор','Изменение','Причина'], arr(calib.recommended_weight_adjustments).map(item => [esc(first(item.factor, item.type, '—')), esc(item.suggested_change || '—'), esc(item.reason || '—')])) : `<div class="empty">Рекомендаций пока нет. requires_human_approval: ${calib.requires_human_approval !== false}</div>`, '', 'biasLiveCalibration')}
+        </div>
+        ${panel('Factor scores', factorTable(), '', 'biasLive')}
+        ${panel('Source availability', sourceAvailabilityBlock(), '', 'biasLive')}
+        ${panel('Pre-Market Bias', arr(pre.symbols).length ? table(['Символ','Bias','Confidence','Risk','Reasons'], arr(pre.symbols).map(row => [esc(row.symbol || '—'), esc(row.bias || '—'), `${dash(row.confidence)}%`, esc(row.macro_risk || pre.macro_risk || '—'), esc(arr(row.reasons).slice(0,3).join(', ') || '—')])) : '<div class="empty">Pre-Market отчёта пока нет.</div>', '', 'bias')}
+      </div>`;
+    }
+
+    function renderLab() {
+      const l = lab();
+      const h = labHealth();
+      const recs = labRecs();
+      const count = Number(first(l.trade_count, h.trade_count, 0));
+      if (!count) return panel('Strategy Lab', '<div class="empty">No closed trade history found. Import MT5 history.</div>', '', 'lab');
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Trade count', value:dash(count), sub:'closed trades', badge:`Sample: ${dash(first(l.sample_warning, h.sample_warning))}`, tone:'blue', seed:count},
+          {label:'Closed trades', value:dash(first(h.closed_trades_total, storage().closed_trades_total)), sub:'storage', badge:'data health', tone:'green', seed:h.closed_trades_total},
+          {label:'Human approval', value:recs.requires_human_approval ? 'required' : '—', sub:'recommendations', badge:'no auto-change', tone:'amber', seed:1}
+        ])}
+        <div class="page-grid cols-2">
+          ${panel('Data health', `<div class="stack">${kvRow('trade_count', dash(count))}${kvRow('sample_warning', dash(first(l.sample_warning, h.sample_warning)))}${kvRow('data_sources', arr(first(h.data_sources, l.data_sources)).join(', ') || '—')}${kvRow('native_history', dash(storage().native_history_total))}</div>`, '', 'labHealth')}
+          ${panel('Risk damage analytics', `<div class="stack">${Object.entries(obj(l.risk_damage_analytics)).slice(0,10).map(([key,value]) => kvRow(key, esc(dash(value)))).join('') || '<div class="empty">Risk analytics пока нет.</div>'}</div>`, '', 'lab')}
+        </div>
+        ${panel('Recommendations', Object.keys(obj(recs.best_candidate_settings_per_symbol)).length ? table(['Символ','Score','Причины'], Object.values(obj(recs.best_candidate_settings_per_symbol)).map(item => [esc(item.symbol || '—'), esc(dash(item.score)), esc(arr(item.reasons).join(', ') || '—')])) : '<div class="empty">Рекомендаций пока нет.</div>', '', 'labRecs')}
+      </div>`;
+    }
+
+    function renderStorage() {
+      const st = storage();
+      const safe = st.db_storage === 'render_persistent_disk' && st.db_file_exists && !st.db_warning;
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Persistent DB', value:safe ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:dash(st.db_file_is_writable), tone:safe ? 'green' : 'red', seed:1},
+          {label:'DB size', value:st.db_file_size ? `${Math.round(Number(st.db_file_size)/1024)} KB` : '—', sub:'SQLite', badge:'persistent disk', tone:'blue', seed:st.db_file_size},
+          {label:'Trades total', value:dash(st.trades_total), sub:'all sources', badge:`Closed: ${dash(st.closed_trades_total)}`, tone:'amber', seed:st.trades_total}
+        ])}
+        ${panel('Storage health', `<div class="kv-grid">
+          ${kv('DB path', `<span class="mono">${esc(first(st.db_file, st.db_file_path, '—'))}</span>`)}
+          ${kv('db_storage', esc(dash(st.db_storage)))}
+          ${kv('db_file_exists', String(Boolean(st.db_file_exists)))}
+          ${kv('db_file_is_writable', esc(dash(st.db_file_is_writable)))}
+          ${kv('native_history_total', dash(st.native_history_total))}
+          ${kv('account_snapshots_total', dash(st.account_snapshots_total))}
+          ${kv('screenshots_total', dash(st.screenshots_total))}
+          ${kv('latest_trade_time', dateTime(st.latest_trade_time))}
+          ${kv('latest_account_time', dateTime(st.latest_account_time))}
+          ${kv('warnings', esc(arr(st.warnings).join(', ') || st.db_warning || '—'))}
+        </div>`, '', 'storage')}
+      </div>`;
+    }
+
+    function renderSignals() {
+      const rows = signalRows();
+      const sources = signalSources();
+      const evaluations = arr(signalAccuracy().samples);
+      const evalById = new Map(evaluations.map(item => [item.signal_id, item]));
+      const valid = rows.filter(row => row.verdict === 'VALID_SIGNAL');
+      const watch = rows.filter(row => ['WATCH_ONLY','WAIT_CONFIRMATION'].includes(row.verdict));
+      const rejected = rows.filter(row => ['REJECTED','DUPLICATE','EXPIRED'].includes(row.verdict));
+      const sourceTrust = name => sources.find(source => source.source_name === name)?.trust_score;
+      if (!rows.length) return panel('Сигналы', '<div class="empty">No signals processed yet.</div>', '', 'signals');
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Valid', value:dash(valid.length), sub:'score >= 70', badge:'VALID_SIGNAL', tone:'green', seed:valid.length},
+          {label:'Watch', value:dash(watch.length), sub:'ожидание', badge:'WAIT_CONFIRMATION', tone:'amber', seed:watch.length},
+          {label:'Rejected', value:dash(rejected.length), sub:'фильтр', badge:'без Telegram spam', tone:'red', seed:rejected.length}
+        ])}
+        ${panel('Latest signals', `<div class="desktop-table">${table(['Время','Символ','Side','Score','Verdict','Source','Trust','Result','Expiry'], rows.slice(0,100).map(row => [dateTime(row.timestamp), esc(row.symbol || '—'), esc(row.direction || '—'), `${dash(row.score)}%`, esc(row.verdict || '—'), esc(row.source_name || '—'), dash(sourceTrust(row.source_name)), esc(evalById.get(row.signal_id)?.result || 'pending'), `${dash(row.expiry_minutes)}m`]))}</div><div class="mobile-cards"><div class="compact-list">${rows.slice(0,60).map(row => `<div class="compact-card"><div class="compact-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(row.verdict || '—')}</div></div><b class="amber-text">${dash(row.score)}%</b></div><div class="kv-grid">${kv('Side', esc(row.direction || '—'))}${kv('Source', esc(row.source_name || '—'))}${kv('Trust', dash(sourceTrust(row.source_name)))}${kv('Result', esc(evalById.get(row.signal_id)?.result || 'pending'))}</div></div>`).join('')}</div></div>`, '', 'signals')}
+      </div>`;
+    }
+
+    function renderSources() {
+      const sources = signalSources();
+      return panel('Источники сигналов', sources.length ? table(['Источник','Trust','Signals','Accuracy','Avg R','Best','Worst','Last signal'], sources.map(source => [esc(source.source_name || '—'), dash(source.trust_score), dash(source.total_signals), source.winrate === null || source.winrate === undefined ? '—' : `${source.winrate}%`, dash(source.average_R), esc(arr(source.best_symbols).map(item => item.symbol).join(', ') || '—'), esc(arr(source.worst_symbols).map(item => item.symbol).join(', ') || '—'), dateTime(source.last_signal_at)])) : '<div class="empty">Источники сигналов пока не подключены.</div>', '', 'signalSources');
+    }
+
+    function renderSettings() {
+      const sys = system();
+      const st = storage();
+      const status = obj(state.data.status);
+      return `<div class="page-grid">
+        ${metricStrip([
+          {label:'Render', value:health().ok ? 'LIVE' : 'OFFLINE', sub:dash(sys.render_service), badge:dateTime(sys.server_time), tone:health().ok ? 'green' : 'red', seed:1},
+          {label:'System mode', value:dash(first(sys.system_mode, status.system_mode)), sub:'read-only', badge:'без secrets', tone:'blue', seed:1},
+          {label:'DB status', value:st.db_storage === 'render_persistent_disk' ? 'SAFE' : 'WARNING', sub:dash(st.db_storage), badge:'persistent', tone:st.db_storage === 'render_persistent_disk' ? 'green' : 'red', seed:1}
+        ])}
+        <div class="page-grid cols-2">
+          ${panel('System', `<div class="stack">
+            ${kvRow('git_commit', `<span class="mono">${esc(sys.git_commit || '—')}</span>`)}
+            ${kvRow('git_branch', esc(dash(sys.git_branch)))}
+            ${kvRow('dashboard_version', esc(first(sys.dashboard_version, DASHBOARD_VERSION)))}
+            ${kvRow('refresh interval', `${REFRESH_MS/1000}s`)}
+            ${kvRow('uptime', sys.uptime_seconds !== undefined ? `${sys.uptime_seconds}s` : '—')}
+          </div>`, '', 'system')}
+          ${panel('Endpoints status', `<div class="stack">${endpointList.map(path => kvRow(path, path.includes('/api/dashboard/') || path === '/api/health' ? 'read-only' : '—')).join('')}</div>`)}
         </div>
       </div>`;
     }
@@ -1004,7 +1583,32 @@
         $('content').innerHTML = '<div class="loading">Загрузка данных...</div>';
         return;
       }
-      $('content').innerHTML = state.route === 'overview' ? renderOverview() : skeletonPage();
+      const renderers = {
+        overview: renderOverview,
+        portfolio: renderPortfolio,
+        positions: renderPositions,
+        trades: renderTrades,
+        history: renderHistory,
+        analytics: renderAnalytics,
+        risk: renderRisk,
+        bias: renderBias,
+        lab: renderLab,
+        storage: renderStorage,
+        signals: renderSignals,
+        sources: renderSources,
+        settings: renderSettings
+      };
+      $('content').innerHTML = (renderers[state.route] || renderOverview)();
+      bindPageControls();
+    }
+
+    function bindPageControls() {
+      const symbol = $('symbol-filter');
+      if (symbol) symbol.addEventListener('change', event => { state.filters.symbol = event.target.value; render(); });
+      const result = $('result-filter');
+      if (result) result.addEventListener('change', event => { state.filters.result = event.target.value; render(); });
+      const source = $('source-filter');
+      if (source) source.addEventListener('change', event => { state.filters.source = event.target.value; render(); });
     }
 
     function topbarBiasText() {
@@ -1027,6 +1631,7 @@
     state.route = initialRoute();
     tickClock();
     setInterval(tickClock, 1000);
+    $('refresh-button').addEventListener('click', refreshAll);
     refreshAll();
     setInterval(refreshAll, REFRESH_MS);
   </script>
