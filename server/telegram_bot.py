@@ -8,6 +8,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from . import account_store as acct
+from . import bias_store
 from . import config
 from . import queue as q
 from .ai_command_parser import SYMBOLS, parse_natural_language_command
@@ -20,6 +21,7 @@ from .ai_web_research import (
 )
 from .models import NativeMT5Event, WebhookPayload
 from .native_trade_notifications import clean_mode_enabled, format_clean_trade_message, normalizeNativeTradeEvent
+from .live_bias_engine import format_live_bias_telegram_message
 from .settings_store import (
     approve_pending_approval,
     create_pending_approval,
@@ -1893,6 +1895,8 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return format_bot_settings(parts[1] if len(parts) > 1 else "")
     if command in ("/daily_report", "/daily_report_now"):
         return format_daily_report()
+    if command in ("/bias", "/live_bias"):
+        return format_live_bias_latest()
     if command == "/news":
         return attach_ai_risk_action_approval(format_market_research(get_market_news_today()), chat_id or config.TELEGRAM_ADMIN_CHAT_ID, stripped)
     if command == "/calendar":
@@ -2814,6 +2818,25 @@ def format_daily_report() -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def format_live_bias_latest() -> str:
+    try:
+        rows = bias_store.latest_live_bias()
+    except Exception:
+        rows = []
+    if not rows:
+        return "📈 LIVE MARKET BIAS\n\nNo live bias snapshot yet."
+    quality_values = [float(row.get("data_quality_score") or 0) for row in rows]
+    risks = [row.get("risk") for row in rows]
+    risk = "HIGH" if "HIGH" in risks else "MEDIUM" if "MEDIUM" in risks else "LOW"
+    report = {
+        "symbols": rows,
+        "risk": risk,
+        "data_quality_score": round(sum(quality_values) / len(quality_values), 1) if quality_values else 0,
+        "timestamp": rows[0].get("timestamp"),
+    }
+    return format_live_bias_telegram_message(report)
 def format_history_today() -> str:
     if config.is_native_mt5_only() and not acct.native_data_available():
         return NATIVE_NO_DATA_MESSAGE

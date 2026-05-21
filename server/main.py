@@ -15,6 +15,12 @@ from . import config
 from . import account_store as acct
 from . import bias_store
 from .bias_engine import calculate_bias_report
+from .live_bias_engine import (
+    active_market_update_interval_seconds,
+    calculate_live_bias_report,
+    format_live_bias_telegram_message,
+    live_bias_send_decision,
+)
 from .database import init_db
 from .models import (
     AckRequest,
@@ -117,6 +123,7 @@ BERLIN_TZ = ZoneInfo("Europe/Berlin")
 NY_TZ = ZoneInfo("America/New_York")
 _daily_report_task: asyncio.Task | None = None
 _bias_report_task: asyncio.Task | None = None
+_live_bias_task: asyncio.Task | None = None
 pending_messages: dict[str, dict] = {}
 APP_STARTED_AT = time.time()
 DASHBOARD_VERSION = "broker-dashboard-2026-05"
@@ -281,11 +288,12 @@ def safe_git_metadata() -> dict:
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _daily_report_task, _bias_report_task
+    global _daily_report_task, _bias_report_task, _live_bias_task
     init_db()
     load_symbols()
     _daily_report_task = asyncio.create_task(daily_report_loop())
     _bias_report_task = asyncio.create_task(bias_report_loop())
+    _live_bias_task = asyncio.create_task(live_bias_loop())
 
 
 @app.on_event("shutdown")
@@ -294,6 +302,8 @@ async def shutdown() -> None:
         _daily_report_task.cancel()
     if _bias_report_task:
         _bias_report_task.cancel()
+    if _live_bias_task:
+        _live_bias_task.cancel()
 
 
 # ── 1. Health ──────────────────────────────────────────────────────────────────
@@ -709,6 +719,27 @@ async def api_bias_run(body: dict, request: Request):
     return {"ok": True, "sent": sent, "report": _bias_public_payload(report)}
 
 
+@app.post("/api/bias/live/run")
+async def api_live_bias_run(body: dict, request: Request):
+    payload = body or {}
+    send = bool(payload.get("send"))
+    force_send = bool(payload.get("force_send"))
+    allow_network = bool(payload.get("allow_network", False))
+    if (send or force_send) and not task_secret_matches(str(payload.get("secret") or ""), request):
+        return err("Invalid secret", status=403)
+    try:
+        report, sent, send_reason = run_live_bias_cycle(
+            allow_network=allow_network,
+            send=send,
+            force_send=force_send,
+            symbol=payload.get("symbol"),
+        )
+    except Exception as exc:
+        logger.exception("Live bias run failed")
+        return err(f"Live bias run failed: {exc}", status=500)
+    return {"ok": True, "sent": sent, "send_reason": send_reason, "report": _live_bias_public_payload(report)}
+
+
 @app.get("/api/settings")
 async def api_get_settings():
     return {"ok": True, "settings": list_settings()}
@@ -1030,6 +1061,26 @@ async def dashboard_bias():
     return {"ok": True, "bias": _bias_public_payload(report) if report else None}
 
 
+@app.get("/api/dashboard/bias/live")
+async def dashboard_live_bias():
+    try:
+        rows = bias_store.latest_live_bias()
+    except Exception:
+        logger.exception("Failed to load live bias")
+        rows = []
+    return {"ok": True, "bias": _live_bias_public_payload({"symbols": rows})}
+
+
+@app.get("/api/dashboard/bias/live/history")
+async def dashboard_live_bias_history(symbol: str | None = None, limit: int = 100):
+    try:
+        rows = bias_store.live_bias_history(symbol=symbol, limit=limit)
+    except Exception:
+        logger.exception("Failed to load live bias history")
+        rows = []
+    return {"ok": True, "symbol": symbol, "history": rows, "count": len(rows)}
+
+
 @app.get("/api/dashboard/strategy-lab")
 async def dashboard_strategy_lab(symbol: str | None = None, bot_id: str | None = None):
     try:
@@ -1224,6 +1275,18 @@ async def bias_report_loop() -> None:
         await asyncio.sleep(60)
 
 
+async def live_bias_loop() -> None:
+    await asyncio.sleep(10)
+    while True:
+        try:
+            run_live_bias_cycle(allow_network=True, send=True, force_send=False)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Live bias loop failed")
+        await asyncio.sleep(active_market_update_interval_seconds())
+
+
 def send_bias_report_if_due(force: bool = False) -> tuple[bool, str, str]:
     now_ny = datetime.now(NY_TZ)
     today_key = now_ny.strftime("%Y-%m-%d")
@@ -1244,6 +1307,26 @@ def send_bias_report_if_due(force: bool = False) -> tuple[bool, str, str]:
     return False, "telegram_send_failed", today_key
 
 
+def run_live_bias_cycle(
+    allow_network: bool = True,
+    send: bool = False,
+    force_send: bool = False,
+    symbol: str | None = None,
+) -> tuple[dict, bool, str]:
+    previous = bias_store.latest_live_bias(symbol=symbol)
+    report = calculate_live_bias_report(allow_network=allow_network, symbol=symbol)
+    should_send, send_reason = live_bias_send_decision(report, previous, force_send=force_send)
+    sent = False
+    if send and should_send:
+        sent = send_telegram_message(format_live_bias_telegram_message(report))
+        if not sent:
+            send_reason = f"telegram_send_failed:{send_reason}"
+    elif not send:
+        send_reason = "send_disabled"
+    bias_store.save_live_bias_report(report, sent_to_telegram=sent, send_reason=send_reason)
+    return report, sent, send_reason
+
+
 def _bias_public_payload(report: dict | None) -> dict | None:
     if not report:
         return None
@@ -1259,6 +1342,34 @@ def _bias_public_payload(report: dict | None) -> dict | None:
         "source_details": report.get("source_details") or {},
         "symbols": report.get("symbols") or [],
         "telegram_text": report.get("telegram_text"),
+    }
+
+
+def _live_bias_public_payload(report: dict | None) -> dict | None:
+    if not report:
+        return None
+    rows = report.get("symbols") or []
+    if rows and all(row.get("direction") in {"LONG", "SHORT"} for row in rows):
+        directions_ok = True
+    else:
+        directions_ok = not rows
+    quality_values = [float(row.get("data_quality_score") or 0) for row in rows]
+    risks = [row.get("risk") for row in rows]
+    risk = "HIGH" if "HIGH" in risks else "MEDIUM" if "MEDIUM" in risks else "LOW" if rows else report.get("risk", "UNKNOWN")
+    return {
+        "version": report.get("version") or "live-bias-v2",
+        "timestamp": report.get("timestamp") or report.get("run_at") or (rows[0].get("timestamp") if rows else None),
+        "ny_time": report.get("ny_time"),
+        "berlin_time": report.get("berlin_time"),
+        "update_frequency": report.get("update_frequency") or "5m active market / 15m outside active market",
+        "risk": report.get("risk") or risk,
+        "macro_risk": report.get("macro_risk") or risk,
+        "data_quality_score": report.get("data_quality_score") if report.get("data_quality_score") is not None else (round(sum(quality_values) / len(quality_values), 1) if quality_values else 0),
+        "source_availability": report.get("source_availability") or {},
+        "source_details": report.get("source_details") or {},
+        "directions_long_short_only": directions_ok,
+        "symbols": rows,
+        "telegram_text": report.get("telegram_text") or format_live_bias_telegram_message({"symbols": rows, "risk": risk, "data_quality_score": round(sum(quality_values) / len(quality_values), 1) if quality_values else 0}),
     }
 
 

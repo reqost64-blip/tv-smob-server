@@ -44,6 +44,8 @@ def main():
         "/api/dashboard/account-history",
         "/api/dashboard/bots",
         "/api/dashboard/bias",
+        "/api/dashboard/bias/live",
+        "/api/dashboard/bias/live/history",
         "/api/dashboard/storage-health",
         "/api/dashboard/strategy-lab",
         "/api/dashboard/strategy-lab/data-health",
@@ -58,6 +60,8 @@ def main():
     assert safe_bias.json().get("sent") is False, safe_bias.text
     network_bias = ok_post(client, "/api/bias/run", {"allow_network": True, "send": False}, expected=(403,))
     assert network_bias.json().get("ok") is False, network_bias.text
+    live_bias = ok_post(client, "/api/bias/live/run", {"allow_network": False, "send": False}, expected=(200,))
+    assert live_bias.json().get("sent") is False, live_bias.text
 
     secret = "do-not-leak-smoke-secret"
     ok_post(

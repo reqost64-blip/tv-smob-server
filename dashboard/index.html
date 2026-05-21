@@ -573,7 +573,7 @@
       {id:'history', path:'history', label:'История', subtitle:'Native history, импорт MT5 и состояние trade storage.', icon:'HI'},
       {id:'analytics', path:'analytics', label:'Аналитика', subtitle:'Winrate, profit factor, expectancy и symbol performance.', icon:'AN'},
       {id:'risk', path:'risk', label:'Риск', subtitle:'Daily risk, SL damage и risk status.', icon:'RK'},
-      {id:'bias', path:'bias', label:'Bias', subtitle:'Latest NY pre-market bias и source availability.', icon:'BI'},
+      {id:'bias', path:'bias', label:'Bias', subtitle:'Live market bias, factor breakdown и pre-market session report.', icon:'BI'},
       {id:'lab', path:'lab', label:'Strategy Lab', subtitle:'Data health, recommendations и optimizer status.', icon:'LB'},
       {id:'storage', path:'storage', label:'Storage', subtitle:'Persistent SQLite, counts, warnings и timestamps.', icon:'ST'},
       {id:'settings', path:'settings', label:'Настройки', subtitle:'Read-only system, Render, GitHub и endpoint status.', icon:'SE'}
@@ -598,6 +598,8 @@
       '/api/dashboard/stats',
       '/api/dashboard/bots',
       '/api/dashboard/bias',
+      '/api/dashboard/bias/live',
+      '/api/dashboard/bias/live/history',
       '/api/dashboard/strategy-lab',
       '/api/dashboard/strategy-lab/recommendations',
       '/api/dashboard/strategy-lab/data-health',
@@ -616,6 +618,8 @@
       pnl: '/api/dashboard/pnl?period=today',
       bots: '/api/dashboard/bots',
       bias: '/api/dashboard/bias',
+      biasLive: '/api/dashboard/bias/live',
+      biasLiveHistory: '/api/dashboard/bias/live/history?limit=80',
       lab: '/api/dashboard/strategy-lab',
       labRecs: '/api/dashboard/strategy-lab/recommendations',
       labHealth: '/api/dashboard/strategy-lab/data-health',
@@ -789,6 +793,8 @@
         api('pnl', endpoints.pnl, {ok:true, pnl:{}}),
         api('bots', endpoints.bots, {ok:true, bots:[]}),
         api('bias', endpoints.bias, {ok:true, bias:null}),
+        api('biasLive', endpoints.biasLive, {ok:true, bias:null}),
+        api('biasLiveHistory', endpoints.biasLiveHistory, {ok:true, history:[]}),
         api('lab', endpoints.lab, {ok:false, trade_count:0}),
         api('labRecs', endpoints.labRecs, {ok:false}),
         api('labHealth', endpoints.labHealth, {ok:false, trade_count:0}),
@@ -798,7 +804,7 @@
       ]);
       [
         'health','status','system','account','accountHistory','positions','trades','stats','statsToday','pnl','bots',
-        'bias','lab','labRecs','labHealth','storage','events','performance'
+        'bias','biasLive','biasLiveHistory','lab','labRecs','labHealth','storage','events','performance'
       ].forEach((key, index) => state.data[key] = results[index]);
       state.loading = false;
       state.lastUpdate = new Date();
@@ -864,6 +870,8 @@
     function storage() { return obj(state.data.storage); }
     function lab() { return obj(state.data.lab); }
     function bias() { return obj(obj(state.data.bias).bias); }
+    function liveBias() { return obj(obj(state.data.biasLive).bias); }
+    function liveBiasRows() { return arr(liveBias().symbols); }
     function events() { return arr(obj(state.data.events).events); }
     function historySnapshots() { return arr(obj(state.data.accountHistory).snapshots); }
 
@@ -960,6 +968,12 @@
     }
 
     function biasPanel(compactMode=false) {
+      const liveRows = liveBiasRows();
+      if (liveRows.length) return liveBiasPanel(compactMode);
+      return preMarketBiasPanel(compactMode);
+    }
+
+    function preMarketBiasPanel(compactMode=false) {
       const b = bias();
       const rows = arr(b.symbols);
       if (!rows.length) return empty('No latest bias report yet.');
@@ -973,6 +987,56 @@
           </div>
           <div class="metric-note">${esc(arr(row.reasons).slice(0, 2).join(' · ') || 'data limited')}</div>
         </div>`).join('')}</div>`;
+    }
+
+    function liveBiasPanel(compactMode=false) {
+      const rows = compactMode ? liveBiasRows().slice(0, 6) : liveBiasRows();
+      if (!rows.length) return empty('No live bias snapshot yet.');
+      return `<div class="bias-grid">${rows.map(row => `
+        <div class="bias-item">
+          <div class="bias-head">
+            <div><div class="symbol">${esc(row.symbol || '—')}</div><div class="side">${dateTime(row.timestamp)}</div></div>
+            <span class="pill ${row.direction === 'LONG' ? 'green' : 'red'}">${esc(row.direction || '—')} ${dash(row.confidence)}%</span>
+          </div>
+          <div class="mini-grid">
+            <div class="kv"><span>Strength</span><b>${esc(row.strength || '—')}</b></div>
+            <div class="kv"><span>Risk</span><b>${esc(row.risk || '—')}</b></div>
+            <div class="kv"><span>Long</span><b>${dash(row.long_probability)}%</b></div>
+            <div class="kv"><span>Short</span><b>${dash(row.short_probability)}%</b></div>
+            <div class="kv"><span>Quality</span><b>${pct(row.data_quality_score)}</b></div>
+            <div class="kv"><span>Score</span><b>${dash(row.final_score)}</b></div>
+          </div>
+          <div class="metric-note">${esc(arr(row.reasons).slice(0, 3).join(' · ') || 'data limited')}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    function liveFactorBreakdown() {
+      const rows = liveBiasRows();
+      if (!rows.length) return empty('No live factor breakdown yet.');
+      const factorLabels = {
+        market_structure: 'Market Structure',
+        trend: 'Trend',
+        vwap: 'VWAP',
+        momentum: 'Momentum',
+        volatility: 'Volatility',
+        intermarket: 'Intermarket',
+        macro_news: 'Macro/News'
+      };
+      return table(['symbol', ...Object.values(factorLabels)], rows.map(row => [
+        row.symbol || '—',
+        ...Object.keys(factorLabels).map(key => dash(obj(row.factor_scores)[key]))
+      ]));
+    }
+
+    function liveSourceAvailability() {
+      const rows = liveBiasRows();
+      const globalSources = obj(liveBias().source_availability);
+      const items = Object.keys(globalSources).length
+        ? Object.entries(globalSources)
+        : Object.entries(obj(rows[0] && rows[0].source_availability));
+      if (!items.length) return empty('No source availability reported.');
+      return `<div class="grid cols-3">${items.map(([key, value]) => `
+        <div class="info-block"><b>${esc(key)}</b><br><span class="muted">${esc(value)}</span></div>`).join('')}</div>`;
     }
 
     function eventsPanel() {
@@ -1189,14 +1253,24 @@
 
     function renderBias() {
       const b = bias();
+      const live = liveBias();
       const availability = obj(b.source_availability);
+      const liveRows = liveBiasRows();
       return `<div class="grid cols-3">
-        ${metric('Macro risk', dash(b.macro_risk), dateTime(b.run_at))}
-        ${metric('Data quality', pct(b.data_quality_score), 'latest report')}
-        ${metric('Symbols', arr(b.symbols).length, 'bias rows')}
+        ${metric('Live risk', dash(live.risk || live.macro_risk), dateTime(live.timestamp))}
+        ${metric('Live data quality', pct(live.data_quality_score), 'source availability honest')}
+        ${metric('Live symbols', liveRows.length, 'LONG / SHORT only')}
       </div>
-      ${card('Per Symbol Bias', biasPanel(false), '', 'bias')}
-      ${card('Source Availability', Object.keys(availability).length ? `<div class="grid cols-3">${Object.entries(availability).map(([key, value]) => `
+      ${card('Live Bias', liveRows.length ? liveBiasPanel(false) : empty('No live bias snapshot yet.'), '', 'biasLive')}
+      ${card('Live Factor Breakdown', liveFactorBreakdown(), '', 'biasLive')}
+      ${card('Live Source Availability', liveSourceAvailability(), '', 'biasLive')}
+      <div class="grid cols-3">
+        ${metric('Pre-Market macro risk', dash(b.macro_risk), dateTime(b.run_at))}
+        ${metric('Pre-Market quality', pct(b.data_quality_score), '09:20 NY report')}
+        ${metric('Pre-Market symbols', arr(b.symbols).length, 'historical session report')}
+      </div>
+      ${card('Pre-Market Bias', arr(b.symbols).length ? preMarketBiasPanel(false) : empty('No pre-market bias report yet.'), '', 'bias')}
+      ${card('Pre-Market Source Availability', Object.keys(availability).length ? `<div class="grid cols-3">${Object.entries(availability).map(([key, value]) => `
         <div class="info-block"><b>${esc(key)}</b><br><span class="muted">${esc(value)}</span></div>`).join('')}</div>` : empty('No source availability reported.'))}`;
     }
 

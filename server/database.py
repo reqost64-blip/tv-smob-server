@@ -430,6 +430,53 @@ def init_db() -> None:
                 created_at          TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS latest_live_bias (
+                symbol               TEXT PRIMARY KEY,
+                timestamp            TEXT NOT NULL,
+                direction            TEXT NOT NULL,
+                confidence           INTEGER NOT NULL,
+                long_probability     INTEGER NOT NULL,
+                short_probability    INTEGER NOT NULL,
+                final_score          REAL NOT NULL,
+                strength             TEXT NOT NULL,
+                risk                 TEXT NOT NULL,
+                data_quality_score   REAL NOT NULL,
+                factor_scores        TEXT NOT NULL,
+                source_availability  TEXT NOT NULL,
+                reasons              TEXT NOT NULL,
+                invalidation_info    TEXT,
+                risk_flags           TEXT NOT NULL,
+                sent_to_telegram     INTEGER NOT NULL DEFAULT 0,
+                send_reason          TEXT,
+                payload              TEXT NOT NULL,
+                updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bias_snapshots_history (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp            TEXT NOT NULL,
+                symbol               TEXT NOT NULL,
+                direction            TEXT NOT NULL,
+                confidence           INTEGER NOT NULL,
+                long_probability     INTEGER NOT NULL,
+                short_probability    INTEGER NOT NULL,
+                final_score          REAL NOT NULL,
+                strength             TEXT NOT NULL,
+                risk                 TEXT NOT NULL,
+                data_quality_score   REAL NOT NULL,
+                factor_scores        TEXT NOT NULL,
+                source_availability  TEXT NOT NULL,
+                reasons              TEXT NOT NULL,
+                invalidation_info    TEXT,
+                risk_flags           TEXT NOT NULL,
+                sent_to_telegram     INTEGER NOT NULL DEFAULT 0,
+                send_reason          TEXT,
+                payload              TEXT NOT NULL,
+                created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         _ensure_columns(
             conn,
             "native_account_snapshots",
@@ -652,6 +699,14 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_bias_reports_time
             ON bias_reports (report_date, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_live_bias_history_symbol_time
+            ON bias_snapshots_history (symbol, timestamp, created_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_live_bias_history_time
+            ON bias_snapshots_history (timestamp, created_at)
         """)
         defaults = {
             "trading_enabled": str(config.TRADING_ENABLED).lower(),
