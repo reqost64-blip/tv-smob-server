@@ -6,9 +6,9 @@
 //| Native Render/Telegram alerts + screenshots                        |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "2.60"
+#property version   "2.70"
 #property description "Unified ORB/VWAP/RSI/OF EA for NAS100/SP500/DJ30/BTCUSD/GER40 with auto profile detection, BE touch exit"
-#define EA_VERSION "2.6.0"
+#define EA_VERSION "2.7.0"
 #define EA_BUILD   "20260604"
 
 #include <Trade/Trade.mqh>
@@ -3984,7 +3984,7 @@ void DrawVersionLabel()
    ObjectSetInteger(0, obj, OBJPROP_CORNER, CORNER_RIGHT_LOWER);
    ObjectSetInteger(0, obj, OBJPROP_XDISTANCE, 10);
    ObjectSetInteger(0, obj, OBJPROP_YDISTANCE, 10);
-   ObjectSetString(0, obj, OBJPROP_TEXT, "v" + EA_VERSION + " (" + EA_BUILD + ")");
+   ObjectSetString(0, obj, OBJPROP_TEXT, "v" + EA_VERSION + " " + EA_BUILD + " | " + g_activeBotId);
    ObjectSetInteger(0, obj, OBJPROP_COLOR, clrGray);
    ObjectSetInteger(0, obj, OBJPROP_FONTSIZE, 8);
    ObjectSetInteger(0, obj, OBJPROP_SELECTABLE, false);
@@ -4495,6 +4495,8 @@ void CalculateVirtualHistory()
 //====================================================================
 int OnInit()
 {
+   Print("ORB_UNIFIED_PRO LOADED VERSION ", EA_VERSION, " BUILD ", EA_BUILD, " FILE=", __FILE__);
+
    g_symbol = InpTradeSymbol == "" ? _Symbol : InpTradeSymbol;
 
    if(!SymbolSelect(g_symbol, true))
