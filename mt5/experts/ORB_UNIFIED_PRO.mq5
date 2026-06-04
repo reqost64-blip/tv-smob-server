@@ -6,9 +6,9 @@
 //| Native Render/Telegram alerts + screenshots                        |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "2.50"
+#property version   "2.60"
 #property description "Unified ORB/VWAP/RSI/OF EA for NAS100/SP500/DJ30/BTCUSD/GER40 with auto profile detection, BE touch exit"
-#define EA_VERSION "2.5.0"
+#define EA_VERSION "2.6.0"
 #define EA_BUILD   "20260604"
 
 #include <Trade/Trade.mqh>
@@ -69,7 +69,9 @@ enum ENUM_PRESET_MODE
 // INPUTS - ПРОФИЛЬ / PRESET
 //====================================================================
 input group "00. ПРОФИЛЬ / PRESET"
-input ENUM_PRESET_MODE InpPresetMode = PRESET_AUTO;  // Профиль инструмента (AUTO = автоопределение по символу)
+input ENUM_PRESET_MODE InpPresetMode              = PRESET_AUTO;   // Профиль инструмента (AUTO = автоопределение по символу)
+input bool   InpUsePresetTradingSettings          = false;         // Применять жёсткие торговые настройки пресета (false = брать из MT5 inputs)
+input bool   InpClearOldChartObjectsOnInit        = true;          // Удалить объекты всех старых профилей при старте
 
 //====================================================================
 // INPUTS - СИМВОЛ / ТОРГОВЛЯ
@@ -671,17 +673,39 @@ ENUM_PRESET_MODE NormalizeSymbolToProfile(string sym)
    return PRESET_MANUAL;
 }
 
-void ApplyPreset()
+// Level B helper: copy all trading settings from MT5 inputs into g_active* variables.
+// Called when InpUsePresetTradingSettings=false (default) or mode=PRESET_MANUAL.
+void ApplyTradingInputs()
 {
-   ENUM_PRESET_MODE mode = InpPresetMode;
-   if(mode == PRESET_AUTO)
-      mode = NormalizeSymbolToProfile(g_symbol);
+   g_activeLot            = InpLot;
+   g_activeOrbStartHour   = InpOrbStartHourNY;
+   g_activeOrbStartMinute = InpOrbStartMinuteNY;
+   g_activeOrbEndHour     = InpOrbEndHourNY;
+   g_activeOrbEndMinute   = InpOrbEndMinuteNY;
+   g_activeUseVWAP        = InpUseVWAPFilter;
+   g_activeBiasBullLevel  = InpBiasBullLevel;
+   g_activeBiasBearLevel  = InpBiasBearLevel;
+   g_activeEntryBullLevel = InpEntryBullLevel;
+   g_activeEntryBearLevel = InpEntryBearLevel;
+   g_activeTP1Fixed       = InpTP1Fixed;
+   g_activeTP2Fixed       = InpTP2Fixed;
+   g_activeTP3Fixed       = InpTP3Fixed;
+   g_activeTP1Percent     = InpTP1Percent;
+   g_activeTP2Percent     = InpTP2Percent;
+   g_activeTP3Percent     = InpTP3Percent;
+   g_activeEnableTP3      = InpEnableTP3;
+   g_activeReturnOrb      = InpUseReturnInsideOrbExit;
+   g_activeVWAPExit       = InpUseVWAPInvalidExit;
+   g_activeBlockWeekend   = InpBlockWeekendNewTrades;
+}
 
+// Level B helper: apply hardcoded preset trading defaults.
+// Called only when InpUsePresetTradingSettings=true AND mode != PRESET_MANUAL.
+void ApplyTradingPresetDefaults(ENUM_PRESET_MODE mode)
+{
    if(mode == PRESET_NAS100)
    {
-      g_activeMagic = 26043001; g_activeLot = 5.0;
-      g_activeBotId = "NAS100_ORB_VWAP_RSI_OF";
-      g_activePrefixBase = "ORBVRSI_NAS100_PRO_";
+      g_activeLot = 5.0;
       g_activeOrbStartHour = 9;  g_activeOrbStartMinute = 30;
       g_activeOrbEndHour   = 9;  g_activeOrbEndMinute   = 55;
       g_activeUseVWAP = true;
@@ -694,9 +718,7 @@ void ApplyPreset()
    }
    else if(mode == PRESET_SP500)
    {
-      g_activeMagic = 26043003; g_activeLot = 5.0;
-      g_activeBotId = "SP500_ORB_VWAP_RSI_OF";
-      g_activePrefixBase = "ORBVRSI_SP500_PRO_";
+      g_activeLot = 5.0;
       g_activeOrbStartHour = 9;  g_activeOrbStartMinute = 30;
       g_activeOrbEndHour   = 10; g_activeOrbEndMinute   = 0;
       g_activeUseVWAP = true;
@@ -709,9 +731,7 @@ void ApplyPreset()
    }
    else if(mode == PRESET_DJ30)
    {
-      g_activeMagic = 26043002; g_activeLot = 5.0;
-      g_activeBotId = "DJ30_ORB_VWAP_RSI_OF";
-      g_activePrefixBase = "ORBVRSI_DJ30_PRO_";
+      g_activeLot = 5.0;
       g_activeOrbStartHour = 9;  g_activeOrbStartMinute = 30;
       g_activeOrbEndHour   = 9;  g_activeOrbEndMinute   = 55;
       g_activeUseVWAP = false;
@@ -724,9 +744,7 @@ void ApplyPreset()
    }
    else if(mode == PRESET_BTCUSD)
    {
-      g_activeMagic = 26043005; g_activeLot = 1.0;
-      g_activeBotId = "BTCUSD_ORB_VWAP_RSI_OF";
-      g_activePrefixBase = "ORBVRSI_BTCUSD_PRO_";
+      g_activeLot = 1.0;
       g_activeOrbStartHour = 9;  g_activeOrbStartMinute = 15;
       g_activeOrbEndHour   = 10; g_activeOrbEndMinute   = 0;
       g_activeUseVWAP = true;
@@ -739,9 +757,7 @@ void ApplyPreset()
    }
    else if(mode == PRESET_GER40)
    {
-      g_activeMagic = 26043004; g_activeLot = 3.0;
-      g_activeBotId = "GER40_ORB_VWAP_RSI_OF";
-      g_activePrefixBase = "ORBVRSI_GER40_PRO_";
+      g_activeLot = 3.0;
       g_activeOrbStartHour = 9;  g_activeOrbStartMinute = 30;
       g_activeOrbEndHour   = 10; g_activeOrbEndMinute   = 0;
       g_activeUseVWAP = false;
@@ -752,30 +768,72 @@ void ApplyPreset()
       g_activeEnableTP3 = false;
       g_activeReturnOrb = false; g_activeVWAPExit = false; g_activeBlockWeekend = false;
    }
+   else
+   {
+      ApplyTradingInputs();
+   }
+}
+
+void ApplyPreset()
+{
+   ENUM_PRESET_MODE mode = InpPresetMode;
+   if(mode == PRESET_AUTO)
+      mode = NormalizeSymbolToProfile(g_symbol);
+
+   // Level A: Identity — magic/bot_id/prefix always from preset for correct Telegram/Render routing.
+   if(mode == PRESET_NAS100)
+   {
+      g_activeMagic      = 26043001;
+      g_activeBotId      = "NAS100_ORB_VWAP_RSI_OF";
+      g_activePrefixBase = "ORBVRSI_NAS100_PRO_";
+   }
+   else if(mode == PRESET_SP500)
+   {
+      g_activeMagic      = 26043003;
+      g_activeBotId      = "SP500_ORB_VWAP_RSI_OF";
+      g_activePrefixBase = "ORBVRSI_SP500_PRO_";
+   }
+   else if(mode == PRESET_DJ30)
+   {
+      g_activeMagic      = 26043002;
+      g_activeBotId      = "DJ30_ORB_VWAP_RSI_OF";
+      g_activePrefixBase = "ORBVRSI_DJ30_PRO_";
+   }
+   else if(mode == PRESET_BTCUSD)
+   {
+      g_activeMagic      = 26043005;
+      g_activeBotId      = "BTCUSD_ORB_VWAP_RSI_OF";
+      g_activePrefixBase = "ORBVRSI_BTCUSD_PRO_";
+   }
+   else if(mode == PRESET_GER40)
+   {
+      g_activeMagic      = 26043004;
+      g_activeBotId      = "GER40_ORB_VWAP_RSI_OF";
+      g_activePrefixBase = "ORBVRSI_GER40_PRO_";
+   }
    else // PRESET_MANUAL
    {
-      g_activeMagic = InpMagicNumber; g_activeLot = InpLot;
-      g_activeBotId = InpBotId;
+      g_activeMagic      = InpMagicNumber;
+      g_activeBotId      = InpBotId;
       g_activePrefixBase = "ORBVRSI_UNIFIED_PRO_";
-      g_activeOrbStartHour = InpOrbStartHourNY; g_activeOrbStartMinute = InpOrbStartMinuteNY;
-      g_activeOrbEndHour   = InpOrbEndHourNY;   g_activeOrbEndMinute   = InpOrbEndMinuteNY;
-      g_activeUseVWAP = InpUseVWAPFilter;
-      g_activeBiasBullLevel = InpBiasBullLevel; g_activeBiasBearLevel = InpBiasBearLevel;
-      g_activeEntryBullLevel = InpEntryBullLevel; g_activeEntryBearLevel = InpEntryBearLevel;
-      g_activeTP1Fixed = InpTP1Fixed; g_activeTP2Fixed = InpTP2Fixed; g_activeTP3Fixed = InpTP3Fixed;
-      g_activeTP1Percent = InpTP1Percent; g_activeTP2Percent = InpTP2Percent; g_activeTP3Percent = InpTP3Percent;
-      g_activeEnableTP3 = InpEnableTP3;
-      g_activeReturnOrb = InpUseReturnInsideOrbExit;
-      g_activeVWAPExit  = InpUseVWAPInvalidExit;
-      g_activeBlockWeekend = InpBlockWeekendNewTrades;
    }
+
+   // Level B: Trading settings — source controlled by InpUsePresetTradingSettings.
+   // PRESET_MANUAL always uses inputs regardless of that flag.
+   if(mode == PRESET_MANUAL || !InpUsePresetTradingSettings)
+      ApplyTradingInputs();
+   else
+      ApplyTradingPresetDefaults(mode);
 
    trade.SetExpertMagicNumber(g_activeMagic);
    Print("ApplyPreset: mode=", EnumToString(InpPresetMode),
          " resolved=", EnumToString(mode),
+         " usePresetTrading=", (string)InpUsePresetTradingSettings,
          " magic=", g_activeMagic,
          " lot=", g_activeLot,
-         " bot_id=", g_activeBotId);
+         " bot_id=", g_activeBotId,
+         " orb=", g_activeOrbStartHour, ":", g_activeOrbStartMinute,
+         "-", g_activeOrbEndHour, ":", g_activeOrbEndMinute);
 }
 
 int DateKey(datetime t)
@@ -2100,6 +2158,40 @@ void DeleteObjects()
       if(StringFind(name, p) == 0)
          ObjectDelete(0, name);
    }
+}
+
+// Remove chart objects left by other profiles so stale ORB zones don't persist across restarts.
+void ClearOldPrefixObjects()
+{
+   string oldPrefixes[6];
+   oldPrefixes[0] = "ORBVRSI_UNIFIED_PRO_";
+   oldPrefixes[1] = "ORBVRSI_NAS100_PRO_";
+   oldPrefixes[2] = "ORBVRSI_SP500_PRO_";
+   oldPrefixes[3] = "ORBVRSI_DJ30_PRO_";
+   oldPrefixes[4] = "ORBVRSI_BTCUSD_PRO_";
+   oldPrefixes[5] = "ORBVRSI_GER40_PRO_";
+
+   string current = g_activePrefixBase;
+   int deleted = 0;
+
+   for(int p = 0; p < 6; p++)
+   {
+      if(oldPrefixes[p] == current)
+         continue;
+      int total = ObjectsTotal(0, 0, -1);
+      for(int i = total - 1; i >= 0; i--)
+      {
+         string name = ObjectName(0, i, 0, -1);
+         if(StringFind(name, oldPrefixes[p]) == 0)
+         {
+            ObjectDelete(0, name);
+            deleted++;
+         }
+      }
+   }
+
+   if(deleted > 0)
+      Print("ClearOldPrefixObjects: removed ", deleted, " stale chart objects from old profiles");
 }
 
 void DeleteLiveObjects()
@@ -4412,6 +4504,9 @@ int OnInit()
    }
 
    ApplyPreset();
+
+   if(InpClearOldChartObjectsOnInit)
+      ClearOldPrefixObjects();
 
    g_digits = (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS);
    g_point = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
