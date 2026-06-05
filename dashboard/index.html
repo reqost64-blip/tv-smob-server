@@ -1545,12 +1545,12 @@
           return `<div class="position-card"><div class="position-head"><div><div class="symbol">${esc(row.symbol || '—')}</div><div class="chip">${esc(row.strength || '—')}</div></div><div class="bias-direction ${direction === 'SHORT' ? 'short' : ''}">${esc(direction || '—')}</div></div><div class="progress"><span style="width:${Math.max(0, Math.min(100, num(row.confidence) || 0))}%"></span></div><div class="kv-grid">${kv('Уверенность', `${dash(row.confidence)}%`)}${kv('Риск', esc(row.risk || '—'))}${kv('LONG', `${dash(row.long_probability)}%`)}${kv('SHORT', `${dash(row.short_probability)}%`)}</div><div class="tag-list" style="margin-top:10px">${arr(row.reasons).slice(0,5).map(reason => `<span class="tag">${esc(reason)}</span>`).join('')}</div></div>`;
         }).join('')}</div>` : '<div class="empty">Байес не рассчитан.</div>', '', 'biasLive')}
         <div class="page-grid cols-2">
-          ${panel('Точность Live Bias', `<div class="kv-grid">${kv('30m', accuracyPercent(acc['30m']))}${kv('1h', accuracyPercent(acc['1h']))}${kv('2h', accuracyPercent(acc['2h']))}${kv('4h', accuracyPercent(acc['4h']))}</div>`, '', 'biasLiveAccuracy')}
+          ${panel('Точность Живого Bias', `<div class="kv-grid">${kv('30m', accuracyPercent(acc['30m']))}${kv('1h', accuracyPercent(acc['1h']))}${kv('2h', accuracyPercent(acc['2h']))}${kv('4h', accuracyPercent(acc['4h']))}</div>`, '', 'biasLiveAccuracy')}
           ${panel('Калибровка', arr(calib.recommended_weight_adjustments).length ? table(['Фактор','Изменение','Причина'], arr(calib.recommended_weight_adjustments).map(item => [esc(first(item.factor, item.type, '—')), esc(item.suggested_change || '—'), esc(item.reason || '—')])) : `<div class="empty">Рекомендаций пока нет. Ручное подтверждение: ${calib.requires_human_approval !== false ? 'да' : 'нет'}</div>`, '', 'biasLiveCalibration')}
         </div>
         ${panel('Факторы Bias', factorTable(), '', 'biasLive')}
         ${panel('Доступность источников', sourceAvailabilityBlock(), '', 'biasLive')}
-        ${panel('Pre-Market Bias', arr(pre.symbols).length ? table(['Символ','Bias','Уверенность','Риск','Причины'], arr(pre.symbols).map(row => [esc(row.symbol || '—'), esc(row.bias || '—'), `${dash(row.confidence)}%`, esc(row.macro_risk || pre.macro_risk || '—'), esc(arr(row.reasons).slice(0,3).join(', ') || '—')])) : '<div class="empty">Pre-Market отчёта пока нет.</div>', '', 'bias')}
+        ${panel('Предрыночный Bias', arr(pre.symbols).length ? table(['Символ','Bias','Уверенность','Риск','Причины'], arr(pre.symbols).map(row => [esc(row.symbol || '—'), esc(row.bias || '—'), `${dash(row.confidence)}%`, esc(row.macro_risk || pre.macro_risk || '—'), esc(arr(row.reasons).slice(0,3).join(', ') || '—')])) : '<div class="empty">Предрыночного отчёта пока нет.</div>', '', 'bias')}
       </div>`;
     }
 

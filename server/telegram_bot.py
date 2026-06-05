@@ -878,7 +878,11 @@ async def _ptb_callback_router(update, context):
         await query.answer()
         chat_id = str(query.message.chat_id) if getattr(query, "message", None) else ""
         text, keyboard = render_menu_callback(str(query.data or ""), chat_id)
-        await query.edit_message_text(text, reply_markup=ptb_reply_markup(keyboard))
+        try:
+            await query.edit_message_text(text, reply_markup=ptb_reply_markup(keyboard))
+        except Exception:
+            if getattr(query, "message", None):
+                await query.message.reply_text(text, reply_markup=ptb_reply_markup(keyboard))
 
 
 menu_callback_query_handler = CallbackQueryHandler(_ptb_callback_router) if CallbackQueryHandler else None
@@ -4169,7 +4173,7 @@ def safe_bias_accuracy_summary() -> dict:
 def render_live_bias_screen() -> tuple[str, dict]:
     rows = safe_call(bias_store.latest_live_bias, [])
     if not rows:
-        return "📈 ЖИВОЙ BIAS\n\nДанных Live Bias пока нет.", _screen_keyboard(
+        return "📈 ЖИВОЙ BIAS\n\nДанных Живого Bias пока нет.", _screen_keyboard(
             "refresh_bias",
             [[("📊 Точность", "bias_accuracy"), ("🧠 Калибровка", "bias_calibration")]],
         )
@@ -4600,6 +4604,20 @@ def _command_to_callback(command: str) -> Optional[str]:
     }.get(command)
 
 
+async def show_command_screen(update, context):
+    if not getattr(update, "message", None):
+        return
+    command = str(update.message.text or "").split()[0].lower()
+    if command in ("/site", "/dashboard"):
+        await update.message.reply_text(site_message(), reply_markup=ptb_reply_markup(site_inline_keyboard()))
+        return
+    callback_data = _command_to_callback(command)
+    if callback_data:
+        chat_id = str(getattr(update.message, "chat_id", "") or "")
+        text, keyboard = render_menu_callback(callback_data, chat_id)
+        await update.message.reply_text(text, reply_markup=ptb_reply_markup(keyboard))
+
+
 async def start(update, context):
     if getattr(update, "message", None):
         await update.message.reply_text(menu_main_text(), reply_markup=ptb_reply_markup(MAIN_KEYBOARD))
@@ -4722,3 +4740,21 @@ menu_message_handler = (
     if MessageHandler and filters
     else None
 )
+regular_command_handler = (
+    CommandHandler(["status", "bias", "live_bias", "signals", "trades", "stats", "risk", "sources", "storage", "lab"], show_command_screen)
+    if CommandHandler
+    else None
+)
+
+
+def register_menu_handlers(app) -> None:
+    if menu_message_handler:
+        app.add_handler(menu_message_handler, group=-1)
+    if start_command_handler:
+        app.add_handler(start_command_handler, group=-1)
+    if site_command_handler:
+        app.add_handler(site_command_handler, group=-1)
+    if regular_command_handler:
+        app.add_handler(regular_command_handler, group=-1)
+    if menu_callback_query_handler:
+        app.add_handler(menu_callback_query_handler)

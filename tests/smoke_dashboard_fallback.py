@@ -15,12 +15,12 @@ def main():
         "errorBlock(endpointKey)",
         "Promise.all",
         "cache:'no-store'",
-        "panel('Live Bias'",
-        "panel('Storage health'",
-        "panel('Latest signals'",
-        "panel('Endpoints status'",
-        "No signals processed yet.",
-        "No closed trade history found. Import MT5 history.",
+        "panel('Живой Bias'",
+        "panel('Состояние базы'",
+        "panel('Последние сигналы'",
+        "panel('Статус endpoints'",
+        "Сигналы ещё не обработаны.",
+        "Нет закрытой истории сделок. Импортируй историю MT5.",
     ]
     missing = [item for item in required if item not in html]
     assert not missing, missing

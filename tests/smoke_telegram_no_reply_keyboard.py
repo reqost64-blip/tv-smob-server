@@ -40,12 +40,20 @@ def test_regular_screens_do_not_return_reply_keyboard():
         "refresh_lab",
         "trades_period:day",
         "stats_period:week",
+        "signals_period:month",
+        "risk_period:all",
     ]
     for callback in callbacks:
         text, markup = bot.render_menu_callback(callback, "smoke")
         assert text
         assert not is_reply(markup), callback
         assert is_inline(markup), callback
+
+
+def test_regular_command_handler_registered():
+    assert bot.regular_command_handler is not None
+    for command in ["/bias", "/live_bias", "/signals", "/trades", "/stats", "/risk", "/sources", "/storage", "/lab"]:
+        assert bot._command_to_callback(command), command
 
 
 def test_send_message_has_no_default_reply_markup(monkeypatch=None):
@@ -81,5 +89,6 @@ def test_send_message_has_no_default_reply_markup(monkeypatch=None):
 if __name__ == "__main__":
     test_menu_only_reply_keyboard()
     test_regular_screens_do_not_return_reply_keyboard()
+    test_regular_command_handler_registered()
     test_send_message_has_no_default_reply_markup()
     print("ok")
