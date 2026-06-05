@@ -3846,20 +3846,15 @@ def parse_telegram_update(update: dict) -> tuple[Optional[str], Optional[str]]:
 # Russian command-center UI v2.  This block intentionally overrides the older
 # menu renderers above while keeping all storage, signal, bias and MT5 logic
 # untouched.
-CONTROL_BUTTON_TEXT = "🎛 Пульт"
+STATUS_BUTTON_TEXT = "📊 Статус"
+CONTROL_BUTTON_TEXT = STATUS_BUTTON_TEXT
 BIAS_BUTTON_TEXT = "📈 Bias"
-SIGNALS_BUTTON_TEXT = "⚡ Сигналы"
 TRADES_BUTTON_TEXT = "🧾 Сделки"
-STATS_BUTTON_TEXT = "📊 Статистика"
-RISK_BUTTON_TEXT = "🛡 Риск"
-SOURCES_BUTTON_TEXT = "🧠 Sources"
 SITE_BUTTON_TEXT = "🌐 Сайт"
 
 MAIN_KEYBOARD_ROWS = [
-    [CONTROL_BUTTON_TEXT, BIAS_BUTTON_TEXT],
-    [SIGNALS_BUTTON_TEXT, TRADES_BUTTON_TEXT],
-    [STATS_BUTTON_TEXT, RISK_BUTTON_TEXT],
-    [SOURCES_BUTTON_TEXT, SITE_BUTTON_TEXT],
+    [STATUS_BUTTON_TEXT, TRADES_BUTTON_TEXT],
+    [BIAS_BUTTON_TEXT, SITE_BUTTON_TEXT],
 ]
 if ReplyKeyboardMarkup and KeyboardButton:
     MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -3875,19 +3870,28 @@ else:
     }
 
 MENU_BUTTON_CALLBACKS = {
-    CONTROL_BUTTON_TEXT: "refresh_center",
+    STATUS_BUTTON_TEXT: "refresh_center",
     BIAS_BUTTON_TEXT: "refresh_bias",
-    SIGNALS_BUTTON_TEXT: "refresh_signals",
+    "📈 Байес": "refresh_bias",
     TRADES_BUTTON_TEXT: "refresh_trades",
-    STATS_BUTTON_TEXT: "refresh_stats",
-    RISK_BUTTON_TEXT: "refresh_risk",
-    SOURCES_BUTTON_TEXT: "refresh_sources",
     ACCOUNT_POSITIONS_BUTTON_TEXT: "refresh_center",
-    ANALYTICS_BUTTON_TEXT: "refresh_stats",
+}
+DISABLED_TELEGRAM_COMMANDS = {"/live_bias", "/signals", "/stats", "/risk", "/sources", "/storage", "/lab"}
+DISABLED_TELEGRAM_TEXTS = {
+    "🎛 Пульт",
+    "⚡ Сигналы",
+    "📊 Статистика",
+    "🛡 Риск",
+    "🧠 Sources",
+    "📉 Аналитика",
+    "🌍 Рынок",
+    "Действия",
+    "🏆 Рекорды",
+    "🤖 Боты",
 }
 MENU_BUTTON_PATTERN = (
-    r"^(🎛 Пульт|📈 Bias|⚡ Сигналы|🧾 Сделки|📊 Статистика|🛡 Риск|🧠 Sources|🌐 Сайт|"
-    r"📊 Счёт и позиции|📈 Байес|📉 Аналитика)$"
+    r"^(📊 Статус|📈 Bias|🧾 Сделки|🌐 Сайт|🎛 Пульт|⚡ Сигналы|📊 Статистика|🛡 Риск|🧠 Sources|"
+    r"📊 Счёт и позиции|📈 Байес|📉 Аналитика|🌐 Открыть SMOB)$"
 )
 menu_message_handler = (
     MessageHandler(filters.TEXT & filters.Regex(MENU_BUTTON_PATTERN), handle_menu_button)
@@ -4068,14 +4072,33 @@ def _screen_keyboard(refresh: str, rows: Optional[list[list[tuple[str, str]]]] =
     return _inline_url_keyboard(base)
 
 
-def smob_inline_menu() -> dict:
+def _status_inline_keyboard() -> dict:
     return _inline_url_keyboard(
         [
-            [("🔄 Обновить", "refresh_center"), ("📈 Bias", "refresh_bias")],
-            [("⚡ Сигналы", "refresh_signals"), ("🛡 Риск", "refresh_risk")],
-            [("🌐 Dashboard", "dashboard_url")],
+            [("🔄 Обновить", "refresh_center"), (TRADES_BUTTON_TEXT, "refresh_trades")],
+            [(BIAS_BUTTON_TEXT, "refresh_bias"), ("🌐 Dashboard", "dashboard_url")],
         ]
     )
+
+
+def _trades_inline_keyboard(period: str = "day") -> dict:
+    return _inline_url_keyboard(_period_buttons("trades", period) + [[("🔄 Обновить", "refresh_trades"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def _bias_inline_keyboard() -> dict:
+    return _inline_url_keyboard([[("🔄 Обновить", "refresh_bias"), ("🌐 Dashboard", "dashboard_url")]])
+
+
+def _disabled_section_keyboard() -> dict:
+    return _inline_url_keyboard([[("🌐 Dashboard", "dashboard_url")]])
+
+
+def disabled_telegram_section() -> tuple[str, dict]:
+    return "Этот раздел отключён в Telegram.\nИспользуй Dashboard.", _disabled_section_keyboard()
+
+
+def smob_inline_menu() -> dict:
+    return _status_inline_keyboard()
 
 
 def site_message() -> str:
@@ -4087,7 +4110,7 @@ def site_inline_keyboard() -> dict:
 
 
 def menu_main_text() -> str:
-    return "\n".join(["🎛 ЦЕНТР УПРАВЛЕНИЯ MT5", "", "Меню открыто. Выбери раздел ниже.", f"Обновлено: {short_now()}"])
+    return "\n".join(["📊 MT5 МЕНЮ", "", "Нижнее меню обновлено.", f"Обновлено: {short_now()}"])
 
 
 def dashboard_keyboard() -> dict:
@@ -4110,21 +4133,16 @@ def render_command_center() -> tuple[str, dict]:
     account = safe_call(acct.latest_account_snapshot, None) or {}
     positions = safe_call(acct.current_native_positions, [])
     live_bias = safe_call(bias_store.latest_live_bias, [])
-    signals = safe_call(lambda: signal_store.latest_signals(limit=300), [])
     native_available = safe_call(acct.native_data_available, False)
-    valid = sum(1 for item in signals if item.get("verdict") == "VALID_SIGNAL")
-    watch = sum(1 for item in signals if item.get("verdict") in {"WATCH_ONLY", "WAIT_CONFIRMATION"})
-    rejected = sum(1 for item in signals if item.get("verdict") in {"REJECTED", "DUPLICATE", "EXPIRED"})
     storage_ok = bool(storage.get("db_file_exists") or storage.get("db_storage") == "render_persistent_disk")
     trade_count = first_present(pnl.get("trades_count"), pnl.get("closed_trades_count"), 0)
     lines = [
-        "🎛 ЦЕНТР УПРАВЛЕНИЯ MT5",
+        "📊 СТАТУС MT5",
         "",
         "Система: 🟢 Онлайн",
         f"MT5 Feed: {'🟢 Активен' if native_available else '🟡 Тихо'}",
         f"База: {'🟢 Persistent' if storage_ok else '🟡 Проверить'}",
         f"Живой Bias: {'🟢 Активен' if live_bias else '🟡 Нет снимка'}",
-        f"Сигналы: {'🟢 Активны' if signals else '🟡 Нет данных'}",
         "",
         "Счёт:",
         f"Баланс: {_money_ru(account.get('balance'))}",
@@ -4137,18 +4155,9 @@ def render_command_center() -> tuple[str, dict]:
         f"Закрыто сегодня: {trade_count}",
         f"Последнее событие: {_latest_event_text()}",
         "",
-        "Сигналы:",
-        f"Подтверждённые: {valid}",
-        f"Наблюдать: {watch}",
-        f"Отклонённые: {rejected}",
-        "",
-        "Риск: НОРМА",
         f"Обновлено: {short_now()}",
     ]
-    return "\n".join(lines), _screen_keyboard(
-        "refresh_center",
-        [[("📈 Bias", "refresh_bias"), ("⚡ Сигналы", "refresh_signals")], [("🛡 Риск", "refresh_risk")]],
-    )
+    return "\n".join(lines), _status_inline_keyboard()
 
 
 def safe_bias_accuracy_summary() -> dict:
@@ -4173,10 +4182,7 @@ def safe_bias_accuracy_summary() -> dict:
 def render_live_bias_screen() -> tuple[str, dict]:
     rows = safe_call(bias_store.latest_live_bias, [])
     if not rows:
-        return "📈 ЖИВОЙ BIAS\n\nДанных Живого Bias пока нет.", _screen_keyboard(
-            "refresh_bias",
-            [[("📊 Точность", "bias_accuracy"), ("🧠 Калибровка", "bias_calibration")]],
-        )
+        return "📈 ЖИВОЙ BIAS\n\nДанных Живого Bias пока нет.", _bias_inline_keyboard()
     quality = round(sum(float_or_zero(row.get("data_quality_score")) for row in rows) / max(len(rows), 1))
     risk = "HIGH" if any(str(row.get("risk")).upper() == "HIGH" for row in rows) else "MEDIUM" if any(str(row.get("risk")).upper() == "MEDIUM" for row in rows) else "LOW"
     lines = ["📈 ЖИВОЙ BIAS", ""]
@@ -4202,10 +4208,7 @@ def render_live_bias_screen() -> tuple[str, dict]:
             f"Худший: {accuracy.get('worst_symbol')}",
         ]
     )
-    return "\n".join(lines), _screen_keyboard(
-        "refresh_bias",
-        [[("📊 Точность", "bias_accuracy"), ("🧠 Калибровка", "bias_calibration")]],
-    )
+    return "\n".join(lines), _bias_inline_keyboard()
 
 
 def render_signal_board(period: str = "day") -> tuple[str, dict]:
@@ -4275,7 +4278,6 @@ def render_processed_trades_signals(period: str = "day") -> tuple[str, dict]:
     stats = safe_call(lambda: acct.get_stats_filtered(source="all", period=period_to_store(period), asset="ALL"), {})
     positions = safe_call(acct.current_native_positions, [])
     events = [e for e in safe_call(lambda: acct.native_trade_events(limit=100), []) if _row_in_ui_period(e, period)]
-    signals = [s for s in safe_call(lambda: signal_store.latest_signals(limit=200), []) if _row_in_ui_period(s, period)]
     lines = [f"🧾 СДЕЛКИ · {period_title(period)}", "", "Итог:"]
     lines.extend(
         [
@@ -4309,24 +4311,7 @@ def render_processed_trades_signals(period: str = "day") -> tuple[str, dict]:
             lines.append(f"{_trade_time(row)} {_dash(row.get('symbol'))} {_side_ru(row.get('side'))} {_money_ru(first_present(row.get('profit_money'), row.get('profit')))}")
     else:
         lines.append("За выбранный период сделок нет.")
-    lines.extend(["", "Сигналы:"])
-    if signals:
-        for signal in signals[:4]:
-            lines.extend(
-                [
-                    f"{_dash(signal.get('symbol'))} {_signal_direction(signal)}",
-                    f"Score: {_pct(signal.get('score'))}",
-                    f"Статус: {_status_ru(signal.get('verdict'))}",
-                    f"Результат: {_status_ru('pending')}",
-                    "",
-                ]
-            )
-    else:
-        lines.append("—")
-    return "\n".join(lines).strip(), _screen_keyboard(
-        "refresh_trades",
-        _period_buttons("trades", period) + [[("🟢 MT5", "refresh_trades"), ("⚡ Сигналы", "refresh_signals")], [("📊 Результаты", "refresh_stats")]],
-    )
+    return "\n".join(lines).strip(), _trades_inline_keyboard(period)
 
 
 def _event_counts(period: str) -> dict:
@@ -4544,44 +4529,31 @@ def render_menu_callback(data: str, chat_id: str) -> tuple[str, dict]:
             return render_command_center()
         if data == "refresh_bias":
             return render_live_bias_screen()
-        if data == "refresh_signals":
-            return render_signal_board("day")
-        if data.startswith("signals_period:"):
-            return render_signal_board(data.split(":", 1)[1])
-        if data in {"signals_valid", "signals_watch", "signals_rejected", "signals_risky"}:
-            return render_signal_board("day")
         if data in {"refresh_trades", "refresh_processed_trades", "menu_processed_trades"}:
             return render_processed_trades_signals("day")
         if data.startswith("trades_period:"):
             return render_processed_trades_signals(data.split(":", 1)[1])
         if data.startswith("trades_p_"):
             return render_processed_trades_signals(data.replace("trades_p_", "", 1))
-        if data in {"refresh_stats", "refresh_analytics"}:
-            return render_system_statistics_screen("day")
-        if data.startswith("stats_period:"):
-            return render_system_statistics_screen(data.split(":", 1)[1])
-        if data.startswith("stats_p_"):
-            return render_system_statistics_screen(data.replace("stats_p_", "", 1))
-        if data == "refresh_risk":
-            return render_signal_risk_screen("day")
-        if data.startswith("risk_period:"):
-            return render_signal_risk_screen(data.split(":", 1)[1])
-        if data == "refresh_sources":
-            return render_signal_sources_screen()
-        if data == "refresh_storage":
-            return render_storage_screen()
-        if data == "refresh_lab":
-            return render_lab_screen()
-        if data == "bias_accuracy":
-            return render_bias_accuracy_screen()
-        if data == "bias_calibration":
-            return "🧠 КАЛИБРОВКА BIAS\n\nРекомендации доступны в Dashboard.\nТребуется ручное подтверждение: да", _screen_keyboard("refresh_bias")
-        if data == "signal_accuracy":
-            return render_signal_accuracy_screen()
-        if data.startswith("signal_details:"):
-            return render_signal_detail_screen(data.split(":", 1)[1])
-        if data.startswith("source_details:"):
-            return render_source_detail_screen(data.split(":", 1)[1])
+        disabled_values = {
+            "refresh_signals",
+            "refresh_stats",
+            "refresh_analytics",
+            "refresh_risk",
+            "refresh_sources",
+            "refresh_storage",
+            "refresh_lab",
+            "bias_accuracy",
+            "bias_calibration",
+            "signal_accuracy",
+            "signals_valid",
+            "signals_watch",
+            "signals_rejected",
+            "signals_risky",
+        }
+        disabled_prefixes = ("signals_period:", "stats_period:", "stats_p_", "risk_period:", "signal_details:", "source_details:")
+        if data in disabled_values or data.startswith(disabled_prefixes):
+            return disabled_telegram_section()
         if data == "dashboard_url":
             return site_message(), site_inline_keyboard()
         return render_command_center()
@@ -4593,14 +4565,7 @@ def _command_to_callback(command: str) -> Optional[str]:
     return {
         "/status": "refresh_center",
         "/bias": "refresh_bias",
-        "/live_bias": "refresh_bias",
-        "/signals": "refresh_signals",
         "/trades": "refresh_trades",
-        "/stats": "refresh_stats",
-        "/risk": "refresh_risk",
-        "/sources": "refresh_sources",
-        "/storage": "refresh_storage",
-        "/lab": "refresh_lab",
     }.get(command)
 
 
@@ -4610,6 +4575,10 @@ async def show_command_screen(update, context):
     command = str(update.message.text or "").split()[0].lower()
     if command in ("/site", "/dashboard"):
         await update.message.reply_text(site_message(), reply_markup=ptb_reply_markup(site_inline_keyboard()))
+        return
+    if command in DISABLED_TELEGRAM_COMMANDS:
+        text, keyboard = disabled_telegram_section()
+        await update.message.reply_text(text, reply_markup=ptb_reply_markup(keyboard))
         return
     callback_data = _command_to_callback(command)
     if callback_data:
@@ -4633,8 +4602,12 @@ async def _reply_menu_section(update, callback_data: str) -> None:
 
 async def handle_menu_button(update, context):
     text = update.message.text
-    if text in (SITE_BUTTON_TEXT, "Сайт"):
+    if text in (SITE_BUTTON_TEXT, "Сайт", "🌐 Открыть SMOB"):
         await show_site(update, context)
+        return
+    if text in DISABLED_TELEGRAM_TEXTS:
+        rendered_text, keyboard = disabled_telegram_section()
+        await update.message.reply_text(rendered_text, reply_markup=ptb_reply_markup(keyboard))
         return
     callback_data = MENU_BUTTON_CALLBACKS.get(text)
     if callback_data:
@@ -4671,8 +4644,12 @@ def handle_telegram_update(update: dict) -> bool:
             user_state[chat_id] = {"screen": "center"}
             menu_send(chat_id, menu_main_text(), dashboard_keyboard())
             return True
-        if text in (SITE_BUTTON_TEXT, "Сайт") or command in ("/site", "/dashboard"):
+        if text in (SITE_BUTTON_TEXT, "Сайт", "🌐 Открыть SMOB") or command in ("/site", "/dashboard"):
             menu_send(chat_id, site_message(), site_inline_keyboard())
+            return True
+        if command in DISABLED_TELEGRAM_COMMANDS or text in DISABLED_TELEGRAM_TEXTS:
+            text_out, keyboard = disabled_telegram_section()
+            menu_send(chat_id, text_out, keyboard)
             return True
         callback_data = _command_to_callback(command) or MENU_BUTTON_CALLBACKS.get(text)
         if callback_data:
@@ -4707,6 +4684,8 @@ def handle_command(text: str, chat_id: Optional[str] = None) -> str:
         return menu_main_text()
     if command in ("/site", "/dashboard"):
         return site_message()
+    if command in DISABLED_TELEGRAM_COMMANDS:
+        return disabled_telegram_section()[0]
     callback_data = _command_to_callback(command)
     if callback_data:
         return render_menu_callback(callback_data, chat_id or "")[0]
@@ -4720,16 +4699,12 @@ def normalize_dashboard_button(text: str) -> str:
     mapping = {
         CONTROL_BUTTON_TEXT: "/status",
         BIAS_BUTTON_TEXT: "/bias",
-        SIGNALS_BUTTON_TEXT: "/signals",
         TRADES_BUTTON_TEXT: "/trades",
-        STATS_BUTTON_TEXT: "/stats",
-        RISK_BUTTON_TEXT: "/risk",
-        SOURCES_BUTTON_TEXT: "/sources",
         SITE_BUTTON_TEXT: "/dashboard",
+        "📈 Байес": "/bias",
+        "🌐 Открыть SMOB": "/dashboard",
         ACCOUNT_POSITIONS_BUTTON_TEXT: "/status",
-        ANALYTICS_BUTTON_TEXT: "/stats",
         "Сайт": "/dashboard",
-        "Статистика": "/stats",
         "Сделки": "/trades",
     }
     return mapping.get(text, text)
@@ -4741,10 +4716,11 @@ menu_message_handler = (
     else None
 )
 regular_command_handler = (
-    CommandHandler(["status", "bias", "live_bias", "signals", "trades", "stats", "risk", "sources", "storage", "lab"], show_command_screen)
+    CommandHandler(["status", "bias", "trades"], show_command_screen)
     if CommandHandler
     else None
 )
+start_command_handler = CommandHandler(["start", "menu"], start) if CommandHandler else None
 
 
 def register_menu_handlers(app) -> None:

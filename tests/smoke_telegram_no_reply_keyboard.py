@@ -20,28 +20,25 @@ def is_inline(markup):
 
 
 def test_menu_only_reply_keyboard():
-    assert is_reply(bot.dashboard_keyboard())
-    assert "🌍 Рынок" not in str(bot.dashboard_keyboard())
-    assert "Действия" not in str(bot.dashboard_keyboard())
-    assert "🏆 Рекорды" not in str(bot.dashboard_keyboard())
-    assert "🤖 Боты" not in str(bot.dashboard_keyboard())
+    keyboard = bot.dashboard_keyboard()
+    assert is_reply(keyboard)
+    assert keyboard["keyboard"] == [
+        [{"text": "📊 Статус"}, {"text": "🧾 Сделки"}],
+        [{"text": "📈 Bias"}, {"text": "🌐 Сайт", "web_app": {"url": bot.DASHBOARD_URL}}],
+    ]
+    for old in ("🎛 Пульт", "⚡ Сигналы", "📊 Статистика", "🛡 Риск", "🧠 Sources", "🌍 Рынок", "Действия", "🏆 Рекорды", "🤖 Боты"):
+        assert old not in str(keyboard)
 
 
 def test_regular_screens_do_not_return_reply_keyboard():
     callbacks = [
         "refresh_center",
         "refresh_bias",
-        "refresh_signals",
         "refresh_trades",
-        "refresh_stats",
-        "refresh_risk",
-        "refresh_sources",
-        "refresh_storage",
-        "refresh_lab",
         "trades_period:day",
-        "stats_period:week",
-        "signals_period:month",
-        "risk_period:all",
+        "trades_period:week",
+        "trades_period:month",
+        "trades_period:all",
     ]
     for callback in callbacks:
         text, markup = bot.render_menu_callback(callback, "smoke")
@@ -50,10 +47,32 @@ def test_regular_screens_do_not_return_reply_keyboard():
         assert is_inline(markup), callback
 
 
+def test_old_sections_disabled_without_reply_keyboard():
+    callbacks = [
+        "refresh_signals",
+        "refresh_stats",
+        "refresh_risk",
+        "refresh_sources",
+        "refresh_storage",
+        "refresh_lab",
+        "signal_accuracy",
+        "source_details:old",
+        "signal_details:old",
+    ]
+    for callback in callbacks:
+        text, markup = bot.render_menu_callback(callback, "smoke")
+        assert "отключён" in text
+        assert "keyboard" not in (markup or {})
+        assert str(markup).count("Dashboard") == 1
+
+
 def test_regular_command_handler_registered():
     assert bot.regular_command_handler is not None
-    for command in ["/bias", "/live_bias", "/signals", "/trades", "/stats", "/risk", "/sources", "/storage", "/lab"]:
+    for command in ["/status", "/bias", "/trades"]:
         assert bot._command_to_callback(command), command
+    for command in ["/signals", "/stats", "/risk", "/sources", "/storage", "/lab"]:
+        assert not bot._command_to_callback(command), command
+        assert "отключён" in bot.handle_command(command)
 
 
 def test_send_message_has_no_default_reply_markup(monkeypatch=None):
@@ -89,6 +108,7 @@ def test_send_message_has_no_default_reply_markup(monkeypatch=None):
 if __name__ == "__main__":
     test_menu_only_reply_keyboard()
     test_regular_screens_do_not_return_reply_keyboard()
+    test_old_sections_disabled_without_reply_keyboard()
     test_regular_command_handler_registered()
     test_send_message_has_no_default_reply_markup()
     print("ok")

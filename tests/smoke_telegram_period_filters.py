@@ -9,26 +9,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from server import telegram_bot as bot
 
 
-def test_period_callbacks():
-    screens = [
-        ("trades", "СДЕЛКИ"),
-        ("stats", "СТАТИСТИКА"),
-        ("signals", "СИГНАЛЫ"),
-        ("risk", "КОНТРОЛЬ РИСКА"),
-    ]
+def test_trades_period_callbacks_only_active():
     periods = [
         ("day", "СЕГОДНЯ"),
         ("week", "НЕДЕЛЯ"),
         ("month", "МЕСЯЦ"),
         ("all", "ВСЁ ВРЕМЯ"),
     ]
-    for prefix, title in screens:
-        for period, label in periods:
-            text, markup = bot.render_menu_callback(f"{prefix}_period:{period}", "smoke")
-            assert title in text, (prefix, period, text)
-            assert label in text, (prefix, period, text)
-            assert "keyboard" not in (markup or {})
-            assert f"{prefix}_period:{period}" in str(markup)
+    for period, label in periods:
+        text, markup = bot.render_menu_callback(f"trades_period:{period}", "smoke")
+        assert "СДЕЛКИ" in text
+        assert label in text
+        assert "keyboard" not in (markup or {})
+        assert f"trades_period:{period}" in str(markup)
+
+
+def test_disabled_period_callbacks():
+    for callback in ("stats_period:day", "signals_period:week", "risk_period:all"):
+        text, markup = bot.render_menu_callback(callback, "smoke")
+        assert "отключён" in text
+        assert "keyboard" not in (markup or {})
+        assert str(markup).count("Dashboard") == 1
 
 
 def test_store_period_mapping():
@@ -39,6 +40,7 @@ def test_store_period_mapping():
 
 
 if __name__ == "__main__":
-    test_period_callbacks()
+    test_trades_period_callbacks_only_active()
+    test_disabled_period_callbacks()
     test_store_period_mapping()
     print("ok")

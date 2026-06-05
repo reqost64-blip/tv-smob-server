@@ -9,14 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from server import telegram_bot as bot
 
 
-def test_storage_screen():
+def test_storage_screen_disabled_in_telegram():
     text, markup = bot.render_menu_callback("refresh_storage", "smoke")
+    assert "отключён" in text
     assert "keyboard" not in (markup or {})
-    assert "СОСТОЯНИЕ БАЗЫ" in text
-    assert "Путь:" in text
-    assert "/var/data/bridge.db" in text or "—" in text
+    assert "Dashboard" in str(markup)
 
 
 if __name__ == "__main__":
-    test_storage_screen()
+    test_storage_screen_disabled_in_telegram()
     print("ok")

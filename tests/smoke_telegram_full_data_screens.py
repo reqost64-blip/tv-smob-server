@@ -19,16 +19,20 @@ def assert_screen(callback, required):
         assert item not in text, (callback, item)
 
 
-def test_core_screens():
-    assert_screen("refresh_center", ["ЦЕНТР УПРАВЛЕНИЯ", "Счёт:", "Торговля:", "Сигналы:", "Риск:"])
+def test_minimal_active_screens():
+    assert_screen("refresh_center", ["СТАТУС MT5", "Счёт:", "Торговля:"])
     assert_screen("refresh_bias", ["ЖИВОЙ BIAS"])
-    assert_screen("refresh_signals", ["СИГНАЛЫ", "СЕГОДНЯ"])
     assert_screen("refresh_trades", ["СДЕЛКИ", "СЕГОДНЯ"])
-    assert_screen("refresh_stats", ["СТАТИСТИКА", "СЕГОДНЯ"])
-    assert_screen("refresh_risk", ["КОНТРОЛЬ РИСКА", "СЕГОДНЯ"])
-    assert_screen("refresh_sources", ["ИСТОЧНИКИ СИГНАЛОВ"])
+
+
+def test_removed_full_screens_disabled():
+    for callback in ("refresh_signals", "refresh_stats", "refresh_risk", "refresh_sources", "refresh_storage", "refresh_lab"):
+        text, markup = bot.render_menu_callback(callback, "smoke")
+        assert "отключён" in text
+        assert "keyboard" not in (markup or {})
 
 
 if __name__ == "__main__":
-    test_core_screens()
+    test_minimal_active_screens()
+    test_removed_full_screens_disabled()
     print("ok")
